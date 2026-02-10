@@ -1,0 +1,158 @@
+╔══════════════════════════════════════════════════════════════════════╗
+║                                                                      ║
+║              💰 QUICK ADMIN REFERENCE CARD 💰                       ║
+║                                                                      ║
+╚══════════════════════════════════════════════════════════════════════╝
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🚀 QUICK START
+
+1. Create Admin (First Time):
+   python manage.py createsuperuser
+
+2. Start Server:
+   python manage.py runserver
+
+3. Open Admin:
+   http://localhost:8000/admin
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+💰 ADD BALANCE TO USER (3 METHODS)
+
+Method 1: Quick Action (FASTEST) ⚡
+   1. Go to: Wallets
+   2. Find user (search by name)
+   3. Check the box next to user
+   4. Action: "Add 100 Birr to Main Balance"
+   5. Click "Go"
+   ✅ Done in 10 seconds!
+
+Method 2: Direct Edit
+   1. Go to: Wallets
+   2. Click on user's wallet
+   3. Change "Main balance" field
+   4. Click "Save"
+   ✅ Done!
+
+Method 3: Approve Deposit
+   1. Go to: Transactions
+   2. Filter: Pending + Deposit
+   3. Select transaction
+   4. Action: "Approve selected transactions"
+   5. Click "Go"
+   ✅ Balance added automatically!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📊 ADMIN SECTIONS
+
+┌─────────────────────────────────────────────────────────────────┐
+│ USERS                                                           │
+│ • View all registered users                                     │
+│ • Search by telegram ID                                         │
+│ • Mark as admin                                                 │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ WALLETS                                                         │
+│ • View all balances                                             │
+│ • Quick actions: Add 100 Birr / Add 50 Bonus                   │
+│ • Search by user name                                           │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ TRANSACTIONS                                                    │
+│ • Approve/reject deposits                                       │
+│ • Approve/reject withdrawals                                    │
+│ • Filter by type and status                                     │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ GAMES                                                           │
+│ • View all games                                                │
+│ • Check player counts                                           │
+│ • See winners and prizes                                        │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ BINGO CARDS                                                     │
+│ • See all cards                                                 │
+│ • Check user's cards                                            │
+│ • View card numbers                                             │
+└─────────────────────────────────────────────────────────────────┘
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎯 COMMON TASKS
+
+Task: Give user 1000 Birr for testing
+   Wallets → Find user → Edit → Main balance: 1000 → Save
+
+Task: Approve deposit
+   Transactions → Pending → Deposit → Select → Approve → Go
+
+Task: Approve withdrawal
+   Transactions → Pending → Withdrawal → Select → Approve → Go
+
+Task: Check game details
+   Games → Click game → View details
+
+Task: See user's cards
+   Bingo Cards → Search user name → View cards
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔗 QUICK LINKS
+
+Main Admin:        http://localhost:8000/admin
+Users:             http://localhost:8000/admin/users/user/
+Wallets:           http://localhost:8000/admin/wallet/wallet/
+Transactions:      http://localhost:8000/admin/wallet/transaction/
+Games:             http://localhost:8000/admin/game/game/
+Bingo Cards:       http://localhost:8000/admin/game/bingocard/
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+⚡ FASTEST WAY TO ADD BALANCE
+
+1. http://localhost:8000/admin/wallet/wallet/
+2. Search user name
+3. Check box
+4. Action: "Add 100 Birr to Main Balance"
+5. Go
+
+⏱️ Takes 10 seconds!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+💡 PRO TIPS
+
+• Use search box to find users quickly
+• Use filters on right sidebar
+• Select multiple items for bulk actions
+• Refresh page (F5) to see changes
+• User must click "Balance" in bot to see update
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🐛 TROUBLESHOOTING
+
+Can't login?
+   → python manage.py createsuperuser
+
+Changes not showing?
+   → Refresh page (F5)
+
+Balance not in bot?
+   → User clicks "💰 Balance" button
+
+Admin looks broken?
+   → Check Django server is running
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📖 FULL GUIDE: See ADMIN_GUIDE.md
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

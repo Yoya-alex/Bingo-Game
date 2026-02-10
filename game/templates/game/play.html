@@ -1,0 +1,309 @@
+{% extends 'game/base.html' %}
+
+{% block title %}Playing Bingo - Card #{{ card.card_number }}{% endblock %}
+
+{% block header_extra %}
+<p style="color: #666; font-size: 1.1em;">Game #{{ game.id }} - Your Card #{{ card.card_number }}</p>
+{% endblock %}
+
+{% block extra_style %}
+<style>
+    .game-status {
+        background: #f8f9fa;
+        padding: 20px;
+        border-radius: 10px;
+        margin-bottom: 30px;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 15px;
+    }
+    
+    .status-item {
+        text-align: center;
+    }
+    
+    .status-item h4 {
+        color: #666;
+        font-size: 0.9em;
+        margin-bottom: 5px;
+    }
+    
+    .status-item p {
+        font-size: 1.5em;
+        font-weight: bold;
+        color: #667eea;
+    }
+    
+    .bingo-grid {
+        max-width: 600px;
+        margin: 30px auto;
+        background: white;
+        padding: 20px;
+        border-radius: 15px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+    }
+    
+    .grid-header {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 10px;
+        margin-bottom: 15px;
+    }
+    
+    .grid-header div {
+        text-align: center;
+        font-size: 1.5em;
+        font-weight: bold;
+        color: #667eea;
+        padding: 10px;
+        background: #f0f0f0;
+        border-radius: 8px;
+    }
+    
+    .grid-row {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 10px;
+        margin-bottom: 10px;
+    }
+    
+    .grid-cell {
+        aspect-ratio: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5em;
+        font-weight: bold;
+        border: 3px solid #667eea;
+        border-radius: 10px;
+        background: white;
+        transition: all 0.3s;
+    }
+    
+    .grid-cell.free {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        font-size: 1em;
+    }
+    
+    .grid-cell.marked {
+        background: #28a745;
+        color: white;
+        border-color: #28a745;
+    }
+    
+    .called-numbers {
+        margin-top: 30px;
+        padding: 20px;
+        background: #f8f9fa;
+        border-radius: 10px;
+    }
+    
+    .called-numbers h3 {
+        color: #333;
+        margin-bottom: 15px;
+    }
+    
+    .numbers-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+    
+    .number-badge {
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #667eea;
+        color: white;
+        border-radius: 50%;
+        font-weight: bold;
+    }
+    
+    .bingo-button {
+        display: block;
+        width: 100%;
+        max-width: 300px;
+        margin: 30px auto;
+        padding: 20px;
+        font-size: 1.5em;
+        font-weight: bold;
+        background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+        color: white;
+        border: none;
+        border-radius: 15px;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+    
+    .bingo-button:hover {
+        transform: scale(1.05);
+        box-shadow: 0 10px 30px rgba(40, 167, 69, 0.3);
+    }
+    
+    .waiting-message {
+        text-align: center;
+        padding: 40px;
+        color: #666;
+        font-size: 1.2em;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="user-info">
+    <div>
+        <strong>👤 {{ user.first_name }}</strong>
+        <span style="color: #666; margin-left: 10px;">Card #{{ card.card_number }}</span>
+    </div>
+    <div class="balance">
+        🎮 Game #{{ game.id }}
+    </div>
+</div>
+
+<div class="game-status">
+    <div class="status-item">
+        <h4>⏱ STATUS</h4>
+        <p id="gameState">{{ game.state|upper }}</p>
+    </div>
+    <div class="status-item">
+        <h4>👥 PLAYERS</h4>
+        <p id="playerCount">{{ total_players }}</p>
+    </div>
+    <div class="status-item">
+        <h4>📢 CALLED</h4>
+        <p id="calledCount">{{ called_numbers|length }}</p>
+    </div>
+    <div class="status-item">
+        <h4>💰 PRIZE</h4>
+        <p id="prizeAmount">{{ prize_amount }} Birr</p>
+    </div>
+</div>
+
+<div class="bingo-grid">
+    <div class="grid-header">
+        <div>B</div>
+        <div>I</div>
+        <div>N</div>
+        <div>G</div>
+        <div>O</div>
+    </div>
+    
+    {% for row in grid %}
+    <div class="grid-row">
+        {% for cell in row %}
+        <div class="grid-cell {% if cell == None %}free{% endif %}" data-number="{{ cell }}">
+            {% if cell == None %}
+                🆓
+            {% else %}
+                {{ cell }}
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endfor %}
+</div>
+
+{% if game.state == 'waiting' %}
+<div class="waiting-message">
+    ⏳ Waiting for game to start...<br>
+    <small>Game will start automatically when ready</small>
+</div>
+{% elif game.state == 'playing' %}
+<button class="bingo-button" onclick="claimBingo()">
+    🎯 BINGO!
+</button>
+
+<div class="called-numbers">
+    <h3>📢 Called Numbers:</h3>
+    <div class="numbers-list" id="calledNumbers">
+        {% for num in called_numbers %}
+        <div class="number-badge">{{ num }}</div>
+        {% endfor %}
+    </div>
+</div>
+{% elif game.state == 'finished' %}
+<div class="waiting-message">
+    🎉 Game Finished!<br>
+    {% if game.winner.telegram_id == user.telegram_id %}
+        <strong style="color: #28a745;">YOU WON! 🏆</strong><br>
+        Prize: {{ game.prize_amount }} Birr
+    {% else %}
+        Winner: {{ game.winner.first_name }}<br>
+        Prize: {{ game.prize_amount }} Birr
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_script %}
+<script>
+    const gameId = {{ game.id }};
+    const telegramId = {{ user.telegram_id }};
+    let calledNumbers = {{ called_numbers|safe }};
+    
+    function claimBingo() {
+        if (confirm('Claim BINGO? This will validate your card.')) {
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', '/game/api/claim-bingo/', true);
+            xhr.setRequestHeader('Content-Type', 'application/json');
+            xhr.onload = function() {
+                if (xhr.status === 200) {
+                    var data = JSON.parse(xhr.responseText);
+                    if (data.winner) {
+                        alert('🎉 ' + data.message + '\nPattern: ' + data.pattern);
+                        location.reload();
+                    } else {
+                        alert(data.message);
+                    }
+                } else {
+                    alert('Error validating BINGO');
+                }
+            };
+            xhr.send(JSON.stringify({
+                telegram_id: telegramId,
+                game_id: gameId
+            }));
+        }
+    }
+    
+    // Auto-refresh game status every 3 seconds
+    setInterval(function() {
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', '/game/api/game-status/' + gameId + '/', true);
+        xhr.onload = function() {
+            if (xhr.status === 200) {
+                var data = JSON.parse(xhr.responseText);
+                
+                // Update game state
+                document.getElementById('gameState').textContent = data.state.toUpperCase();
+                document.getElementById('playerCount').textContent = data.total_players;
+                document.getElementById('calledCount').textContent = data.called_numbers.length;
+                document.getElementById('prizeAmount').textContent = (data.total_players * 10) + ' Birr';
+                
+                // Mark called numbers on grid
+                data.called_numbers.forEach(function(num) {
+                    var cell = document.querySelector('[data-number="' + num + '"]');
+                    if (cell && !cell.classList.contains('free')) {
+                        cell.classList.add('marked');
+                    }
+                });
+                
+                // Update called numbers list if new numbers
+                if (data.called_numbers.length > calledNumbers.length) {
+                    calledNumbers = data.called_numbers;
+                    location.reload();
+                }
+                
+                // If game finished, reload to show winner
+                if (data.state === 'finished') {
+                    location.reload();
+                }
+            }
+        };
+        xhr.send();
+    }, 3000);
+</script>
+{% endblock %}

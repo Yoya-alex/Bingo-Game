@@ -1,0 +1,170 @@
+Telegram Bingo Bot - Project Structure
+======================================
+
+bingoo/
+│
+├── 📁 bot/                          # Telegram Bot Application
+│   ├── 📁 handlers/                 # Message & Callback Handlers
+│   │   ├── __init__.py
+│   │   ├── user_handlers.py         # /start, rules, support
+│   │   ├── wallet_handlers.py       # balance, deposit, withdraw
+│   │   └── game_handlers.py         # play, card selection, bingo
+│   │
+│   ├── 📁 utils/                    # Utility Functions
+│   │   ├── __init__.py
+│   │   └── game_logic.py            # Grid generation, win checking
+│   │
+│   ├── __init__.py
+│   ├── bot.py                       # Main bot entry point ⭐
+│   └── keyboards.py                 # Telegram keyboards
+│
+├── 📁 users/                        # User Management App
+│   ├── migrations/
+│   ├── __init__.py
+│   ├── admin.py                     # Django admin for users
+│   ├── apps.py
+│   ├── models.py                    # User model
+│   ├── tests.py
+│   └── views.py
+│
+├── 📁 wallet/                       # Wallet & Transactions App
+│   ├── migrations/
+│   ├── __init__.py
+│   ├── admin.py                     # Django admin for wallet
+│   ├── apps.py
+│   ├── models.py                    # Wallet, Transaction, Deposit, Withdrawal
+│   ├── tests.py
+│   └── views.py
+│
+├── 📁 game/                         # Game Logic App
+│   ├── migrations/
+│   ├── __init__.py
+│   ├── admin.py                     # Django admin for games
+│   ├── apps.py
+│   ├── models.py                    # Game, BingoCard
+│   ├── tests.py
+│   └── views.py
+│
+├── 📁 bingo_project/                # Django Project Settings
+│   ├── __init__.py
+│   ├── asgi.py
+│   ├── settings.py                  # Main configuration ⚙️
+│   ├── urls.py
+│   └── wsgi.py
+│
+├── 📄 .env                          # Environment variables (SECRET!)
+├── 📄 .env.example                  # Environment template
+├── 📄 .gitignore                    # Git ignore rules
+├── 📄 db.sqlite3                    # SQLite database
+├── 📄 manage.py                     # Django management script
+├── 📄 requirements.txt              # Python dependencies
+├── 📄 start_bot.py                  # Quick start script ⭐
+│
+├── 📖 README.md                     # Project overview
+├── 📖 QUICK_START.md                # 5-minute setup guide ⭐
+├── 📖 SETUP_GUIDE.md                # Detailed setup & architecture
+├── 📖 PROJECT_STATUS.md             # Development progress & roadmap
+└── 📖 PROJECT_TREE.txt              # This file
+
+Legend:
+⭐ = Start here
+⚙️ = Configuration file
+📁 = Directory
+📄 = File
+📖 = Documentation
+
+Key Files to Know:
+==================
+
+1. start_bot.py
+   - Quick start script
+   - Run this to start the bot
+   - Command: python start_bot.py
+
+2. bot/bot.py
+   - Main bot application
+   - Registers all handlers
+   - Entry point for bot
+
+3. bot/handlers/
+   - user_handlers.py: Registration, rules, support
+   - wallet_handlers.py: Balance, deposits, withdrawals
+   - game_handlers.py: Game logic, card selection
+
+4. */models.py
+   - Database schema definitions
+   - User, Wallet, Game, BingoCard, Transaction
+
+5. */admin.py
+   - Django admin interface
+   - Manage users, approve transactions
+
+6. .env
+   - Configuration (BOT_TOKEN, etc.)
+   - MUST be configured before running
+
+7. requirements.txt
+   - Python package dependencies
+   - Install with: pip install -r requirements.txt
+
+Database Tables:
+================
+
+users           - User profiles
+wallets         - User balances (main + bonus)
+transactions    - All financial transactions
+deposits        - Deposit details & proofs
+withdrawals     - Withdrawal requests
+games           - Game instances & state
+bingo_cards     - Player cards & grids
+
+Quick Commands:
+===============
+
+# Start bot
+python start_bot.py
+
+# Django admin
+python manage.py createsuperuser
+python manage.py runserver
+
+# Database
+python manage.py makemigrations
+python manage.py migrate
+
+# Install dependencies
+pip install -r requirements.txt
+
+Documentation Guide:
+====================
+
+New to project?
+→ Start with QUICK_START.md
+
+Want to understand architecture?
+→ Read SETUP_GUIDE.md
+
+Want to continue development?
+→ Check PROJECT_STATUS.md
+
+Need project overview?
+→ See README.md
+
+Current Status:
+===============
+
+✅ 60% Complete
+✅ Core features working
+❌ Game automation needed
+❌ Real-time updates needed
+
+Next Steps:
+===========
+
+1. Get bot token from @BotFather
+2. Update .env with token
+3. Run: python start_bot.py
+4. Test basic features
+5. Implement game automation
+
+Happy Coding! 🎉

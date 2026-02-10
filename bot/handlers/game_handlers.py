@@ -1,0 +1,358 @@
+from aiogram import Router, F
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+from django.conf import settings
+from django.utils import timezone
+from asgiref.sync import sync_to_async
+
+from users.models import User
+from game.models import Game, BingoCard
+from wallet.models import Transaction
+from bot.keyboards import main_menu_keyboard, card_selection_keyboard, bingo_button_keyboard
+from bot.utils.game_logic import generate_bingo_grid, check_bingo_win
+
+router = Router()
+
+
+@sync_to_async
+def get_user_with_wallet(telegram_id):
+    try:
+        user = User.objects.select_related('wallet').get(telegram_id=telegram_id)
+        return user
+    except User.DoesNotExist:
+        return None
+
+
+@sync_to_async
+def get_or_create_active_game():
+    """Get active game or create new one"""
+    game = Game.objects.filter(state__in=['waiting', 'playing']).first()
+    if not game:
+        game = Game.objects.create(state='waiting')
+    return game
+
+
+@sync_to_async
+def get_game_cards(game):
+    """Get all cards for a game"""
+    return list(game.cards.select_related('user').all())
+
+
+@sync_to_async
+def get_user_card_in_game(game, user):
+    """Check if user has a card in this game"""
+    try:
+        return game.cards.get(user=user)
+    except BingoCard.DoesNotExist:
+        return None
+
+
+@sync_to_async
+def check_card_available(game, card_number):
+    """Check if card number is available"""
+    return not game.cards.filter(card_number=card_number).exists()
+
+
+@sync_to_async
+def create_bingo_card(game, user, card_number, grid):
+    """Create a bingo card"""
+    card = BingoCard.objects.create(
+        game=game,
+        user=user,
+        card_number=card_number
+    )
+    card.set_grid(grid)
+    card.save()
+    return card
+
+
+@sync_to_async
+def update_wallet_balance(wallet, amount):
+    """Deduct amount from wallet"""
+    if wallet.main_balance >= amount:
+        wallet.main_balance -= amount
+    else:
+        remaining = amount - wallet.main_balance
+        wallet.main_balance = 0
+        wallet.bonus_balance -= remaining
+    wallet.save()
+    return wallet
+
+
+@sync_to_async
+def create_game_transaction(user, amount, description):
+    """Create game entry transaction"""
+    return Transaction.objects.create(
+        user=user,
+        transaction_type='game_entry',
+        amount=amount,
+        status='approved',
+        description=description
+    )
+
+
+@sync_to_async
+def get_game_with_cards(game_id):
+    """Get game with all its cards"""
+    try:
+        return Game.objects.prefetch_related('cards__user').get(id=game_id)
+    except Game.DoesNotExist:
+        return None
+
+
+@sync_to_async
+def mark_winner_and_distribute_prize(game, user_card):
+    """Mark winner and distribute prize"""
+    # Mark card as winner
+    user_card.is_winner = True
+    user_card.save()
+    
+    # Calculate prize
+    total_cards = game.cards.count()
+    prize = total_cards * settings.CARD_PRICE
+    
+    # Update game
+    game.prize_amount = prize
+    game.winner = user_card.user
+    game.state = 'finished'
+    game.finished_at = timezone.now()
+    game.save()
+    
+    # Credit prize to user's main balance
+    wallet = user_card.user.wallet
+    wallet.main_balance += prize
+    wallet.save()
+    
+    # Log transaction
+    Transaction.objects.create(
+        user=user_card.user,
+        transaction_type='game_win',
+        amount=prize,
+        status='approved',
+        description=f'Won Game #{game.id}'
+    )
+    
+    return prize
+
+
+@router.message(F.text == "🎮 Play Bingo")
+async def play_bingo(message: Message):
+    """Send web app link to play bingo"""
+    user = await get_user_with_wallet(message.from_user.id)
+    
+    if not user:
+        await message.answer("❌ Please start the bot first with /start")
+        return
+    
+    wallet = user.wallet
+    
+    # Check balance
+    if wallet.total_balance < settings.CARD_PRICE:
+        await message.answer(
+            f"❌ <b>Insufficient Balance!</b>\n\n"
+            f"You need at least {settings.CARD_PRICE} Birr to play.\n"
+            f"Your balance: {wallet.total_balance} Birr\n\n"
+            f"Please deposit to continue.",
+            reply_markup=main_menu_keyboard()
+        )
+        return
+    
+    # Generate web app URL
+    web_url = f"http://localhost:8000/game/lobby/{user.telegram_id}/"
+    
+    game_text = (
+        f"<b>🎮 BINGO GAME</b>\n\n"
+        f"💰 Your Balance: {wallet.total_balance} Birr\n"
+        f"💵 Card Price: {settings.CARD_PRICE} Birr\n\n"
+        f"<b>📋 To play the game:</b>\n\n"
+        f"1️⃣ Copy this URL:\n"
+        f"<code>{web_url}</code>\n\n"
+        f"2️⃣ Paste it in your browser\n\n"
+        f"3️⃣ Select your card from 400 available cards!\n\n"
+        f"<i>💡 Tip: Long press the URL above to copy it</i>\n\n"
+        f"<i>Note: For production, we'll use a public domain that works with Telegram buttons</i>"
+    )
+    
+    await message.answer(game_text, reply_markup=main_menu_keyboard())
+
+
+@router.callback_query(F.data.startswith("cards_page:"))
+async def change_cards_page(callback: CallbackQuery):
+    """Handle card page navigation"""
+    try:
+        page = int(callback.data.split(":")[1])
+        user = await get_user_with_wallet(callback.from_user.id)
+        
+        if not user:
+            await callback.answer("❌ Please start the bot first!", show_alert=True)
+            return
+        
+        wallet = user.wallet
+        
+        # Get active game
+        game = await get_or_create_active_game()
+        
+        if game.state != 'waiting':
+            await callback.answer("❌ Game already started!", show_alert=True)
+            return
+        
+        # Get available cards
+        cards = await get_game_cards(game)
+        taken_cards = [card.card_number for card in cards]
+        available_cards = [i for i in range(1, 401) if i not in taken_cards]
+        
+        if not available_cards:
+            await callback.answer("❌ No cards available!", show_alert=True)
+            return
+        
+        game_text = (
+            f"<b>🎮 BINGO GAME #{game.id}</b>\n\n"
+            f"⏱ Status: WAITING\n"
+            f"👥 Players: {len(cards)}/400\n"
+            f"💰 Card Price: {settings.CARD_PRICE} Birr\n"
+            f"💵 Your Balance: {wallet.total_balance} Birr\n\n"
+            f"📋 Available Cards: {len(available_cards)}/400\n\n"
+            f"Select your card number (1-400):\n"
+            f"<i>Use Next/Previous to browse all cards</i>"
+        )
+        
+        # Show cards with pagination
+        keyboard = card_selection_keyboard(available_cards, page=page)
+        
+        await callback.message.edit_text(game_text, reply_markup=keyboard)
+        await callback.answer()
+        
+    except Exception as e:
+        await callback.answer(f"❌ Error: {str(e)}", show_alert=True)
+
+
+@router.callback_query(F.data == "page_info")
+async def page_info(callback: CallbackQuery):
+    """Handle page info button click"""
+    await callback.answer("Use Next/Previous buttons to browse cards", show_alert=False)
+
+
+@router.callback_query(F.data.startswith("select_card:"))
+async def select_card(callback: CallbackQuery):
+    """Handle card selection"""
+    try:
+        card_number = int(callback.data.split(":")[1])
+        user = await get_user_with_wallet(callback.from_user.id)
+        
+        if not user:
+            await callback.answer("❌ Please start the bot first!", show_alert=True)
+            return
+        
+        wallet = user.wallet
+        
+        # Get active game
+        game = await get_or_create_active_game()
+        
+        if game.state != 'waiting':
+            await callback.answer("❌ Game already started!", show_alert=True)
+            return
+        
+        # Check if card is available
+        is_available = await check_card_available(game, card_number)
+        if not is_available:
+            await callback.answer("❌ Card already taken!", show_alert=True)
+            return
+        
+        # Check if user already has a card
+        existing_card = await get_user_card_in_game(game, user)
+        if existing_card:
+            await callback.answer("❌ You already have a card!", show_alert=True)
+            return
+        
+        # Check balance
+        if wallet.total_balance < settings.CARD_PRICE:
+            await callback.answer("❌ Insufficient balance!", show_alert=True)
+            return
+        
+        # Deduct balance
+        await update_wallet_balance(wallet, settings.CARD_PRICE)
+        
+        # Log transaction
+        await create_game_transaction(
+            user, 
+            settings.CARD_PRICE, 
+            f'Game #{game.id} - Card #{card_number}'
+        )
+        
+        # Generate bingo grid
+        grid = generate_bingo_grid()
+        
+        # Create card
+        card = await create_bingo_card(game, user, card_number, grid)
+        
+        await callback.answer("✅ Card selected!", show_alert=True)
+        await show_waiting_screen(callback.message, game, card)
+        
+    except Exception as e:
+        await callback.answer(f"❌ Error: {str(e)}", show_alert=True)
+
+
+async def show_waiting_screen(message: Message, game, user_card):
+    """Show waiting screen with user's grid"""
+    grid = user_card.get_grid()
+    
+    # Format grid
+    grid_text = "YOUR BINGO CARD:\n\n"
+    grid_text += "  B   I   N   G   O\n"
+    for row in grid:
+        row_text = ""
+        for num in row:
+            if num is None:
+                row_text += " 🆓 "
+            else:
+                row_text += f"{num:3d}"
+        grid_text += row_text + "\n"
+    
+    cards = await get_game_cards(game)
+    
+    waiting_text = (
+        f"<b>🎮 GAME #{game.id} - WAITING</b>\n\n"
+        f"✅ Your Card: #{user_card.card_number}\n"
+        f"👥 Players: {len(cards)}/400\n"
+        f"⏱ Status: Waiting for more players...\n\n"
+        f"<pre>{grid_text}</pre>\n"
+        f"<i>Game will start automatically when ready.\n"
+        f"(Auto-start feature coming soon!)</i>"
+    )
+    
+    await message.answer(waiting_text, reply_markup=main_menu_keyboard())
+
+
+async def show_playing_screen(message: Message, game, user_card):
+    """Show playing screen (simplified for now)"""
+    grid = user_card.get_grid()
+    
+    # Format grid
+    grid_text = "YOUR BINGO CARD:\n\n"
+    grid_text += "  B   I   N   G   O\n"
+    for row in grid:
+        row_text = ""
+        for num in row:
+            if num is None:
+                row_text += " 🆓 "
+            else:
+                row_text += f"{num:3d}"
+        grid_text += row_text + "\n"
+    
+    playing_text = (
+        f"<b>🎮 GAME #{game.id} - PLAYING</b>\n\n"
+        f"<pre>{grid_text}</pre>\n"
+        f"<i>Number calling feature coming soon!\n"
+        f"Full game automation in development.</i>"
+    )
+    
+    await message.answer(playing_text, reply_markup=bingo_button_keyboard())
+
+
+@router.callback_query(F.data == "claim_bingo")
+async def claim_bingo(callback: CallbackQuery):
+    """Handle BINGO claim (simplified for now)"""
+    await callback.answer(
+        "🎯 BINGO validation coming soon!\n"
+        "Full game automation in development.",
+        show_alert=True
+    )

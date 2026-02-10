@@ -1,0 +1,203 @@
+{% extends 'game/base.html' %}
+
+{% block title %}Waiting - Game #{{ game.id }}{% endblock %}
+
+{% block extra_style %}
+<style>
+    .top-bar {
+        display: flex;
+        flex-direction: row;
+        justify-content: space-around;
+        align-items: center;
+        gap: 40px;
+        margin-bottom: 30px;
+        background: white;
+        padding: 25px 50px;
+        border-radius: 15px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    }
+    
+    .top-card {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        text-align: center;
+        min-width: 120px;
+    }
+    
+    .top-card h3 {
+        font-size: 1em;
+        color: #666;
+        margin-bottom: 10px;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+    
+    .top-card .value {
+        font-size: 2em;
+        font-weight: bold;
+        color: #333;
+        white-space: nowrap;
+    }
+    
+    .numbers-grid {
+        background: linear-gradient(135deg, #e0c3fc 0%, #8ec5fc 100%);
+        padding: 30px;
+        border-radius: 20px;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    }
+    
+    .grid-container {
+        display: grid;
+        grid-template-columns: repeat(20, 1fr);
+        gap: 8px;
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+    
+    .number-cell {
+        aspect-ratio: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.9em;
+        font-weight: bold;
+        background: rgba(255, 255, 255, 0.7);
+        border-radius: 8px;
+        color: #333;
+        transition: all 0.3s;
+    }
+    
+    .number-cell.highlighted {
+        background: #ff9800;
+        color: white;
+        box-shadow: 0 4px 15px rgba(255, 152, 0, 0.4);
+        transform: scale(1.05);
+    }
+    
+    .number-cell.my-card {
+        background: #4caf50;
+        color: white;
+        box-shadow: 0 4px 15px rgba(76, 175, 80, 0.4);
+        transform: scale(1.1);
+        border: 3px solid #2e7d32;
+    }
+    
+    .waiting-message {
+        text-align: center;
+        margin-top: 30px;
+        padding: 20px;
+        background: white;
+        border-radius: 15px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    }
+    
+    .waiting-message h2 {
+        color: #667eea;
+        margin-bottom: 10px;
+    }
+    
+    .waiting-message p {
+        color: #666;
+        font-size: 1.1em;
+    }
+    
+    @media (max-width: 768px) {
+        .top-bar {
+            flex-direction: column;
+            padding: 15px;
+            gap: 10px;
+        }
+        
+        .top-card {
+            padding: 8px 15px;
+        }
+        
+        .grid-container {
+            grid-template-columns: repeat(10, 1fr);
+            gap: 6px;
+        }
+        
+        .number-cell {
+            font-size: 0.8em;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="text-align: center; margin-bottom: 20px;">
+    <div style="font-size: 4em; font-weight: bold; color: #667eea; text-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);" id="countdown">
+        {{ countdown }}
+    </div>
+</div>
+
+<div class="top-bar">
+    <div class="top-card">
+        <h3>Wallet</h3>
+        <div class="value">{{ wallet_balance }}</div>
+    </div>
+    
+    <div style="width: 2px; height: 50px; background: #e0e0e0;"></div>
+    
+    <div class="top-card">
+        <h3>Stake</h3>
+        <div class="value">{{ stake }}</div>
+    </div>
+    
+    <div style="width: 2px; height: 50px; background: #e0e0e0;"></div>
+    
+    <div class="top-card">
+        <h3>Game N°</h3>
+        <div class="value">{{ game.id }} of {{ total_games }}</div>
+    </div>
+</div>
+
+<div class="numbers-grid">
+    <div class="grid-container">
+        {% for num in all_numbers %}
+        <div class="number-cell {% if num == my_card_number %}my-card{% elif num in taken_cards %}highlighted{% endif %}">
+            {{ num }}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="waiting-message">
+    <h2>⏳ Waiting for Game to Start</h2>
+    <p>Game will start when countdown reaches 0</p>
+    <p><strong>Your Card:</strong> <span style="color: #4caf50; font-weight: bold;">{{ my_card_number }}</span></p>
+    <p><strong>Players:</strong> {{ total_players }}/400</p>
+    <p><strong>Available Cards:</strong> {{ available_cards }}/400</p>
+</div>
+{% endblock %}
+
+{% block extra_script %}
+<script>
+    let countdown = {{ countdown }};
+    const gameId = {{ game.id }};
+    
+    // Countdown timer
+    const countdownInterval = setInterval(() => {
+        countdown--;
+        document.getElementById('countdown').textContent = countdown;
+        
+        if (countdown <= 0) {
+            clearInterval(countdownInterval);
+            // Reload page to show playing screen
+            location.reload();
+        }
+    }, 1000);
+    
+    // Check game status every 3 seconds
+    setInterval(() => {
+        fetch(`/game/api/game-status/${gameId}/`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.state !== 'waiting') {
+                    location.reload();
+                }
+            });
+    }, 3000);
+</script>
+{% endblock %}
