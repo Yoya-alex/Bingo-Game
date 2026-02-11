@@ -11,7 +11,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'bingo_project.settings')
 django.setup()
 
 from aiogram import Bot, Dispatcher
-from aiogram.client.default import DefaultBotProperties
+from aiogram.client.default import DefaultBotProperties   # pyright: ignore[reportMissingImports]
 from aiogram.enums import ParseMode
 from dotenv import load_dotenv
 

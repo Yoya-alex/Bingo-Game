@@ -1,0 +1,202 @@
+{% extends 'game/base.html' %} {% block title %}Bingo Lobby - Game #{{ game.id
+}}{% endblock %} {% block header_extra %}
+<p style="color: #666; font-size: 1.1em">
+  Game #{{ game.id }} - Select Your Card
+</p>
+{% endblock %} {% block extra_style %}
+<style>
+  .top-bar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 15px;
+    margin-bottom: 25px;
+    background: #f8f9fa;
+    padding: 20px;
+    border-radius: 12px;
+  }
+
+  .top-item {
+    text-align: center;
+  }
+
+  .top-item h4 {
+    color: #666;
+    font-size: 0.9em;
+    margin-bottom: 6px;
+  }
+
+  .top-item p {
+    font-size: 1.4em;
+    font-weight: bold;
+    color: #667eea;
+  }
+
+  .cards-grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 10px;
+    margin-top: 20px;
+  }
+
+  .card-number {
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    border-radius: 10px;
+    border: 2px solid #667eea;
+    background: white;
+    color: #333;
+    cursor: pointer;
+    transition: all 0.2s;
+    user-select: none;
+  }
+
+  .card-number.available:hover {
+    transform: scale(1.05);
+    box-shadow: 0 8px 20px rgba(102, 126, 234, 0.2);
+  }
+
+  .card-number.taken {
+    background: #ff9800;
+    border-color: #ff9800;
+    color: white;
+    cursor: not-allowed;
+  }
+
+  .helper-text {
+    text-align: center;
+    margin-top: 15px;
+    color: #666;
+  }
+
+  @media (max-width: 768px) {
+    .cards-grid {
+      grid-template-columns: repeat(6, 1fr);
+    }
+  }
+
+  @media (max-width: 480px) {
+    .cards-grid {
+      grid-template-columns: repeat(5, 1fr);
+    }
+  }
+</style>
+{% endblock %} {% block content %}
+<div class="user-info">
+  <div>
+    <strong>👤 {{ user.first_name }}</strong>
+    <span style="color: #666; margin-left: 10px"
+      >Telegram ID: {{ user.telegram_id }}</span
+    >
+  </div>
+  <div class="balance">💰 {{ wallet_balance }} Birr</div>
+</div>
+
+<div class="top-bar">
+  <div class="top-item">
+    <h4>⏱ COUNTDOWN</h4>
+    <p id="countdown">{{ countdown }}</p>
+  </div>
+  <div class="top-item">
+    <h4>🎫 STAKE</h4>
+    <p>{{ stake }} Birr</p>
+  </div>
+  <div class="top-item">
+    <h4>👥 PLAYERS</h4>
+    <p id="playerCount">{{ total_players }}</p>
+  </div>
+  <div class="top-item">
+    <h4>🧩 AVAILABLE</h4>
+    <p id="availableCount">{{ available_cards }}</p>
+  </div>
+</div>
+
+<div class="cards-grid" id="cardsGrid">
+  {% for num in all_numbers %} {% if num in taken_cards %}
+  <div class="card-number taken" title="Taken">{{ num }}</div>
+  {% else %}
+  <div
+    class="card-number available"
+    data-number="{{ num }}"
+    title="Select card">
+    {{ num }}
+  </div>
+  {% endif %} {% endfor %}
+</div>
+
+<div class="helper-text">
+  Orange cards are taken. Click any available card to join.
+</div>
+{% endblock %} {% block extra_script %}
+<script>
+  const telegramId = "{{ user.telegram_id }}";
+  const gameId = "{{ game.id }}";
+
+  function selectCard(cardNumber) {
+    if (!confirm(`Select card #${cardNumber}?`)) {
+      return;
+    }
+
+    fetch("/game/api/select-card/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        telegram_id: telegramId,
+        card_number: cardNumber,
+      }),
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        if (data.success) {
+          window.location.href = data.redirect_url;
+        } else {
+          alert(data.error || "Unable to select card.");
+          window.location.reload();
+        }
+      })
+      .catch(() => {
+        alert("Network error. Please try again.");
+      });
+  }
+
+  document.querySelectorAll(".card-number.available").forEach((card) => {
+    card.addEventListener("click", () => {
+      const cardNumber = parseInt(card.getAttribute("data-number"), 10);
+      selectCard(cardNumber);
+    });
+  });
+
+  let countdownValue = Number("{{ countdown }}");
+  setInterval(() => {
+    countdownValue = Math.max(0, countdownValue - 1);
+    const countdownEl = document.getElementById("countdown");
+    if (countdownEl) {
+      countdownEl.textContent = countdownValue;
+    }
+  }, 1000);
+
+  setInterval(() => {
+    fetch(`/game/api/game-status/${gameId}/`)
+      .then((response) => response.json())
+      .then((data) => {
+        if (typeof data.total_players === "number") {
+          const playerCount = document.getElementById("playerCount");
+          if (playerCount) {
+            playerCount.textContent = data.total_players;
+          }
+        }
+        if (typeof data.countdown === "number") {
+          const countdownEl = document.getElementById("countdown");
+          if (countdownEl) {
+            countdownEl.textContent = data.countdown;
+            countdownValue = data.countdown;
+          }
+        }
+      });
+  }, 3000);
+</script>
+{% endblock %}

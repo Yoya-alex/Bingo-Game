@@ -31,14 +31,24 @@ def game_lobby(request, telegram_id):
     # Get taken cards (1-80)
     taken_cards = list(game.cards.values_list('card_number', flat=True))
     
+    time_elapsed = (timezone.now() - game.created_at).total_seconds()
+    countdown = max(0, int(settings.WAITING_TIME - time_elapsed))
+    all_numbers = list(range(1, 81))
+    total_players = game.cards.count()
+
     context = {
         'user': user,
         'game': game,
         'wallet': user.wallet,
+        'wallet_balance': user.wallet.total_balance,
         'taken_cards': taken_cards,
         'card_price': settings.CARD_PRICE,
-        'total_players': game.cards.count(),
+        'countdown': countdown,
+        'all_numbers': all_numbers,
+        'total_players': total_players,
         'total_games': Game.objects.count(),
+        'available_cards': 80 - len(taken_cards),
+        'stake': settings.CARD_PRICE,
     }
     
     return render(request, 'game/lobby.html', context)
