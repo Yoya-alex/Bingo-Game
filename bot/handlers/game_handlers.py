@@ -102,9 +102,10 @@ def get_game_with_cards(game_id):
 @sync_to_async
 def mark_winner_and_distribute_prize(game, user_card):
     """Mark winner and distribute prize"""
-    # Mark card as winner
-    user_card.is_winner = True
-    user_card.save()
+    # Auto-transition to playing if still waiting
+    if game.state == 'waiting':
+        game.state = 'playing'
+        game.started_at = timezone.now()
     
     # Calculate prize
     total_cards = game.cards.count()
@@ -116,6 +117,10 @@ def mark_winner_and_distribute_prize(game, user_card):
     game.state = 'finished'
     game.finished_at = timezone.now()
     game.save()
+    
+    # Mark card as winner
+    user_card.is_winner = True
+    user_card.save()
     
     # Credit prize to user's main balance
     wallet = user_card.user.wallet
@@ -350,9 +355,54 @@ async def show_playing_screen(message: Message, game, user_card):
 
 @router.callback_query(F.data == "claim_bingo")
 async def claim_bingo(callback: CallbackQuery):
-    """Handle BINGO claim (simplified for now)"""
-    await callback.answer(
-        "🎯 BINGO validation coming soon!\n"
-        "Full game automation in development.",
-        show_alert=True
-    )
+    """Handle BINGO claim"""
+    try:
+        user = await get_user_with_wallet(callback.from_user.id)
+        if not user:
+            await callback.answer("❌ User not found!", show_alert=True)
+            return
+        
+        # Get user's active card
+        game = await sync_to_async(Game.objects.filter(state__in=['waiting', 'playing']).first)()
+        if not game:
+            await callback.answer("❌ No active game!", show_alert=True)
+            return
+        
+        user_card = await get_user_card_in_game(game, user)
+        if not user_card:
+            await callback.answer("❌ You don't have a card in this game!", show_alert=True)
+            return
+        
+        # Validate BINGO
+        grid = user_card.get_grid()
+        called_numbers = game.get_called_numbers()
+        is_winner, pattern = check_bingo_win(grid, called_numbers)
+        
+        if is_winner:
+            # Process win
+            prize = await mark_winner_and_distribute_prize(game, user_card)
+            
+            await callback.answer(
+                f"🎉 BINGO! You won {prize} Birr!\n"
+                f"Pattern: {pattern}",
+                show_alert=True
+            )
+            
+            # Show win message
+            await callback.message.answer(
+                f"<b>🏆 CONGRATULATIONS! 🏆</b>\n\n"
+                f"You won Game #{game.id}!\n"
+                f"Pattern: {pattern}\n"
+                f"Prize: {prize} Birr\n\n"
+                f"💰 Your new balance: {user.wallet.total_balance} Birr",
+                reply_markup=main_menu_keyboard()
+            )
+        else:
+            await callback.answer(
+                "❌ Not a valid BINGO yet!\n"
+                "Keep playing and wait for more numbers.",
+                show_alert=True
+            )
+    
+    except Exception as e:
+        await callback.answer(f"❌ Error: {str(e)}", show_alert=True)

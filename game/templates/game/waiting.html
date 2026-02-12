@@ -4,42 +4,6 @@
 
 {% block extra_style %}
 <style>
-    .top-bar {
-        display: flex;
-        flex-direction: row;
-        justify-content: space-around;
-        align-items: center;
-        gap: 40px;
-        margin-bottom: 30px;
-        background: white;
-        padding: 25px 50px;
-        border-radius: 15px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-    }
-    
-    .top-card {
-        display: flex;
-        flex-direction: row;
-        align-items: center;
-        text-align: center;
-        min-width: 120px;
-    }
-    
-    .top-card h3 {
-        font-size: 1em;
-        color: #666;
-        margin-bottom: 10px;
-        font-weight: 600;
-        white-space: nowrap;
-    }
-    
-    .top-card .value {
-        font-size: 2em;
-        font-weight: bold;
-        color: #333;
-        white-space: nowrap;
-    }
-    
     .numbers-grid {
         background: linear-gradient(135deg, #e0c3fc 0%, #8ec5fc 100%);
         padding: 30px;
@@ -92,27 +56,13 @@
         box-shadow: 0 4px 15px rgba(0,0,0,0.1);
     }
     
-    .waiting-message h2 {
-        color: #667eea;
-        margin-bottom: 10px;
-    }
-    
     .waiting-message p {
         color: #666;
         font-size: 1.1em;
+        margin: 10px 0;
     }
     
     @media (max-width: 768px) {
-        .top-bar {
-            flex-direction: column;
-            padding: 15px;
-            gap: 10px;
-        }
-        
-        .top-card {
-            padding: 8px 15px;
-        }
-        
         .grid-container {
             grid-template-columns: repeat(10, 1fr);
             gap: 6px;
@@ -126,30 +76,21 @@
 {% endblock %}
 
 {% block content %}
-<div style="text-align: center; margin-bottom: 20px;">
-    <div style="font-size: 4em; font-weight: bold; color: #667eea; text-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);" id="countdown">
-        {{ countdown }}
-    </div>
+<div style="text-align: center; margin-bottom: 30px;">
+    <h1 style="font-size: 2.5em; color: #667eea; margin-bottom: 10px;">
+        Welcome to Ethio Bingo
+    </h1>
+    <p style="font-size: 1.3em; color: #666;">
+        Select Your Bingo Card
+    </p>
 </div>
 
-<div class="top-bar">
-    <div class="top-card">
-        <h3>Wallet</h3>
-        <div class="value">{{ wallet_balance }}</div>
-    </div>
-    
-    <div style="width: 2px; height: 50px; background: #e0e0e0;"></div>
-    
-    <div class="top-card">
-        <h3>Stake</h3>
-        <div class="value">{{ stake }}</div>
-    </div>
-    
-    <div style="width: 2px; height: 50px; background: #e0e0e0;"></div>
-    
-    <div class="top-card">
-        <h3>Game N°</h3>
-        <div class="value">{{ game.id }} of {{ total_games }}</div>
+<div style="text-align: center; margin-bottom: 30px;">
+    <div style="display: inline-block; background: white; padding: 20px 40px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);">
+        <div style="font-size: 1em; color: #666; margin-bottom: 5px;">Countdown</div>
+        <div style="font-size: 3em; font-weight: bold; color: #667eea;" id="countdownDisplay">
+            {{ countdown }}
+        </div>
     </div>
 </div>
 
@@ -164,8 +105,6 @@
 </div>
 
 <div class="waiting-message">
-    <h2>⏳ Waiting for Game to Start</h2>
-    <p>Game will start when countdown reaches 0</p>
     <p><strong>Your Card:</strong> <span style="color: #4caf50; font-weight: bold;">{{ my_card_number }}</span></p>
     <p><strong>Players:</strong> {{ total_players }}/400</p>
     <p><strong>Available Cards:</strong> {{ available_cards }}/400</p>
@@ -174,29 +113,31 @@
 
 {% block extra_script %}
 <script>
-    let countdown = {{ countdown }};
+    let countdownValue = {{ countdown }};
     const gameId = {{ game.id }};
     
     // Countdown timer
-    const countdownInterval = setInterval(() => {
-        countdown--;
-        document.getElementById('countdown').textContent = countdown;
+    const countdownInterval = setInterval(function() {
+        countdownValue--;
+        document.getElementById('countdownDisplay').textContent = countdownValue;
         
-        if (countdown <= 0) {
+        if (countdownValue <= 0) {
             clearInterval(countdownInterval);
-            // Reload page to show playing screen
             location.reload();
         }
     }, 1000);
     
     // Check game status every 3 seconds
-    setInterval(() => {
-        fetch(`/game/api/game-status/${gameId}/`)
-            .then(response => response.json())
-            .then(data => {
+    setInterval(function() {
+        fetch('/game/api/game-status/' + gameId + '/')
+            .then(function(response) { return response.json(); })
+            .then(function(data) {
                 if (data.state !== 'waiting') {
                     location.reload();
                 }
+            })
+            .catch(function(error) {
+                console.log('Error checking game status:', error);
             });
     }, 3000);
 </script>

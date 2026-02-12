@@ -187,8 +187,18 @@ def claim_bingo_api(request):
         game = get_object_or_404(Game, id=game_id)
         card = get_object_or_404(BingoCard, game=game, user=user)
         
-        # Check if game is still playing
-        if game.state != 'playing':
+        # Check if game is finished (already has a winner)
+        if game.state == 'finished':
+            return JsonResponse({'error': 'Game already finished'}, status=400)
+        
+        # Auto-transition to playing if still waiting and has players
+        if game.state == 'waiting' and game.cards.count() > 0:
+            game.state = 'playing'
+            game.started_at = timezone.now()
+            game.save()
+        
+        # Check if game is in a valid state for claiming
+        if game.state not in ['waiting', 'playing']:
             return JsonResponse({'error': 'Game is not active'}, status=400)
         
         # Validate BINGO
@@ -199,16 +209,20 @@ def claim_bingo_api(request):
         is_winner, pattern = check_bingo_win(grid, called_numbers)
         
         if is_winner:
-            # Mark as winner
-            game.state = 'finished'
-            game.finished_at = timezone.now()
-            game.winner = user
-            
             # Calculate prize
             total_players = game.cards.count()
             prize = total_players * settings.CARD_PRICE
+            
+            # Update game state
+            game.state = 'finished'
+            game.finished_at = timezone.now()
+            game.winner = user
             game.prize_amount = prize
             game.save()
+            
+            # Mark card as winner
+            card.is_winner = True
+            card.save()
             
             # Credit winner's wallet
             wallet = user.wallet
@@ -223,9 +237,6 @@ def claim_bingo_api(request):
                 status='approved',
                 description=f'Won Game #{game.id} - {pattern}'
             )
-            
-            card.is_winner = True
-            card.save()
             
             return JsonResponse({
                 'success': True,

@@ -1,0 +1,37 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Ethio Bingo Lobby</title>
+    <style>
+        body { background: linear-gradient(135deg, #d8b5ff 0%, #b8a5ff 100%); font-family: Arial; padding: 20px; }
+        .container { max-width: 900px; margin: 0 auto; }
+        .top-bar { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 15px; margin-bottom: 20px; }
+        .top-card { background: white; padding: 15px; border-radius: 15px; text-align: center; }
+        .top-card h3 { color: #9b59b6; margin: 0 0 8px 0; }
+        .top-card .value { font-size: 2em; font-weight: bold; color: #ff6b35; }
+        .cards-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 12px; background: #e8d5ff; padding: 25px; border-radius: 20px; }
+        .card-button { aspect-ratio: 1; border: none; background: white; border-radius: 12px; font-size: 1.3em; font-weight: bold; cursor: pointer; }
+        .card-button:hover:not(.taken) { background: #4caf50; color: white; }
+        .card-button.taken { background: #ff9800; color: white; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="top-bar">
+            <div class="top-card"><h3>Countdown</h3><div class="value" id="countdown">25</div></div>
+            <div class="top-card"><h3>Wallet</h3><div class="value">{{ wallet.total_balance|floatformat:0 }}</div></div>
+            <div class="top-card"><h3>Stake</h3><div class="value">{{ card_price }}</div></div>
+            <div class="top-card"><h3>Game</h3><div class="value">{{ game.id }}</div></div>
+        </div>
+        <div class="cards-grid">
+            {% for num in "12345678901234567890123456789012345678901234567890123456789012345678901234567890" %}
+            <button class="card-button {% if forloop.counter in taken_cards %}taken{% endif %}" {% if forloop.counter in taken_cards %}disabled{% endif %}>{{ forloop.counter }}</button>
+            {% endfor %}
+        </div>
+    </div>
+    <script>
+        setInterval(function(){ var c=parseInt(document.getElementById('countdown').textContent)-1; if(c<0)c=25; document.getElementById('countdown').textContent=c; }, 1000);
+    </script>
+</body>
+</html>
