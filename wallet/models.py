@@ -28,6 +28,7 @@ class Transaction(models.Model):
         ('game_entry', 'Game Entry'),
         ('game_win', 'Game Win'),
         ('bonus', 'Bonus'),
+        ('admin_adjustment', 'Admin Adjustment'),
     ]
     
     STATUS_CHOICES = [

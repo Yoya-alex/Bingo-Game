@@ -1,0 +1,788 @@
+### 1. Introduction
+
+**Purpose**  
+This document provides a comprehensive, system-level description of the Telegram Bingo Game project. It is intended for developers, maintainers, and technical stakeholders who need to understand how the system is designed, how it behaves, and how to extend, deploy, and operate it.
+
+**Scope**  
+The system is a real-time multiplayer Bingo game integrated with Telegram. It includes:
+
+- **Telegram bot** for user interaction (registration, wallet, game entry).
+- **Web interface** for viewing and selecting Bingo cards and playing the game.
+- **Game engine** for automating game lifecycle (creation, countdown, number calling, win validation, prize distribution).
+- **Wallet and transaction system** with admin-controlled deposits and withdrawals via Django admin.
+
+**Document Overview**  
+This document is structured according to the provided outline:
+
+1. Overall system description (concepts, environment, constraints).
+2. Functional and non-functional requirements.
+3. System architecture, including components and interactions.
+4. Database and API design.
+5. Technology stack, installation, UI behavior.
+6. Testing, deployment, maintenance, and appendices.
+
+---
+
+### 2. Overall System Description
+
+**Product Perspective**  
+The Bingo Game is a standalone web+bot application built on Django and Aiogram. It does not depend on external microservices; all business logic runs inside a single Django project and a Telegram bot process. The bot uses the Telegram Bot API, and the web portion serves HTML pages and JSON APIs.
+
+Key subsystems:
+
+- **Users subsystem** (`users` app): Manages players based on their Telegram IDs.
+- **Wallet subsystem** (`wallet` app): Tracks balances and all monetary transactions.
+- **Game subsystem** (`game` app): Manages game lifecycle, Bingo cards, and web UI.
+- **Bot subsystem** (`bot` package): Aiogram-based Telegram bot handling commands, menus, and game/wallet flows.
+
+**Product Functions**
+
+At a high level, the system provides:
+
+- **User registration & profile**
+  - Auto-registration when a user sends `/start` to the bot.
+  - Persistent user profile with Telegram metadata and flags (e.g., `is_admin`).
+
+- **Wallet & transactions**
+  - Dual-balance wallet: **main balance** (withdrawable) and **bonus balance** (play-only).
+  - Transaction logging for all financial events (deposit, withdrawal, game entry, game win, bonus).
+  - Deposit requests with photo proof, and approval via Django admin.
+  - Withdrawal requests with details (method and account info), and approval via Django admin.
+
+- **Bingo game**
+  - 400-card game model (1–400 card numbers).
+  - Game state machine: `no_game → waiting → playing → finished`.
+  - Web lobby with 400-card grid and card availability tracking.
+  - Card selection with automatic balance deduction and transaction logging.
+  - 5×5 Bingo grid generation with standard column ranges and FREE center.
+  - Win validation (horizontal, vertical, diagonal) and prize distribution.
+  - Web and (future) engine support for countdown, number calling, and automatic loops.
+
+- **Admin functionality**
+  - Django admin for users, wallets, transactions, games, and Bingo cards.
+  - Quick actions to modify balances, approve/reject deposits and withdrawals.
+  - Inspection of game state, winners, and player cards.
+
+**User Classes and Characteristics**
+
+- **Player (End User)**
+  - Interacts exclusively via Telegram (chat and inline keyboards) and the browser-based game UI.
+  - Non-technical; expects simple flows: deposit, play, withdraw.
+
+- **Administrator**
+  - Uses Django admin UI.
+  - Manages balances, approves deposits/withdrawals, monitors games.
+
+- **Developer / Maintainer**
+  - Uses this documentation and project files to extend features, fix bugs, or deploy.
+
+**Operating Environment**
+
+- **Runtime**
+  - Python 3.9+
+  - Django project using SQLite by default (production-ready for PostgreSQL).
+  - Aiogram 3.x for Telegram bot handling.
+  - Redis & Celery planned/used for automated game engine tasks.
+
+- **Execution processes**
+  - Django web server (`manage.py runserver` or equivalent WSGI/ASGI server in production).
+  - Telegram bot process (`start_bot.py`).
+  - Game engine management command (`manage.py run_game_engine`), optionally orchestrated via `start_game_system.py`.
+
+- **Clients**
+  - Telegram mobile/desktop clients.
+  - Browsers (mobile/desktop) for the game UI.
+
+**Design Constraints**
+
+- **Telegram Bot API constraints**
+  - Message length limits and update polling / webhook patterns.
+  - Users only identified reliably by `telegram_id`.
+
+- **Simplicity & Single DB**
+  - Single relational database (SQLite/PostgreSQL) with a small schema.
+  - JSON data stored in text fields for grids, called numbers, and marked positions to avoid complex relational modeling.
+
+- **Real-time limitations**
+  - True real-time is approximated with:
+    - Polling / refresh on web UI (e.g., auto-refresh every few seconds).
+    - Periodic background tasks for countdown and number calling.
+
+- **Game size constraints**
+  - Single game instance active at a time (by design).
+  - Maximum 400 cards per game, enforced by card numbering and uniqueness constraints.
+
+**Assumptions and Dependencies**
+
+- Each Telegram user has exactly one `User` record and one `Wallet`.
+- Only the admin approves deposits and withdrawals; there is no auto-payment integration.
+- Card price, welcome bonus, waiting time, and intervals are configurable via environment variables (`.env`) and Django settings.
+- For production:
+  - A robust database (e.g. PostgreSQL) and a message broker (Redis) are assumed.
+  - Publicly accessible domain for web-based game UI, suitable for Telegram deep links.
+
+---
+
+### 3. Functional Requirements
+
+**User Registration**
+
+- **FR-UR-1**: When a user sends `/start` to the bot:
+  - If they do not exist, create a `User` with `telegram_id`, `username`, `first_name`, and a `Wallet` with `main_balance=0`, `bonus_balance=WELCOME_BONUS`.
+  - If they already exist, do not duplicate. Show a welcome back message.
+
+- **FR-UR-2**: On registration, credit the configured welcome bonus to `bonus_balance` and log a `Transaction` of type `bonus`.
+
+- **FR-UR-3**: A user can be marked as admin (`is_admin`) to unlock admin-specific behaviors (e.g. later extensions or direct bot admin commands).
+
+**User Authentication**
+
+- **FR-UA-1**: Authentication is implicit via Telegram; the `telegram_id` is the primary identifier.
+- **FR-UA-2**: Web endpoints (`/game/lobby/{telegram_id}/`, `/game/play/{telegram_id}/{game_id}/`) trust `telegram_id` as the link identity.
+- **FR-UA-3**: The Django admin uses Django’s built-in username/password authentication and is independent of game `User` records.
+
+**Core System Features**
+
+- **Wallet & Balance Management**
+  - **FR-WAL-1**: Players can view:
+    - Main balance
+    - Bonus balance
+    - Total balance (sum).
+  - **FR-WAL-2**: When paying the card price:
+    - Deduct from `main_balance` first.
+    - If insufficient, use remaining from `bonus_balance`.
+  - **FR-WAL-3**: All monetary changes must have a corresponding `Transaction` record.
+
+- **Deposits**
+  - **FR-DEP-1**: Player can request deposit via bot (e.g. `➕ Deposit`).
+  - **FR-DEP-2**: Player can send a payment proof (photo) and method; create a `Transaction` of type `deposit` with `status=pending` and a `Deposit` detail record.
+  - **FR-DEP-3**: Admin can approve or reject deposits in Django admin; on approval main balance is credited.
+
+- **Withdrawals**
+  - **FR-WD-1**: Player can request withdrawal via bot (e.g. `➖ Withdraw`).
+  - **FR-WD-2**: System must validate that requested amount ≤ main balance and ≥ minimum withdrawal threshold.
+  - **FR-WD-3**: On a valid request, create a `Transaction` of type `withdrawal` with `status=pending` and a `Withdrawal` detail record.
+  - **FR-WD-4**: Admin approves withdrawals and processes payment manually; on approval, main balance is debited.
+
+- **Game Lobby & Card Selection**
+  - **FR-GAME-1**: Lobby (web) must:
+    - Display game status, player count, total games, and 400-card (or 80-card) panorama.
+    - Mark taken cards as unavailable (grayed/disabled).
+    - Show waiting countdown based on `WAITING_TIME`.
+  - **FR-GAME-2**: From Telegram, the `🎮 Play Bingo` button must:
+    - Verify sufficient total balance.
+    - Provide a URL or web-app button to open the lobby.
+  - **FR-GAME-3**: Card selection:
+    - Only allowed while game is in `waiting` state.
+    - User can select exactly one card per game.
+    - Card must be unique (`(game, card_number)` unique).
+    - On selection:
+      - Deduct card price from wallet (with priority rule).
+      - Log `Transaction` of type `game_entry`.
+      - Create `BingoCard` and generate a Bingo grid.
+
+- **Game Play & Win Validation**
+  - **FR-GAME-4**: For a given game and card:
+    - Show the 5×5 grid labeled with B I N G O headers.
+    - Show status, prize, total players, and any called numbers.
+  - **FR-GAME-5**: On BINGO claim:
+    - Confirm game is in `playing` state.
+    - Validate horizontal, vertical, and diagonal lines:
+      - All numbers in pattern must be in `called_numbers` (center can be FREE).
+    - If valid:
+      - Mark card as winner.
+      - Mark game `finished`, set `winner`, `finished_at`, and `prize_amount`.
+      - Credit main balance with prize and log a `game_win` transaction.
+
+**Admin Features**
+
+- **FR-ADM-1**: Admin can:
+  - View and search users, wallets, transactions, games, and Bingo cards.
+  - Approve/reject pending deposits and withdrawals.
+  - Quickly adjust balances using admin actions.
+  - Inspect past games, winners, and player cards.
+- **FR-ADM-2**: Admin balances changes and transaction approvals must update wallets atomically and consistently.
+
+**Use Case List**
+
+1. **UC-1: User Registration via `/start`**  
+2. **UC-2: View Balance**  
+3. **UC-3: Submit Deposit Proof**  
+4. **UC-4: Request Withdrawal**  
+5. **UC-5: Join a Game / Select Card**  
+6. **UC-6: View Bingo Grid**  
+7. **UC-7: Claim BINGO**  
+8. **UC-8: Admin Approves Deposit**  
+9. **UC-9: Admin Approves Withdrawal**  
+10. **UC-10: Admin Monitors Game State**  
+
+**Use Case Specifications**  
+
+- **UC-1: User Registration via `/start`**
+  - Actor: Player.
+  - Trigger: Sending `/start` to bot.
+  - Main Flow:
+    1. Bot checks if `User` exists.
+    2. If new, create `User` + `Wallet` + welcome bonus transaction.
+    3. Show welcome message and main menu.
+  - Postconditions: Player has an account and a wallet.
+
+- **UC-5: Join a Game / Select Card**
+  - Actor: Player.
+  - Trigger: Clicking `🎮 Play Bingo` in Telegram and following link to lobby.
+  - Main Flow:
+    1. Lobby verifies user exists and has sufficient balance.
+    2. Lobby displays active `waiting` game, card availability, countdown.
+    3. Player selects a card number.
+    4. API validates availability and balance, deducts card price, logs transaction, creates `BingoCard`.
+    5. Player is redirected to game play page with grid.
+
+- **UC-7: Claim BINGO**
+  - Actor: Player.
+  - Trigger: Pressing BINGO in web UI / API call.
+  - Main Flow:
+    1. API checks game state is `playing`.
+    2. Loads user’s grid and `called_numbers`.
+    3. Runs win validation.
+    4. On success, marks game finished, credits wallet, logs transaction, marks card as winner.
+    5. Responds with success/prize details.
+
+---
+
+### 4. Non-Functional Requirements
+
+**Performance Requirements**
+
+- The system must support:
+  - Several hundred users in the database.
+  - Up to 400 active players in a single game.
+- Web endpoints should respond within a reasonable time (e.g., < 500 ms for typical views under normal load).
+- Background tasks (countdown and number calling) should run at intervals defined by `WAITING_TIME` and `NUMBER_CALL_INTERVAL` and not drift excessively.
+
+**Security Requirements**
+
+- User identification strictly via `telegram_id`; prevent duplicate accounts for the same Telegram ID.
+- Deposits and withdrawals must be **admin-approved**; no direct, unverified balance changes.
+- No exposure of raw admin URLs or Django admin credentials through the bot.
+- Configuration secrets (bot token, DB credentials) must be kept in `.env` and not committed to version control.
+
+**Usability Requirements**
+
+- Bot messages must be simple, short, and contain clear instructions and keyboard buttons.
+- Web UI must be responsive, mobile-friendly, and visually clear:
+  - 400-card lobby grid.
+  - Readable Bingo grid with clear FREE cell.
+- Error messages should be user-friendly and indicate actions to fix issues (insufficient balance, user not found, etc.).
+
+**Reliability Requirements**
+
+- All monetary operations must be durable and logged in `Transaction`.
+- Errors in one subsystem (e.g. broadcast failure) must not corrupt balances or game state.
+- Game state transitions (`waiting → playing → finished`) must be consistent and robust against restarts of the engine process.
+
+**Scalability Requirements**
+
+- Database schema must handle:
+  - Growth in users, games, and transactions.
+  - Migration to a more scalable DB engine (PostgreSQL) with minimal changes.
+- Background processing should scale by running multiple worker processes for game engines and tasks.
+
+**Maintainability Requirements**
+
+- Clear modular separation: `users`, `wallet`, `game`, and `bot` packages.
+- Configuration (prices, timeouts) centralized in Django settings / `.env`.
+- Existing documentation (`START_HERE`, `SYSTEM_FLOW`, `IMPLEMENTATION_SUMMARY`, etc.) must remain aligned with code.
+
+---
+
+### 5. System Architecture Design
+
+**Architectural Overview**
+
+High-level components:
+
+- **Telegram Bot (Aiogram)**
+  - Commands and handlers for registration, wallet, game, and support.
+  - Interacts with Django ORM via `asgiref.sync.sync_to_async`.
+
+- **Django Web Server**
+  - Hosts web-based game UI and JSON APIs.
+  - Manages DB models, admin, and settings.
+
+- **Game Engine**
+  - Management command and/or background tasks that:
+    - Create games.
+    - Enforce waiting countdown.
+    - Call numbers at fixed intervals.
+    - Update game state.
+
+- **Database**
+  - Central persistence for users, wallets, transactions, games, and cards.
+
+**High-Level Architecture Diagram** (described)
+
+- Users interact with **Telegram Bot**.
+- Bot calls into **Django ORM** to read/update data.
+- Web browsers load pages (lobby, play), calling **Django Views and APIs**.
+- **Game Engine** runs as a background process/command, periodically updating `Game` and `BingoCard` records.
+- All data flows through a single **Database**.
+
+**Component Diagram**
+
+- **Bot Component**
+  - `bot/bot.py` (bot setup, dispatcher).
+  - `bot/handlers/user_handlers.py`, `wallet_handlers.py`, `game_handlers.py`.
+  - `bot/keyboards.py`.
+  - `bot/utils/db_helpers.py`, `bot/utils/game_logic.py`.
+
+- **Web/Game Component**
+  - `game/models.py` (Game, BingoCard).
+  - `game/views.py` (lobby, play, APIs).
+  - `game/urls.py` (routes).
+  - `game/templates/game/*.html` (base, lobby, play, waiting, error).
+
+- **User Component**
+  - `users/models.py` (User).
+  - `users/admin.py`.
+
+- **Wallet Component**
+  - `wallet/models.py` (Wallet, Transaction, Deposit, Withdrawal).
+  - `wallet/admin.py`.
+
+- **Core Django Project**
+  - `bingo_project/settings.py`, `urls.py`, `wsgi.py`, `asgi.py`.
+
+**Data Flow Diagram** (summary)
+
+- **Registration Flow**:
+  - Telegram → Bot → `users.User` + `wallet.Wallet` + `wallet.Transaction(bonus)`.
+
+- **Deposit Flow**:
+  - Telegram → Bot → `wallet.Transaction(deposit)` + `wallet.Deposit` → Admin → Wallet updated.
+
+- **Game Join Flow**:
+  - Telegram → Bot → Web URL → Browser → `/game/lobby/{telegram_id}/` → `select-card` API → `game.BingoCard` + `wallet.Transaction(game_entry)`.
+
+- **Win Claim Flow**:
+  - Browser → `/game/api/claim-bingo/` → `game_logic.check_bingo_win` → `game.Game` + `game.BingoCard` + `wallet.Wallet` + `wallet.Transaction(game_win)`.
+
+**Sequence Diagrams** (summary)
+
+- **Join Game Sequence**
+  1. Player clicks `🎮 Play Bingo` in Telegram.
+  2. Bot validates wallet; returns lobby URL.
+  3. Browser requests lobby; server returns HTML with cards.
+  4. Player selects card; browser `POST /game/api/select-card/`.
+  5. Server validates, deducts balance, logs transaction, creates `BingoCard`, returns redirect URL.
+  6. Browser navigates to play page.
+
+- **Claim BINGO Sequence**
+  1. Player presses BINGO in browser.
+  2. Browser calls `POST /game/api/claim-bingo/`.
+  3. Server loads game and card, checks game state.
+  4. Calls `check_bingo_win`.
+  5. On win: update game, wallet, transactions, card; respond with prize.
+  6. (Future) Bot/broadcaster notifies all players.
+
+---
+
+### 6. Database Design
+
+**Database Overview**
+
+Primary tables:
+
+- `users` – Player identities.
+- `wallets` – Balances per user.
+- `transactions` – Ledger of all monetary events.
+- `deposits`, `withdrawals` – Deposit and withdrawal details.
+- `games` – Game-level state and called numbers.
+- `bingo_cards` – Per-player card instances with grids and markings.
+
+**Entity Relationship Diagram (ERD)** (textual)
+
+- `User` 1–1 `Wallet`
+- `User` 1–N `Transaction`
+- `User` 1–N `BingoCard`
+- `User` 1–N (as `winner`) `Game`
+- `Transaction` 1–1 `Deposit` (optional)
+- `Transaction` 1–1 `Withdrawal` (optional)
+- `Game` 1–N `BingoCard`
+
+**Tables and Attributes**
+
+- **User (`users`)**
+  - `id` (PK)
+  - `telegram_id` (unique, indexed)
+  - `username`, `first_name`
+  - `registration_date`
+  - `is_active`, `is_admin`
+
+- **Wallet (`wallets`)**
+  - `id` (PK)
+  - `user_id` (1–1 User)
+  - `main_balance` (Decimal)
+  - `bonus_balance` (Decimal)
+  - `created_at`, `updated_at`
+  - `total_balance` (computed property, not a column)
+
+- **Transaction (`transactions`)**
+  - `id` (PK)
+  - `user_id` (N–1 User)
+  - `transaction_type` (`deposit`, `withdrawal`, `game_entry`, `game_win`, `bonus`)
+  - `amount` (Decimal)
+  - `status` (`pending`, `approved`, `rejected`)
+  - `description` (Text)
+  - `created_at`, `processed_at`
+  - `processed_by` (User, optional) – admin responsible.
+
+- **Deposit (`deposits`)**
+  - `id` (PK)
+  - `transaction_id` (1–1 Transaction)
+  - `payment_proof` (photo/file identifier)
+  - `payment_method`
+
+- **Withdrawal (`withdrawals`)**
+  - `id` (PK)
+  - `transaction_id` (1–1 Transaction)
+  - `payment_method`
+  - `account_info` (destination details)
+
+- **Game (`games`)**
+  - `id` (PK)
+  - `state` (`no_game`, `waiting`, `playing`, `finished`)
+  - `created_at`, `started_at`, `finished_at`
+  - `winner_id` (User, nullable)
+  - `prize_amount` (Decimal)
+  - `called_numbers` (JSON stored as text)
+
+- **BingoCard (`bingo_cards`)**
+  - `id` (PK)
+  - `game_id` (N–1 Game)
+  - `user_id` (N–1 User)
+  - `card_number` (int; unique per game)
+  - `grid` (JSON stored as text; 5×5 matrix with `None` as FREE)
+  - `marked_positions` (JSON stored as text; indices/coordinates)
+  - `is_winner` (bool)
+  - `created_at`
+
+**Relationships and Constraints**
+
+- `Wallet.user` OneToOne – enforced at DB level.
+- `BingoCard.unique_together = ['game', 'card_number']` – no duplicate card numbers per game.
+- Foreign keys cascade or set null as needed (e.g. `winner` on `Game`).
+
+---
+
+### 7. API Design
+
+**API Overview**
+
+The project provides:
+
+- **Telegram Bot interaction** via Aiogram (no HTTP endpoints exposed to users).
+- **HTTP Web & JSON APIs** via Django views under `/game/`.
+
+**Authentication Endpoints**
+
+- No standalone login endpoints; authentication happens implicitly:
+  - Telegram-side: via bot user identity.
+  - Web-side: via `telegram_id` path parameters.
+
+**User Management Endpoints**
+
+- Managed internally via the bot and Django admin; no public REST user endpoints for CRUD.
+
+**Feature-Specific Endpoints**
+
+- **Game Lobby (Web)**
+  - `GET /game/lobby/{telegram_id}/`
+  - Purpose: Show game lobby with available cards and status.
+
+- **Game Play (Web)**
+  - `GET /game/play/{telegram_id}/{game_id}/`
+  - Purpose: Show player’s Bingo grid and game info.
+
+- **Select Card (API)**
+  - `POST /game/api/select-card/`
+  - Body: JSON `{ "telegram_id": int, "card_number": int }`
+  - Behavior: Validate, deduct balance, log transaction, create `BingoCard`; return redirect URL.
+
+- **Game Status (API)**
+  - `GET /game/api/game-status/{game_id}/`
+  - Return JSON game state, countdown, players, called numbers, prize, winner.
+
+- **Claim BINGO (API)**
+  - `POST /game/api/claim-bingo/`
+  - Body: JSON `{ "telegram_id": int, "game_id": int }`
+  - Behavior: Validate game is playing; run `check_bingo_win`; on success, mark winner and credit prize.
+
+**Error Handling**
+
+- HTTP APIs:
+  - Use meaningful HTTP status codes and JSON `error` messages.
+  - Catch broad exceptions as a last resort for development; in production, logging and safer error responses are recommended.
+- Bot handlers:
+  - Use friendly Telegram messages / alerts to communicate failures (insufficient balance, card taken, etc.).
+
+---
+
+### 8. Technology Stack
+
+**Frontend Technologies**
+
+- Django templates (`game/templates/game/*.html`) for lobby and play pages.
+- CSS for responsive layout and visual design (purple gradient, card styles).
+- JavaScript for polling status and interacting with `/game/api/*` endpoints.
+
+**Backend Technologies**
+
+- Django 5.x as web framework.
+- Aiogram 3.x as Telegram bot framework.
+- Python 3.9+.
+
+**Database Technologies**
+
+- SQLite for development.
+- PostgreSQL recommended for production environments.
+
+**Third-Party Services**
+
+- Telegram Bot API.
+- Redis (for Celery tasks and potential caching).
+- Ngrok (optional) for exposing local server for external testing.
+
+---
+
+### 9. Installation and Setup Guide
+
+**System Requirements**
+
+- Python 3.9+
+- pip
+- Git (optional)
+- (Dev) SQLite
+- (Prod) PostgreSQL and Redis
+
+**Environment Setup**
+
+1. Create virtual environment and install dependencies:
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. Create `.env` from `.env.example` and set:
+
+   ```env
+   BOT_TOKEN=your_telegram_bot_token
+   SECRET_KEY=your_django_secret
+   WELCOME_BONUS=10
+   CARD_PRICE=10
+   MIN_DEPOSIT=10
+   MIN_WITHDRAWAL=50
+   WAITING_TIME=25
+   NUMBER_CALL_INTERVAL=3
+   ADMIN_IDS=123456789
+   ```
+
+3. Run migrations:
+
+   ```bash
+   python manage.py migrate
+   ```
+
+**Installation Steps**
+
+- **All-in-One**:
+
+  ```bash
+  python start_game_system.py
+  ```
+
+- **Manual**:
+
+  ```bash
+  python manage.py runserver
+  python manage.py run_game_engine
+  python start_bot.py
+  ```
+
+**Configuration**
+
+- Game and wallet parameters in `bingo_project/settings.py`.
+- Web lobby URL base in `bot/handlers/game_handlers.py` (localhost, ngrok, or production domain).
+- `ALLOWED_HOSTS` must include your domain or ngrok host in production.
+
+---
+
+### 10. User Interface Design
+
+**Wireframes** (text)
+
+- **Bot Main Menu**:
+  - Buttons: `🎮 Play Bingo`, `💰 Balance`, `➕ Deposit`, `➖ Withdraw`, `📜 Rules`, `🆘 Support`.
+
+- **Lobby Page**:
+  - Header with Game ID, status, countdown, player count, card price, user balance.
+  - 20×20 grid of cards (1–400), with taken cards disabled/grey.
+
+- **Play Page**:
+  - Header with game status, card number, prize, player count.
+  - 5×5 Bingo grid with B I N G O headers, FREE center cell.
+  - Called numbers list and BINGO button.
+
+**UI Components**
+
+- Telegram reply and inline keyboards from `bot/keyboards.py`.
+- Django templates for `lobby.html`, `play.html`, and error states.
+
+**Navigation Flow**
+
+1. Player starts bot → sees main menu.
+2. Player chooses:
+   - Balance, Deposit, Withdraw, Rules, or Support.
+   - `🎮 Play Bingo` to receive web lobby URL.
+3. Player opens lobby in browser → selects card → redirected to play page.
+4. During game, player can monitor grid and (when fully implemented) claim BINGO.
+
+---
+
+### 11. Testing Documentation
+
+**Testing Strategy**
+
+- Manual end-to-end tests via Telegram and browser (as described in `TESTING_GUIDE.md`).
+- Scripted tests for game engine flow via `test_game_flow.py`.
+- Admin panel testing using Django admin.
+
+**Test Plan**
+
+- Validate:
+  - Registration & welcome bonus.
+  - Balance display and transaction logging.
+  - Deposit & withdrawal flows (bot + admin).
+  - Card selection and grid correctness.
+  - Win validation logic and prize distribution.
+- After game automation:
+  - Countdown behavior, number calling, win claims, and automatic new games.
+
+**Test Cases** (examples)
+
+- Register new user and verify 10 Birr bonus.
+- Perform a deposit and approve it via admin.
+- Attempt card selection with insufficient balance and expect error.
+- Select card and confirm wallet deduction and transaction record.
+- Simulate called numbers to test horizontal, vertical, and diagonal wins.
+
+**Bug Tracking**
+
+- Known issues and limitations recorded in:
+  - `TESTING_GUIDE.md`
+  - `PROJECT_STATUS.md`
+  - `TODO.md`
+
+---
+
+### 12. Deployment Guide
+
+**Deployment Architecture**
+
+- Web: Django app served via gunicorn/uvicorn + Nginx (or equivalent).
+- Bot: Aiogram process as a service/container.
+- Game Engine: Management command and/or Celery workers.
+- Database: PostgreSQL.
+- Cache/Queue: Redis.
+
+**Deployment Steps** (high-level)
+
+1. Provision server and install system dependencies.
+2. Clone project and create virtual environment.
+3. Install dependencies and configure `.env`.
+4. Run `python manage.py migrate` and create Django superuser.
+5. Configure WSGI/ASGI server and Nginx.
+6. Run bot and game engine as background services.
+7. Configure domain and TLS; update `ALLOWED_HOSTS` and web URL in `game_handlers.py`.
+
+**Environment Configuration**
+
+- Use production DB and Redis.
+- Disable `DEBUG`.
+- Set secure `SECRET_KEY` and environment variables.
+- Configure logging and monitoring.
+
+**Monitoring**
+
+- Monitor:
+  - Web server, bot, and engine process health.
+  - DB performance and disk usage.
+  - Application logs for errors and anomalies.
+
+---
+
+### 13. Maintenance and Support
+
+**Version Control Strategy**
+
+- Use git branches:
+  - `master/main` for stable releases.
+  - `feature/*` for new features (e.g., `feature/game-automation`).
+  - `bugfix/*` for fixes.
+
+**Update Procedures**
+
+1. Pull latest changes.
+2. Run migrations.
+3. Restart web, bot, and engine services.
+4. Run smoke tests (registration, balance, single game).
+
+**Known Issues**
+
+- Game automation (countdown, number calling, broadcasting, loop) is partially or not fully implemented depending on current code state.
+- No rate limiting or anti-fraud system is in place.
+- Scaling to large numbers of concurrent users may require additional performance tuning and infrastructure.
+
+---
+
+### 14. Appendices
+
+**Glossary**
+
+- **Telegram ID**: Unique numeric identifier for a Telegram user.
+- **Wallet**: Container for a user’s main and bonus balances.
+- **Main Balance**: Real money; can be withdrawn.
+- **Bonus Balance**: Promotional credit; used only to buy cards.
+- **Card Price**: Fixed cost to join a game (e.g., 10 Birr).
+- **Bingo Grid**: 5×5 matrix with B I N G O columns and defined number ranges.
+- **FREE Cell**: Center cell of the grid treated as automatically marked.
+- **Game States**:
+  - `no_game`: No active game.
+  - `waiting`: Accepting players; countdown running.
+  - `playing`: Numbers being called.
+  - `finished`: Winner decided; game ended.
+
+**Additional Diagrams**
+
+- Full ASCII flow diagrams are available in `SYSTEM_FLOW.md`.
+- Game engine lifecycle and architecture diagrams are in `GAME_ENGINE_GUIDE.md`.
+- Web UI diagrams and endpoints are described in `WEB_GAME_GUIDE.md`.
+
+**References**
+
+- Internal documentation:
+  - `START_HERE.md`
+  - `README.md`
+  - `SYSTEM_FLOW.md`
+  - `WEB_GAME_GUIDE.md`
+  - `GAME_ENGINE_GUIDE.md`
+  - `ADMIN_GUIDE.md`
+  - `TESTING_GUIDE.md`
+  - `IMPLEMENTATION_SUMMARY.md`
+  - `PROJECT_STATUS.md`
+  - `SETUP_GUIDE.md`
+- External:
+  - Django docs
+  - Aiogram docs
+  - Celery docs
+  - Redis docs
+

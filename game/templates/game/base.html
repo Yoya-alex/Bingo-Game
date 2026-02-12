@@ -1,74 +1,369 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{% block title %}Bingo Game{% endblock %}</title>
+    <link rel="icon" href="/favicon.ico" type="image/svg+xml" />
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+      @import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Space+Grotesk:wght@400;500;700&display=swap");
+
+      :root {
+        --bg-1: #0f1b2d;
+        --bg-2: #1c3146;
+        --bg-3: #e2d9c7;
+        --ink-1: #0f172a;
+        --ink-2: #344256;
+        --accent-1: #ff7a59;
+        --accent-2: #30bced;
+        --accent-3: #ffd166;
+        --panel: #fdf7f0;
+        --panel-strong: #fff3e2;
+        --success: #2fbf71;
+        --danger: #e54b4b;
+        --shadow: 0 18px 50px rgba(15, 23, 42, 0.2);
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Space Grotesk", "Segoe UI", sans-serif;
+        background: radial-gradient(
+          circle at 20% 20%,
+          #243b55 0%,
+          #141e30 45%,
+          #0f172a 100%
+        );
+        min-height: 100vh;
+        padding: 28px 18px 60px;
+        color: var(--ink-1);
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background: linear-gradient(
+          120deg,
+          rgba(255, 122, 89, 0.15),
+          rgba(48, 188, 237, 0.1)
+        );
+        z-index: -2;
+      }
+
+      body::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background-image: radial-gradient(
+          rgba(255, 255, 255, 0.08) 1px,
+          transparent 1px
+        );
+        background-size: 28px 28px;
+        z-index: -1;
+        opacity: 0.5;
+      }
+
+      .app-shell {
+        max-width: 1240px;
+        margin: 0 auto;
+      }
+
+      .app-card {
+        background: var(--panel);
+        border-radius: 26px;
+        padding: 28px 28px 32px;
+        box-shadow: var(--shadow);
+        border: 1px solid rgba(255, 255, 255, 0.5);
+      }
+
+      .title {
+        font-family: "Fraunces", serif;
+        font-size: clamp(2rem, 3vw, 2.8rem);
+        color: var(--ink-1);
+        letter-spacing: 0.5px;
+      }
+
+      .subtitle {
+        color: var(--ink-2);
+        font-size: 1rem;
+      }
+
+      .component {
+        background: white;
+        border-radius: 18px;
+        padding: 18px 20px;
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+      }
+
+      .component-title {
+        font-size: 0.95rem;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: var(--ink-2);
+        margin-bottom: 12px;
+      }
+
+      .grid-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+        gap: 18px;
+        margin-top: 20px;
+      }
+
+      .hidden {
+        display: none !important;
+      }
+
+      .stat-strip {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 12px;
+        margin-top: 18px;
+      }
+
+      .stat-item {
+        background: var(--panel-strong);
+        border-radius: 14px;
+        padding: 12px 14px;
+      }
+
+      .stat-item span {
+        display: block;
+        color: var(--ink-2);
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+
+      .stat-item strong {
+        font-size: 1.4rem;
+        color: var(--ink-1);
+      }
+
+      .card-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+        gap: 8px;
+      }
+
+      .card-chip {
+        aspect-ratio: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 12px;
+        font-weight: 700;
+        border: 2px solid rgba(15, 23, 42, 0.2);
+        background: white;
+        cursor: pointer;
+        transition:
+          transform 0.2s ease,
+          box-shadow 0.2s ease,
+          background 0.2s ease;
+      }
+
+      .card-chip:hover {
+        transform: translateY(-2px) scale(1.02);
+        box-shadow: 0 10px 20px rgba(48, 188, 237, 0.2);
+      }
+
+      .card-chip.taken {
+        background: #ffe0b2;
+        border-color: #ff9800;
+        color: #8a4f00;
+        cursor: not-allowed;
+      }
+
+      .card-chip.selected {
+        background: #e6f7ff;
+        border-color: var(--accent-2);
+      }
+
+      .bingo-grid {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .bingo-cell {
+        aspect-ratio: 1;
+        border-radius: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 1.3rem;
+        background: #f8fafc;
+        border: 2px solid rgba(48, 188, 237, 0.3);
+        transition:
+          background 0.2s ease,
+          color 0.2s ease;
+      }
+
+      .bingo-cell.free {
+        background: linear-gradient(120deg, #ff7a59, #ffd166);
+        color: #231f1c;
+        border: none;
+      }
+
+      .bingo-cell.marked {
+        background: var(--success);
+        color: white;
+        border-color: var(--success);
+      }
+
+      .numbers-stack {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(56px, 1fr));
+        gap: 10px;
+      }
+
+      .number-pill {
+        background: #1f2937;
+        color: white;
+        padding: 10px 0;
+        border-radius: 999px;
+        text-align: center;
+        font-weight: 700;
+      }
+
+      .numbers-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 10px;
+        max-height: 180px;
+        overflow: auto;
+      }
+
+      .numbers-list span {
+        background: #f1f5f9;
+        padding: 6px 10px;
+        border-radius: 999px;
+        font-weight: 600;
+      }
+
+      .action-bar {
+        display: flex;
+        justify-content: center;
+        gap: 12px;
+        margin-top: 24px;
+        flex-wrap: wrap;
+      }
+
+      .btn {
+        padding: 14px 22px;
+        border-radius: 14px;
+        border: none;
+        font-weight: 700;
+        font-size: 1rem;
+        cursor: pointer;
+        transition:
+          transform 0.2s ease,
+          box-shadow 0.2s ease;
+      }
+
+      .btn-primary {
+        background: var(--accent-1);
+        color: white;
+        box-shadow: 0 10px 25px rgba(255, 122, 89, 0.35);
+      }
+
+      .btn-secondary {
+        background: var(--accent-2);
+        color: #07212d;
+      }
+
+      .btn-success {
+        background: var(--success);
+        color: white;
+      }
+
+      .btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        box-shadow: none;
+      }
+
+      .notification {
+        margin-top: 18px;
+        padding: 12px 14px;
+        border-radius: 12px;
+        font-weight: 600;
+        display: none;
+      }
+
+      .notification.show {
+        display: block;
+      }
+
+      .notification.error {
+        background: #ffe3e3;
+        color: #9f1c1c;
+      }
+
+      .notification.success {
+        background: #d1fae5;
+        color: #065f46;
+      }
+
+      .winner-card {
+        background: linear-gradient(120deg, #fff7d6, #ffe5b4);
+        border: 2px solid #ffb703;
+      }
+
+      .modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.6);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+      }
+
+      .modal-card {
+        background: white;
+        border-radius: 20px;
+        padding: 24px;
+        max-width: 360px;
+        width: 100%;
+        box-shadow: var(--shadow);
+      }
+
+      .modal-actions {
+        display: flex;
+        gap: 12px;
+        margin-top: 18px;
+      }
+
+      @media (max-width: 960px) {
+        .grid-layout {
+          grid-template-columns: 1fr;
         }
-        
+      }
+
+      @media (max-width: 640px) {
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
+          padding: 20px 14px 50px;
         }
-        
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 20px;
-            padding: 30px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+
+        .app-card {
+          padding: 20px;
         }
-        
-        .header {
-            text-align: center;
-            margin-bottom: 30px;
-            padding-bottom: 20px;
-            border-bottom: 3px solid #667eea;
-        }
-        
-        .header h1 {
-            color: #667eea;
-            font-size: 2.5em;
-            margin-bottom: 10px;
-        }
-        
-        .user-info {
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .balance {
-            font-size: 1.2em;
-            color: #28a745;
-            font-weight: bold;
-        }
-        
-        {% block extra_style %}{% endblock %}
+      }
     </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>🎮 BINGO GAME</h1>
-            {% block header_extra %}{% endblock %}
-        </div>
-        
-        {% block content %}{% endblock %}
-    </div>
-    
+    {% block extra_style %}{% endblock %}
+  </head>
+  <body>
+    <div class="app-shell">{% block content %}{% endblock %}</div>
+
     {% block extra_script %}{% endblock %}
-</body>
+  </body>
 </html>

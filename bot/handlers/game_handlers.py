@@ -162,7 +162,7 @@ async def play_bingo(message: Message):
         return
     
     # Generate web app URL
-    web_url = f"http://localhost:8000/game/lobby/{user.telegram_id}/"
+    web_url = f"http://localhost:5173/game/lobby/{user.telegram_id}/"
     
     game_text = (
         f"<b>🎮 BINGO GAME</b>\n\n"

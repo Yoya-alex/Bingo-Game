@@ -92,6 +92,7 @@ DATABASES = {
 # Game Configuration
 WELCOME_BONUS = int(os.getenv('WELCOME_BONUS', 10))
 CARD_PRICE = int(os.getenv('CARD_PRICE', 10))
+CARD_COUNT = int(os.getenv('CARD_COUNT', 400))
 MIN_DEPOSIT = int(os.getenv('MIN_DEPOSIT', 10))
 MIN_WITHDRAWAL = int(os.getenv('MIN_WITHDRAWAL', 50))
 WAITING_TIME = int(os.getenv('WAITING_TIME', 25))
@@ -100,6 +101,10 @@ NUMBER_CALL_INTERVAL = int(os.getenv('NUMBER_CALL_INTERVAL', 3))
 # Bot Configuration
 BOT_TOKEN = os.getenv('BOT_TOKEN', '')
 ADMIN_IDS = [int(id.strip()) for id in os.getenv('ADMIN_IDS', '').split(',') if id.strip()]
+
+# React UI Configuration
+USE_REACT_UI = os.getenv('USE_REACT_UI', 'True') == 'True'
+REACT_APP_URL = os.getenv('REACT_APP_URL', 'http://localhost:5173')
 
 
 # Password validation

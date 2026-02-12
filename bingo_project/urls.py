@@ -15,9 +15,24 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
+from django.http import HttpResponse
 from django.urls import path, include
 
+
+def favicon(_request):
+    svg = (
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"64\" height=\"64\" viewBox=\"0 0 64 64\">"
+        "<rect width=\"64\" height=\"64\" rx=\"12\" fill=\"#667eea\"/>"
+        "<text x=\"32\" y=\"41\" font-size=\"32\" text-anchor=\"middle\" fill=\"#ffffff\" "
+        "font-family=\"Arial, sans-serif\">B</text>"
+        "</svg>"
+    )
+    response = HttpResponse(svg, content_type="image/svg+xml")
+    response["Cache-Control"] = "public, max-age=86400"
+    return response
+
 urlpatterns = [
+    path("favicon.ico", favicon, name="favicon"),
     path("admin/", admin.site.urls),
     path("game/", include('game.urls')),
 ]

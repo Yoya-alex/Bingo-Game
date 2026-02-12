@@ -1,13 +1,15 @@
 from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message
+from aiogram.exceptions import TelegramForbiddenError
 from django.conf import settings
 from asgiref.sync import sync_to_async
 
 from users.models import User
 from wallet.models import Wallet, Transaction
-from bot.keyboards import main_menu_keyboard
+from bot.keyboards import main_menu_keyboard, admin_main_menu_keyboard
 from bot.utils.db_helpers import get_or_create_user, create_wallet, save_model
+from bot.utils.admin_helpers import is_admin
 
 router = Router()
 
@@ -53,8 +55,16 @@ async def cmd_start(message: Message):
             f"👋 <b>Welcome back, {first_name}!</b>\n\n"
             f"Ready to play Bingo? Choose an option below:"
         )
-    
-    await message.answer(welcome_text, reply_markup=main_menu_keyboard())
+
+    # If user is an admin, show admin menu by default (can switch back to user menu).
+    try:
+        if await is_admin(telegram_id):
+            await message.answer(welcome_text, reply_markup=admin_main_menu_keyboard())
+        else:
+            await message.answer(welcome_text, reply_markup=main_menu_keyboard())
+    except TelegramForbiddenError:
+        # User has blocked the bot; avoid crashing the update handler.
+        return
 
 
 @router.message(F.text == "📜 Rules")
