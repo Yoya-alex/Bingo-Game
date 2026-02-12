@@ -118,7 +118,7 @@ export default function LobbyPage() {
       <div className="app-card">
         <HeaderComponent
           title="Bingo Lobby"
-          subtitle={`Game #${data.game.id} • ${data.user.first_name} • Balance ${data.wallet_balance} Birr`}
+          subtitle={`Game #${data.game?.id ?? "—"} • ${data.user?.first_name ?? "Player"} • Balance ${data.wallet_balance} Birr`}
           stats={stats}
         />
 
