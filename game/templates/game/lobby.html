@@ -1,202 +1,346 @@
 {% extends 'game/base.html' %} {% block title %}Bingo Lobby - Game #{{ game.id
-}}{% endblock %} {% block header_extra %}
-<p style="color: #666; font-size: 1.1em">
-  Game #{{ game.id }} - Select Your Card
-</p>
-{% endblock %} {% block extra_style %}
-<style>
-  .top-bar {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 15px;
-    margin-bottom: 25px;
-    background: #f8f9fa;
-    padding: 20px;
-    border-radius: 12px;
-  }
-
-  .top-item {
-    text-align: center;
-  }
-
-  .top-item h4 {
-    color: #666;
-    font-size: 0.9em;
-    margin-bottom: 6px;
-  }
-
-  .top-item p {
-    font-size: 1.4em;
-    font-weight: bold;
-    color: #667eea;
-  }
-
-  .cards-grid {
-    display: grid;
-    grid-template-columns: repeat(8, 1fr);
-    gap: 10px;
-    margin-top: 20px;
-  }
-
-  .card-number {
-    aspect-ratio: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: bold;
-    border-radius: 10px;
-    border: 2px solid #667eea;
-    background: white;
-    color: #333;
-    cursor: pointer;
-    transition: all 0.2s;
-    user-select: none;
-  }
-
-  .card-number.available:hover {
-    transform: scale(1.05);
-    box-shadow: 0 8px 20px rgba(102, 126, 234, 0.2);
-  }
-
-  .card-number.taken {
-    background: #ff9800;
-    border-color: #ff9800;
-    color: white;
-    cursor: not-allowed;
-  }
-
-  .helper-text {
-    text-align: center;
-    margin-top: 15px;
-    color: #666;
-  }
-
-  @media (max-width: 768px) {
-    .cards-grid {
-      grid-template-columns: repeat(6, 1fr);
-    }
-  }
-
-  @media (max-width: 480px) {
-    .cards-grid {
-      grid-template-columns: repeat(5, 1fr);
-    }
-  }
-</style>
-{% endblock %} {% block content %}
-<div class="user-info">
-  <div>
-    <strong>👤 {{ user.first_name }}</strong>
-    <span style="color: #666; margin-left: 10px"
-      >Telegram ID: {{ user.telegram_id }}</span
-    >
+}}{% endblock %} {% block content %}
+<div
+  class="app-card"
+  id="app"
+  data-game-id="{{ game.id }}"
+  data-telegram-id="{{ user.telegram_id }}">
+  <div class="component">
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <div class="title">Bingo Lobby</div>
+      <div class="subtitle">
+        Game #{{ game.id }} • {{ user.first_name }} • Balance {{ wallet_balance
+        }} Birr
+      </div>
+    </div>
+    <div class="stat-strip" style="margin-top: 16px">
+      <div class="stat-item">
+        <span>State</span>
+        <strong id="headerState">WAITING</strong>
+      </div>
+      <div class="stat-item">
+        <span>Countdown</span>
+        <strong id="headerCountdown">{{ countdown }}</strong>
+      </div>
+      <div class="stat-item">
+        <span>Players</span>
+        <strong id="headerPlayers">{{ total_players }}</strong>
+      </div>
+      <div class="stat-item">
+        <span>Available</span>
+        <strong id="headerAvailable">{{ available_cards }}</strong>
+      </div>
+    </div>
   </div>
-  <div class="balance">💰 {{ wallet_balance }} Birr</div>
+
+  <div class="grid-layout">
+    <section id="cardSelectionComponent" class="component">
+      <div class="component-title">Select Your Card</div>
+      <div class="card-grid" id="cardsGrid">
+        {% for num in all_numbers %} {% if num in taken_cards %}
+        <div class="card-chip taken" title="Taken">{{ num }}</div>
+        {% else %}
+        <div class="card-chip" data-number="{{ num }}" title="Select card">
+          {{ num }}
+        </div>
+        {% endif %} {% endfor %}
+      </div>
+      <p class="subtitle" style="margin-top: 10px">
+        Tap any available card to join.
+      </p>
+    </section>
+
+    <section id="bingoGridComponent" class="component hidden">
+      <div class="component-title">Your Bingo Grid</div>
+      <p class="subtitle">Your card will appear here once the game starts.</p>
+    </section>
+
+    <section id="calledNumbersComponent" class="component hidden">
+      <div class="component-title">Called Numbers</div>
+      <div class="numbers-stack" id="callStack">
+        <div class="number-pill" id="currentCall">—</div>
+        <div class="number-pill" id="previousCall">—</div>
+        <div class="number-pill" id="thirdCall">—</div>
+      </div>
+      <div class="numbers-list" id="calledNumbersList"></div>
+    </section>
+
+    <section id="spectatorViewComponent" class="component hidden">
+      <div class="component-title">Spectator View</div>
+      <p class="subtitle">You can still watch called numbers here.</p>
+    </section>
+
+    <section
+      id="winnerAnnouncementComponent"
+      class="component winner-card hidden">
+      <div class="component-title">Winner Announcement</div>
+      <div style="font-size: 1.4rem; font-weight: 700" id="winnerName">—</div>
+      <p class="subtitle" id="winnerDetails">Prize: —</p>
+    </section>
+  </div>
+
+  <div id="actionButtonsComponent" class="action-bar"></div>
+  <div id="notificationComponent" class="notification"></div>
 </div>
 
-<div class="top-bar">
-  <div class="top-item">
-    <h4>⏱ COUNTDOWN</h4>
-    <p id="countdown">{{ countdown }}</p>
+<div id="cardConfirmModal" class="modal hidden">
+  <div class="modal-card">
+    <div style="font-weight: 700; font-size: 1.1rem">Confirm Card</div>
+    <p class="subtitle" id="cardModalText" style="margin-top: 8px"></p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="cardModalCancel">Cancel</button>
+      <button class="btn btn-primary" id="cardModalConfirm">Confirm</button>
+    </div>
   </div>
-  <div class="top-item">
-    <h4>🎫 STAKE</h4>
-    <p>{{ stake }} Birr</p>
-  </div>
-  <div class="top-item">
-    <h4>👥 PLAYERS</h4>
-    <p id="playerCount">{{ total_players }}</p>
-  </div>
-  <div class="top-item">
-    <h4>🧩 AVAILABLE</h4>
-    <p id="availableCount">{{ available_cards }}</p>
-  </div>
-</div>
-
-<div class="cards-grid" id="cardsGrid">
-  {% for num in all_numbers %} {% if num in taken_cards %}
-  <div class="card-number taken" title="Taken">{{ num }}</div>
-  {% else %}
-  <div
-    class="card-number available"
-    data-number="{{ num }}"
-    title="Select card">
-    {{ num }}
-  </div>
-  {% endif %} {% endfor %}
-</div>
-
-<div class="helper-text">
-  Orange cards are taken. Click any available card to join.
 </div>
 {% endblock %} {% block extra_script %}
 <script>
-  const telegramId = "{{ user.telegram_id }}";
-  const gameId = "{{ game.id }}";
+  const initialState = {
+    gameId: {{ game.id }},
+    telegramId: {{ user.telegram_id }},
+    state: "waiting",
+    countdown: {{ countdown }},
+    totalPlayers: {{ total_players }},
+    calledNumbers: [],
+    prizeAmount: 0,
+    winnerName: "",
+    hasCard: false,
+    selectedCard: null,
+    availableCards: {{ available_cards }}
+  };
 
-  function selectCard(cardNumber) {
-    if (!confirm(`Select card #${cardNumber}?`)) {
-      return;
+  class GameController {
+    constructor(config) {
+      this.gameId = config.gameId;
+      this.telegramId = config.telegramId;
+      this.state = config.state;
+      this.countdown = config.countdown;
+      this.totalPlayers = config.totalPlayers;
+      this.availableCards = config.availableCards;
+      this.calledNumbers = [];
+      this.calledSet = new Set();
+      this.prizeAmount = 0;
+      this.winnerName = "";
+      this.hasCard = false;
+      this.selectedCard = null;
+      this.pollTimer = null;
+      this.pendingCard = null;
+      this.cacheElements();
+      this.bindActions();
+      this.renderAll();
+      this.startPolling();
     }
 
-    fetch("/game/api/select-card/", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        telegram_id: telegramId,
-        card_number: cardNumber,
-      }),
-    })
-      .then((response) => response.json())
-      .then((data) => {
-        if (data.success) {
-          window.location.href = data.redirect_url;
-        } else {
-          alert(data.error || "Unable to select card.");
-          window.location.reload();
-        }
-      })
-      .catch(() => {
-        alert("Network error. Please try again.");
+    cacheElements() {
+      this.headerState = document.getElementById("headerState");
+      this.headerCountdown = document.getElementById("headerCountdown");
+      this.headerPlayers = document.getElementById("headerPlayers");
+      this.headerAvailable = document.getElementById("headerAvailable");
+      this.cardSelection = document.getElementById("cardSelectionComponent");
+      this.bingoGrid = document.getElementById("bingoGridComponent");
+      this.calledNumbersPanel = document.getElementById("calledNumbersComponent");
+      this.spectatorView = document.getElementById("spectatorViewComponent");
+      this.winnerAnnouncement = document.getElementById("winnerAnnouncementComponent");
+      this.winnerNameEl = document.getElementById("winnerName");
+      this.winnerDetails = document.getElementById("winnerDetails");
+      this.actionBar = document.getElementById("actionButtonsComponent");
+      this.notification = document.getElementById("notificationComponent");
+      this.currentCall = document.getElementById("currentCall");
+      this.previousCall = document.getElementById("previousCall");
+      this.thirdCall = document.getElementById("thirdCall");
+      this.calledNumbersList = document.getElementById("calledNumbersList");
+      this.cardModal = document.getElementById("cardConfirmModal");
+      this.cardModalText = document.getElementById("cardModalText");
+      this.cardModalCancel = document.getElementById("cardModalCancel");
+      this.cardModalConfirm = document.getElementById("cardModalConfirm");
+    }
+
+    bindActions() {
+      document.querySelectorAll(".card-chip[data-number]").forEach((card) => {
+        card.addEventListener("click", () => {
+          const number = Number(card.dataset.number);
+          if (Number.isNaN(number) || card.classList.contains("taken")) {
+            return;
+          }
+          this.pendingCard = number;
+          this.showCardModal(number);
+        });
       });
+
+      if (this.cardModalCancel) {
+        this.cardModalCancel.addEventListener("click", () => this.hideCardModal());
+      }
+      if (this.cardModalConfirm) {
+        this.cardModalConfirm.addEventListener("click", () => this.confirmCardSelection());
+      }
+    }
+
+    startPolling() {
+      this.pollTimer = setInterval(() => this.pollGameState(), 2500);
+      this.pollGameState();
+    }
+
+    pollGameState() {
+      fetch(`/game/api/game-status/${this.gameId}/`)
+        .then((response) => response.json())
+        .then((data) => this.applyServerState(data))
+        .catch(() => {
+          this.notify("error", "Unable to sync game state.");
+        });
+    }
+
+    applyServerState(data) {
+      if (!data || data.error) {
+        return;
+      }
+      this.state = data.state || this.state;
+      this.countdown = typeof data.countdown === "number" ? data.countdown : this.countdown;
+      this.totalPlayers = typeof data.total_players === "number" ? data.total_players : this.totalPlayers;
+      this.prizeAmount = typeof data.prize_amount === "number" ? data.prize_amount : this.prizeAmount;
+      this.winnerName = data.winner || this.winnerName;
+
+      if (Array.isArray(data.called_numbers)) {
+        if (data.called_numbers.length < this.calledNumbers.length) {
+          this.resetCalledNumbers(data.called_numbers);
+        } else {
+          this.appendCalledNumbers(data.called_numbers);
+        }
+      }
+
+      this.renderAll();
+    }
+
+    resetCalledNumbers(list) {
+      this.calledNumbers = list.slice();
+      this.calledSet = new Set(this.calledNumbers);
+      this.calledNumbersList.innerHTML = "";
+      this.calledNumbers.forEach((num) => this.appendCalledNumberBadge(num));
+    }
+
+    appendCalledNumbers(list) {
+      list.forEach((num) => {
+        if (!this.calledSet.has(num)) {
+          this.calledSet.add(num);
+          this.calledNumbers.push(num);
+          this.appendCalledNumberBadge(num);
+        }
+      });
+    }
+
+    appendCalledNumberBadge(num) {
+      const badge = document.createElement("span");
+      badge.textContent = num;
+      this.calledNumbersList.appendChild(badge);
+    }
+
+    renderAll() {
+      this.updateHeader();
+      this.updateVisibility();
+      this.updateCallStack();
+      this.updateActionButtons();
+      this.updateWinner();
+    }
+
+    updateHeader() {
+      this.headerState.textContent = this.state.toUpperCase();
+      this.headerCountdown.textContent = this.countdown > 0 ? this.countdown : "—";
+      this.headerPlayers.textContent = this.totalPlayers;
+      this.headerAvailable.textContent = this.availableCards;
+    }
+
+    updateCallStack() {
+      const lastThree = this.calledNumbers.slice(-3).reverse();
+      this.currentCall.textContent = lastThree[0] || "—";
+      this.previousCall.textContent = lastThree[1] || "—";
+      this.thirdCall.textContent = lastThree[2] || "—";
+    }
+
+    updateVisibility() {
+      const waiting = this.state === "waiting";
+      const playing = this.state === "playing";
+      const finished = this.state === "finished";
+
+      this.cardSelection.classList.toggle("hidden", !waiting);
+      this.bingoGrid.classList.toggle("hidden", !this.hasCard || !playing);
+      this.calledNumbersPanel.classList.toggle("hidden", !playing && !finished);
+      this.spectatorView.classList.toggle("hidden", !(playing && !this.hasCard));
+      this.winnerAnnouncement.classList.toggle("hidden", !finished);
+    }
+
+    updateWinner() {
+      if (this.state !== "finished") {
+        return;
+      }
+      const winnerLabel = this.winnerName ? `${this.winnerName} wins!` : "Winner declared";
+      this.winnerNameEl.textContent = winnerLabel;
+      this.winnerDetails.textContent = `Prize: ${this.prizeAmount} Birr`;
+    }
+
+    updateActionButtons() {
+      this.actionBar.innerHTML = "";
+      if (this.state === "waiting") {
+        const btn = this.createButton("Select Card", "btn-primary", () => {
+          this.cardSelection.scrollIntoView({ behavior: "smooth" });
+        });
+        this.actionBar.appendChild(btn);
+        return;
+      }
+      const btn = this.createButton("Waiting for next round", "btn-secondary", null, true);
+      this.actionBar.appendChild(btn);
+    }
+
+    createButton(label, className, handler, disabled = false) {
+      const btn = document.createElement("button");
+      btn.className = `btn ${className}`;
+      btn.textContent = label;
+      if (handler) {
+        btn.addEventListener("click", handler);
+      }
+      btn.disabled = disabled;
+      return btn;
+    }
+
+    showCardModal(cardNumber) {
+      this.cardModalText.textContent = `Use card #${cardNumber}?`;
+      this.cardModal.classList.remove("hidden");
+    }
+
+    hideCardModal() {
+      this.cardModal.classList.add("hidden");
+    }
+
+    confirmCardSelection() {
+      const cardNumber = this.pendingCard;
+      this.hideCardModal();
+      if (!cardNumber) {
+        return;
+      }
+
+      fetch("/game/api/select-card/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ telegram_id: this.telegramId, card_number: cardNumber })
+      })
+        .then((response) => response.json())
+        .then((data) => {
+          if (data.success) {
+            window.location.href = data.redirect_url;
+            return;
+          }
+          this.notify("error", data.error || "Unable to select card.");
+        })
+        .catch(() => this.notify("error", "Network error. Please try again."));
+    }
+
+    notify(type, message) {
+      this.notification.textContent = message;
+      this.notification.className = `notification show ${type}`;
+      setTimeout(() => {
+        this.notification.className = "notification";
+      }, 3500);
+    }
   }
 
-  document.querySelectorAll(".card-number.available").forEach((card) => {
-    card.addEventListener("click", () => {
-      const cardNumber = parseInt(card.getAttribute("data-number"), 10);
-      selectCard(cardNumber);
-    });
-  });
-
-  let countdownValue = Number("{{ countdown }}");
-  setInterval(() => {
-    countdownValue = Math.max(0, countdownValue - 1);
-    const countdownEl = document.getElementById("countdown");
-    if (countdownEl) {
-      countdownEl.textContent = countdownValue;
-    }
-  }, 1000);
-
-  setInterval(() => {
-    fetch(`/game/api/game-status/${gameId}/`)
-      .then((response) => response.json())
-      .then((data) => {
-        if (typeof data.total_players === "number") {
-          const playerCount = document.getElementById("playerCount");
-          if (playerCount) {
-            playerCount.textContent = data.total_players;
-          }
-        }
-        if (typeof data.countdown === "number") {
-          const countdownEl = document.getElementById("countdown");
-          if (countdownEl) {
-            countdownEl.textContent = data.countdown;
-            countdownValue = data.countdown;
-          }
-        }
-      });
-  }, 3000);
+  new GameController(initialState);
 </script>
 {% endblock %}

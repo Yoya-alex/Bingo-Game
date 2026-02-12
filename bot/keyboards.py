@@ -12,6 +12,19 @@ def main_menu_keyboard():
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
 
+def admin_main_menu_keyboard():
+    """Admin main menu keyboard"""
+    keyboard = [
+        [KeyboardButton(text="📊 Dashboard")],
+        [KeyboardButton(text="💰 Deposits"), KeyboardButton(text="🏧 Withdrawals")],
+        [KeyboardButton(text="👛 Wallet Management"), KeyboardButton(text="🎮 Game Management")],
+        [KeyboardButton(text="👤 User Management"), KeyboardButton(text="📜 Transaction Logs")],
+        [KeyboardButton(text="⚙️ Settings"), KeyboardButton(text="🔍 Search")],
+        [KeyboardButton(text="🏠 User Menu")],
+    ]
+    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
+
+
 def card_selection_keyboard(available_cards, page=0, cards_per_page=50):
     """Generate inline keyboard for card selection (1-400) with pagination"""
     # Calculate pagination
@@ -84,5 +97,29 @@ def withdrawal_keyboard():
     keyboard = [
         [InlineKeyboardButton(text="💸 Request Withdrawal", callback_data="request_withdrawal")],
         [InlineKeyboardButton(text="🔙 Back", callback_data="back_to_menu")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def wallet_balance_type_keyboard():
+    """Inline options for wallet balance type selection."""
+    keyboard = [
+        [
+            InlineKeyboardButton(text="Main", callback_data="wallet_balance:main"),
+            InlineKeyboardButton(text="Bonus", callback_data="wallet_balance:bonus"),
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def wallet_direction_keyboard():
+    """Inline options for wallet adjustment direction."""
+    keyboard = [
+        [
+            InlineKeyboardButton(text="Add", callback_data="wallet_direction:add"),
+            InlineKeyboardButton(
+                text="Subtract", callback_data="wallet_direction:subtract"
+            ),
+        ]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)

@@ -15,7 +15,7 @@ from aiogram.client.default import DefaultBotProperties   # pyright: ignore[repo
 from aiogram.enums import ParseMode
 from dotenv import load_dotenv
 
-from bot.handlers import user_handlers, game_handlers, wallet_handlers
+from bot.handlers import user_handlers, game_handlers, wallet_handlers, admin_handlers
 
 load_dotenv()
 
@@ -33,6 +33,7 @@ async def main():
     dp.include_router(user_handlers.router)
     dp.include_router(game_handlers.router)
     dp.include_router(wallet_handlers.router)
+    dp.include_router(admin_handlers.router)
     
     print("Bot started successfully!")
     await dp.start_polling(bot)
