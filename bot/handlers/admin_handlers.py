@@ -79,6 +79,7 @@ def _get_pending_withdrawals(limit: int = 5):
     return list(qs)
 
 
+
 @sync_to_async
 def _get_transaction_or_none(tx_id: int):
     try:
@@ -99,16 +100,14 @@ def _approve_deposit_atomic(tx_id: int, admin_telegram_id: int):
     from django.db import transaction as db_transaction
 
     with db_transaction.atomic():
-        tx = (
-            Transaction.objects.select_for_update()
-            .select_related("user__wallet")
-            .get(id=tx_id, transaction_type="deposit")
+        tx = Transaction.objects.select_for_update().get(
+            id=tx_id, transaction_type="deposit"
         )
 
         if tx.status != "pending":
             return False, "Transaction already processed.", None, None
 
-        wallet = tx.user.wallet
+        wallet = Wallet.objects.select_for_update().get(user=tx.user)
         before_main = wallet.main_balance
         before_bonus = wallet.bonus_balance
 
@@ -138,10 +137,8 @@ def _reject_deposit_atomic(tx_id: int, admin_telegram_id: int):
     from django.db import transaction as db_transaction
 
     with db_transaction.atomic():
-        tx = (
-            Transaction.objects.select_for_update()
-            .select_related("user__wallet")
-            .get(id=tx_id, transaction_type="deposit")
+        tx = Transaction.objects.select_for_update().get(
+            id=tx_id, transaction_type="deposit"
         )
 
         if tx.status != "pending":
@@ -173,16 +170,14 @@ def _approve_withdrawal_atomic(tx_id: int, admin_telegram_id: int):
     from django.db import transaction as db_transaction
 
     with db_transaction.atomic():
-        tx = (
-            Transaction.objects.select_for_update()
-            .select_related("user__wallet")
-            .get(id=tx_id, transaction_type="withdrawal")
+        tx = Transaction.objects.select_for_update().get(
+            id=tx_id, transaction_type="withdrawal"
         )
 
         if tx.status != "pending":
             return False, "Transaction already processed.", None, None
 
-        wallet = tx.user.wallet
+        wallet = Wallet.objects.select_for_update().get(user=tx.user)
         if wallet.main_balance < tx.amount:
             return False, "Insufficient main balance to approve withdrawal.", None, None
 
@@ -215,10 +210,8 @@ def _reject_withdrawal_atomic(tx_id: int, admin_telegram_id: int):
     from django.db import transaction as db_transaction
 
     with db_transaction.atomic():
-        tx = (
-            Transaction.objects.select_for_update()
-            .select_related("user__wallet")
-            .get(id=tx_id, transaction_type="withdrawal")
+        tx = Transaction.objects.select_for_update().get(
+            id=tx_id, transaction_type="withdrawal"
         )
 
         if tx.status != "pending":
@@ -552,7 +545,7 @@ async def admin_deposit_detail_inline(callback: CallbackQuery):
         ]
     )
 
-    await callback.message.answer(text, reply_markup=keyboard)
+    await callback.message.edit_text(text, reply_markup=keyboard)
     await callback.answer()
 
 
@@ -1154,11 +1147,14 @@ async def admin_withdrawal_approve_execute_inline(callback: CallbackQuery):
     tx = await _get_transaction_or_none(tx_id)
     user = tx.user if tx else None
 
-    await callback.message.answer(
+    await callback.message.edit_text(
         f"✅ Withdrawal #{tx_id} approved.\n"
         f"User: {user.first_name if user else 'Unknown'}\n"
         f"Amount: {tx.amount if tx else '—'} Birr\n"
         f"Main balance: {before[0]} → {after[0]} Birr",
+    )
+    await callback.message.answer(
+        "Admin menu:",
         reply_markup=admin_main_menu_keyboard(),
     )
 
@@ -1258,8 +1254,11 @@ async def admin_withdrawal_reject_execute_inline(callback: CallbackQuery):
     tx = await _get_transaction_or_none(tx_id)
     user = tx.user if tx else None
 
-    await callback.message.answer(
+    await callback.message.edit_text(
         f"✅ Withdrawal #{tx_id} rejected.",
+    )
+    await callback.message.answer(
+        "Admin menu:",
         reply_markup=admin_main_menu_keyboard(),
     )
 

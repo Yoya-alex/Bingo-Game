@@ -162,7 +162,7 @@ async def play_bingo(message: Message):
         return
     
     # Generate web app URL
-    web_url = f"http://localhost:5173/game/lobby/{user.telegram_id}/"
+    web_url = f"{settings.REACT_APP_URL}/lobby/{user.telegram_id}/"
     
     game_text = (
         f"<b>🎮 BINGO GAME</b>\n\n"
@@ -381,6 +381,9 @@ async def claim_bingo(callback: CallbackQuery):
         if is_winner:
             # Process win
             prize = await mark_winner_and_distribute_prize(game, user_card)
+
+            # Refresh wallet to reflect credited prize before displaying balance.
+            await sync_to_async(user.wallet.refresh_from_db)()
             
             await callback.answer(
                 f"🎉 BINGO! You won {prize} Birr!\n"

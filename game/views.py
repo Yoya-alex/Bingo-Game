@@ -9,6 +9,20 @@ from wallet.models import Transaction
 import json
 
 
+def get_winner_card_payload(game):
+    if not game.winner_id:
+        return None
+    winner_card = game.cards.filter(user=game.winner, is_winner=True).first()
+    if not winner_card:
+        winner_card = game.cards.filter(user=game.winner).first()
+    if not winner_card:
+        return None
+    return {
+        'card_number': winner_card.card_number,
+        'grid': winner_card.get_grid(),
+    }
+
+
 def game_lobby(request, telegram_id):
     """Game lobby - show card selection"""
     try:
@@ -18,78 +32,19 @@ def game_lobby(request, telegram_id):
             'error': 'User not found. Please start the bot first.'
         })
 
-    if getattr(settings, 'USE_REACT_UI', False):
-        return redirect(f"{settings.REACT_APP_URL}/lobby/{telegram_id}")
-    
-    # Get or create active game
-    game = Game.objects.filter(state='waiting').first()
-    if not game:
-        game = Game.objects.create(state='waiting')
-    
-    # Check if user already has a card
-    user_card = game.cards.filter(user=user).first()
-    if user_card:
-        return redirect('game_play', telegram_id=telegram_id, game_id=game.id)
-    
-    # Get taken cards (1-N)
-    taken_cards = list(game.cards.values_list('card_number', flat=True))
-    
-    time_elapsed = (timezone.now() - game.created_at).total_seconds()
-    countdown = max(0, int(settings.WAITING_TIME - time_elapsed))
-    all_numbers = list(range(1, settings.CARD_COUNT + 1))
-    total_players = game.cards.count()
-
-    context = {
-        'user': user,
-        'game': game,
-        'wallet': user.wallet,
-        'wallet_balance': user.wallet.total_balance,
-        'taken_cards': taken_cards,
-        'card_price': settings.CARD_PRICE,
-        'countdown': countdown,
-        'all_numbers': all_numbers,
-        'total_players': total_players,
-        'total_games': Game.objects.count(),
-        'available_cards': settings.CARD_COUNT - len(taken_cards),
-        'stake': settings.CARD_PRICE,
-    }
-    
-    return render(request, 'game/lobby.html', context)
+    return redirect(f"{settings.REACT_APP_URL}/lobby/{telegram_id}")
 
 
 def game_play(request, telegram_id, game_id):
     """Game play screen - show user's bingo card"""
     try:
         user = User.objects.get(telegram_id=telegram_id)
-        game = get_object_or_404(Game, id=game_id)
-        user_card = get_object_or_404(BingoCard, game=game, user=user)
     except User.DoesNotExist:
         return render(request, 'game/error.html', {
             'error': 'User not found.'
         })
 
-    if getattr(settings, 'USE_REACT_UI', False):
-        return redirect(f"{settings.REACT_APP_URL}/play/{telegram_id}/{game_id}")
-    
-    # Get grid and game info
-    grid = user_card.get_grid()
-    called_numbers = game.get_called_numbers()
-    marked_positions = user_card.get_marked_positions()
-    total_players = game.cards.count()
-    prize_amount = total_players * settings.CARD_PRICE if game.prize_amount == 0 else game.prize_amount
-    
-    context = {
-        'user': user,
-        'game': game,
-        'card': user_card,
-        'grid': grid,
-        'called_numbers': called_numbers,
-        'marked_positions': marked_positions,
-        'total_players': total_players,
-        'prize_amount': prize_amount,
-    }
-    
-    return render(request, 'game/play.html', context)
+    return redirect(f"{settings.REACT_APP_URL}/play/{telegram_id}/{game_id}")
 
 
 @csrf_exempt
@@ -106,10 +61,10 @@ def select_card_api(request):
         user = User.objects.select_related('wallet').get(telegram_id=telegram_id)
         wallet = user.wallet
         
-        # Get active game
+        # Get or create active game
         game = Game.objects.filter(state='waiting').first()
         if not game:
-            return JsonResponse({'error': 'No active game'}, status=400)
+            game = Game.objects.create(state='waiting')
         
         if card_number < 1 or card_number > settings.CARD_COUNT:
             return JsonResponse({'error': 'Invalid card number'}, status=400)
@@ -177,7 +132,8 @@ def game_status_api(request, game_id):
         # Calculate countdown
         time_elapsed = (timezone.now() - game.created_at).total_seconds()
         countdown = max(0, int(settings.WAITING_TIME - time_elapsed))
-        
+        winner_card = get_winner_card_payload(game)
+
         return JsonResponse({
             'game_id': game.id,
             'state': game.state,
@@ -186,6 +142,7 @@ def game_status_api(request, game_id):
             'called_numbers': game.get_called_numbers(),
             'winner': game.winner.first_name if game.winner else None,
             'prize_amount': float(game.prize_amount) if game.prize_amount else 0,
+            'winner_card': winner_card,
         })
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
@@ -206,6 +163,12 @@ def lobby_state_api(request, telegram_id):
     time_elapsed = (timezone.now() - game.created_at).total_seconds()
     countdown = max(0, int(settings.WAITING_TIME - time_elapsed))
     total_players = game.cards.count()
+    winner_card = get_winner_card_payload(game)
+    has_card = game.cards.filter(user=user).exists()
+    if total_players == 0:
+        state = 'waiting'
+    else:
+        state = 'watching' if game.state == 'playing' and not has_card else game.state
 
     return JsonResponse({
         'user': {
@@ -214,7 +177,7 @@ def lobby_state_api(request, telegram_id):
         },
         'game': {
             'id': game.id,
-            'state': game.state,
+            'state': state,
         },
         'wallet_balance': float(user.wallet.total_balance),
         'taken_cards': taken_cards,
@@ -223,6 +186,9 @@ def lobby_state_api(request, telegram_id):
         'available_cards': 80 - len(taken_cards),
         'stake': settings.CARD_PRICE,
         'countdown': countdown,
+        'winner': game.winner.first_name if game.winner else None,
+        'prize_amount': float(game.prize_amount) if game.prize_amount else 0,
+        'winner_card': winner_card,
     })
 
 
@@ -242,6 +208,7 @@ def play_state_api(request, telegram_id, game_id):
 
     time_elapsed = (timezone.now() - game.created_at).total_seconds()
     countdown = max(0, int(settings.WAITING_TIME - time_elapsed))
+    winner_card = get_winner_card_payload(game)
 
     return JsonResponse({
         'user': {
@@ -261,6 +228,7 @@ def play_state_api(request, telegram_id, game_id):
         'prize_amount': float(prize_amount),
         'winner': game.winner.first_name if game.winner else None,
         'countdown': countdown,
+        'winner_card': winner_card,
     })
 
 
@@ -335,6 +303,10 @@ def claim_bingo_api(request):
                 'winner': True,
                 'pattern': pattern,
                 'prize': float(prize),
+                'winner_card': {
+                    'card_number': card.card_number,
+                    'grid': grid,
+                },
                 'message': f'🎉 BINGO! You won {prize} Birr!'
             })
         else:

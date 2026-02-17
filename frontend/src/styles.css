@@ -310,6 +310,10 @@ body::after {
   box-shadow: var(--shadow);
 }
 
+.modal-card.wide {
+  max-width: 720px;
+}
+
 .modal-actions {
   display: flex;
   gap: 12px;
