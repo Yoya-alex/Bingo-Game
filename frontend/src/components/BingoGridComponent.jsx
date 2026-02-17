@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 
-export default function BingoGridComponent({ grid, calledNumbers }) {
+export default function BingoGridComponent({ grid, calledNumbers, title = "Your Bingo Grid", id = "bingoGridComponent" }) {
   const gridRef = useRef(null);
   const cellMapRef = useRef(new Map());
 
@@ -27,8 +27,8 @@ export default function BingoGridComponent({ grid, calledNumbers }) {
   }, [calledNumbers]);
 
   return (
-    <section className="component" id="bingoGridComponent">
-      <div className="component-title">Your Bingo Grid</div>
+    <section className="component" id={id}>
+      <div className="component-title">{title}</div>
       <div className="bingo-grid" ref={gridRef}>
         {grid.map((row, rowIndex) =>
           row.map((cell, cellIndex) => (

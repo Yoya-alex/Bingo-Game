@@ -17,6 +17,7 @@ export default function LobbyPage() {
   const pollRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState(EMPTY_NOTIFICATION);
+  const [finishCountdown, setFinishCountdown] = useState(null);
   const [data, setData] = useState({
     user: null,
     game: null,
@@ -30,10 +31,13 @@ export default function LobbyPage() {
     called_numbers: [],
     winner: null,
     prize_amount: 0,
+    winner_card: null,
   });
   const [pendingCard, setPendingCard] = useState(null);
 
   const takenSet = useMemo(() => new Set(data.taken_cards), [data.taken_cards]);
+  const isWatching = data.game?.state === "playing";
+  const displayState = isWatching ? "watching" : data.game?.state || "waiting";
 
   useEffect(() => {
     setLoading(true);
@@ -60,6 +64,7 @@ export default function LobbyPage() {
             called_numbers: payload.called_numbers,
             winner: payload.winner,
             prize_amount: payload.prize_amount,
+            winner_card: payload.winner_card,
           }));
         })
         .catch(() => notify("error", "Unable to sync game state."));
@@ -96,8 +101,32 @@ export default function LobbyPage() {
       .finally(() => setPendingCard(null));
   }
 
+  useEffect(() => {
+    if (data.game?.state !== "finished") {
+      setFinishCountdown(null);
+      return;
+    }
+    let remaining = 3;
+    setFinishCountdown(remaining);
+    const timer = setInterval(() => {
+      remaining -= 1;
+      setFinishCountdown(remaining);
+      if (remaining <= 0) {
+        clearInterval(timer);
+        window.location.assign(`/lobby/${telegramId}`);
+      }
+    }, 1000);
+    const fallback = setTimeout(() => {
+      window.location.assign(`/lobby/${telegramId}`);
+    }, 3500);
+    return () => {
+      clearInterval(timer);
+      clearTimeout(fallback);
+    };
+  }, [data.game?.state, telegramId]);
+
   const stats = [
-    { label: "State", value: data.game?.state?.toUpperCase() || "WAITING" },
+    { label: "State", value: displayState.toUpperCase() },
     { label: "Countdown", value: data.countdown || "—" },
     { label: "Players", value: data.total_players },
     { label: "Available", value: data.available_cards },
@@ -126,13 +155,10 @@ export default function LobbyPage() {
           <CardSelectionComponent numbers={data.all_numbers} takenSet={takenSet} onSelect={selectCard} />
           {data.game?.state === "playing" && <CalledNumbersComponent calledNumbers={data.called_numbers || []} />}
           {data.game?.state === "playing" && <SpectatorViewComponent />}
-          {data.game?.state === "finished" && (
-            <WinnerAnnouncementComponent winnerName={data.winner} prizeAmount={data.prize_amount} />
-          )}
         </div>
 
         <ActionButtonsComponent
-          state={data.game?.state || "waiting"}
+          state={displayState}
           hasCard={false}
           onSelectCard={() => document.getElementById("cardSelectionComponent")?.scrollIntoView({ behavior: "smooth" })}
         />
@@ -155,6 +181,19 @@ export default function LobbyPage() {
                 Confirm
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {data.game?.state === "finished" && (
+        <div className="modal">
+          <div className="modal-card wide">
+            <WinnerAnnouncementComponent
+              winnerName={data.winner}
+              prizeAmount={data.prize_amount}
+              winnerCard={data.winner_card}
+              calledNumbers={data.called_numbers || []}
+              countdown={finishCountdown}
+            />
           </div>
         </div>
       )}

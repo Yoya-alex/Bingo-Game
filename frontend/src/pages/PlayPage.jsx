@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { fetchJson, postJson } from "../api/client.js";
 import HeaderComponent from "../components/HeaderComponent.jsx";
 import BingoGridComponent from "../components/BingoGridComponent.jsx";
@@ -13,9 +13,11 @@ const EMPTY_NOTIFICATION = { type: "", message: "" };
 
 export default function PlayPage() {
   const { telegramId, gameId } = useParams();
+  const navigate = useNavigate();
   const pollRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState(EMPTY_NOTIFICATION);
+  const [finishCountdown, setFinishCountdown] = useState(null);
   const [state, setState] = useState({
     user: null,
     game: null,
@@ -24,11 +26,13 @@ export default function PlayPage() {
     total_players: 0,
     prize_amount: 0,
     winner: null,
+    winner_card: null,
     countdown: 0,
   });
 
   const calledNumbers = state.called_numbers || [];
   const hasCard = Boolean(state.card?.card_number);
+  const displayState = !hasCard && state.game?.state === "playing" ? "watching" : state.game?.state;
 
   useEffect(() => {
     setLoading(true);
@@ -54,6 +58,7 @@ export default function PlayPage() {
             called_numbers: payload.called_numbers,
             prize_amount: payload.prize_amount,
             winner: payload.winner,
+            winner_card: payload.winner_card,
             countdown: payload.countdown,
           }));
         })
@@ -81,6 +86,10 @@ export default function PlayPage() {
             game: { ...prev.game, state: "finished" },
             winner: prev.user?.first_name || "You",
             prize_amount: payload.prize,
+            winner_card: payload.winner_card || {
+              card_number: prev.card?.card_number,
+              grid: prev.card?.grid,
+            },
           }));
           return;
         }
@@ -89,16 +98,40 @@ export default function PlayPage() {
       .catch((error) => notify("error", error.message));
   }
 
+  useEffect(() => {
+    if (state.game?.state !== "finished") {
+      setFinishCountdown(null);
+      return;
+    }
+    let remaining = 3;
+    setFinishCountdown(remaining);
+    const timer = setInterval(() => {
+      remaining -= 1;
+      setFinishCountdown(remaining);
+      if (remaining <= 0) {
+        clearInterval(timer);
+        window.location.assign(`/lobby/${telegramId}`);
+      }
+    }, 1000);
+    const fallback = setTimeout(() => {
+      window.location.assign(`/lobby/${telegramId}`);
+    }, 3500);
+    return () => {
+      clearInterval(timer);
+      clearTimeout(fallback);
+    };
+  }, [state.game?.state, telegramId]);
+
   const stats = useMemo(() => {
     const lastThree = calledNumbers.slice(-3).reverse();
     return [
-      { label: "State", value: state.game?.state?.toUpperCase() || "—" },
+      { label: "State", value: displayState?.toUpperCase() || "—" },
       { label: "Countdown", value: state.countdown || "—" },
       { label: "Players", value: state.total_players },
       { label: "Current Call", value: lastThree[0] || "—" },
       { label: "Last 3", value: lastThree.join(" ") || "—" },
     ];
-  }, [calledNumbers, state.game?.state, state.total_players, state.countdown]);
+  }, [calledNumbers, displayState, state.total_players, state.countdown]);
 
   if (loading) {
     return (
@@ -123,14 +156,24 @@ export default function PlayPage() {
           {hasCard && <BingoGridComponent grid={state.card.grid} calledNumbers={calledNumbers} />}
           <CalledNumbersComponent calledNumbers={calledNumbers} />
           {!hasCard && state.game?.state === "playing" && <SpectatorViewComponent />}
-          {state.game?.state === "finished" && (
-            <WinnerAnnouncementComponent winnerName={state.winner} prizeAmount={state.prize_amount} />
-          )}
         </div>
 
-        <ActionButtonsComponent state={state.game?.state} hasCard={hasCard} onBingo={claimBingo} />
+        <ActionButtonsComponent state={displayState} hasCard={hasCard} onBingo={claimBingo} />
         <NotificationComponent notification={notification} />
       </div>
+      {state.game?.state === "finished" && (
+        <div className="modal">
+          <div className="modal-card wide">
+            <WinnerAnnouncementComponent
+              winnerName={state.winner}
+              prizeAmount={state.prize_amount}
+              winnerCard={state.winner_card}
+              calledNumbers={calledNumbers}
+              countdown={finishCountdown}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

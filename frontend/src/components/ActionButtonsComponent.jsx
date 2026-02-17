@@ -6,6 +6,12 @@ export default function ActionButtonsComponent({ state, hasCard, onSelectCard, o
         Select Card
       </button>
     );
+  } else if (state === "watching") {
+    content = (
+      <button className="btn btn-secondary" disabled>
+        Watching game
+      </button>
+    );
   } else if (state === "playing" && hasCard) {
     content = (
       <button className="btn btn-success" onClick={onBingo}>
