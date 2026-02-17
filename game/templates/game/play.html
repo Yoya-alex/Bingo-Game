@@ -79,18 +79,23 @@
         You are watching this round. Grab a card in the next game to play.
       </p>
     </section>
-
-    <section
-      id="winnerAnnouncementComponent"
-      class="component winner-card hidden">
-      <div class="component-title">Winner Announcement</div>
-      <div style="font-size: 1.4rem; font-weight: 700" id="winnerName">—</div>
-      <p class="subtitle" id="winnerDetails">Prize: {{ prize_amount }} Birr</p>
-    </section>
   </div>
 
   <div id="actionButtonsComponent" class="action-bar"></div>
   <div id="notificationComponent" class="notification"></div>
+</div>
+
+<div id="winnerModal" class="modal hidden">
+  <div class="modal-card wide">
+    <section id="winnerAnnouncementComponent" class="component winner-card">
+      <div class="component-title">Winner Announcement</div>
+      <div style="font-size: 1.4rem; font-weight: 700" id="winnerName">—</div>
+      <p class="subtitle" id="winnerDetails">Prize: {{ prize_amount }} Birr</p>
+      <p class="subtitle" id="winnerCountdown"></p>
+      <p class="subtitle" id="winnerCardLabel"></p>
+      <div class="bingo-grid" id="winnerGrid"></div>
+    </section>
+  </div>
 </div>
 
 {% endblock %} {% block extra_script %}
@@ -104,6 +109,7 @@
     calledNumbers: {{ called_numbers|safe }},
     prizeAmount: {{ prize_amount }},
     winnerName: "{% if game.winner %}{{ game.winner.first_name }}{% endif %}",
+    winnerCard: {{ winner_card_json|safe }},
     hasCard: true,
     selectedCard: {{ card.card_number }}
   };
@@ -119,9 +125,12 @@
       this.calledSet = new Set(this.calledNumbers);
       this.prizeAmount = config.prizeAmount;
       this.winnerName = config.winnerName || "";
+      this.winnerCard = config.winnerCard;
       this.hasCard = config.hasCard;
       this.selectedCard = config.selectedCard;
       this.pollTimer = null;
+      this.finishTimer = null;
+      this.finishTimeout = null;
       this.cacheElements();
       this.buildGridIndex();
       this.renderAll();
@@ -139,8 +148,12 @@
       this.calledNumbersPanel = document.getElementById("calledNumbersComponent");
       this.spectatorView = document.getElementById("spectatorViewComponent");
       this.winnerAnnouncement = document.getElementById("winnerAnnouncementComponent");
+      this.winnerModal = document.getElementById("winnerModal");
       this.winnerNameEl = document.getElementById("winnerName");
       this.winnerDetails = document.getElementById("winnerDetails");
+      this.winnerCountdown = document.getElementById("winnerCountdown");
+      this.winnerCardLabel = document.getElementById("winnerCardLabel");
+      this.winnerGrid = document.getElementById("winnerGrid");
       this.actionBar = document.getElementById("actionButtonsComponent");
       this.notification = document.getElementById("notificationComponent");
       this.currentCall = document.getElementById("currentCall");
@@ -184,6 +197,7 @@
       this.totalPlayers = typeof data.total_players === "number" ? data.total_players : this.totalPlayers;
       this.prizeAmount = typeof data.prize_amount === "number" ? data.prize_amount : this.prizeAmount;
       this.winnerName = data.winner || this.winnerName;
+      this.winnerCard = data.winner_card || this.winnerCard;
 
       if (Array.isArray(data.called_numbers)) {
         if (data.called_numbers.length < this.calledNumbers.length) {
@@ -243,6 +257,7 @@
       this.updateCallStack();
       this.updateActionButtons();
       this.updateWinner();
+      this.scheduleFinishRedirect();
     }
 
     updateHeader() {
@@ -272,7 +287,9 @@
       this.bingoGrid.classList.toggle("hidden", !this.hasCard || !playing);
       this.calledNumbersPanel.classList.toggle("hidden", !playing && !finished);
       this.spectatorView.classList.toggle("hidden", !(playing && !this.hasCard));
-      this.winnerAnnouncement.classList.toggle("hidden", !finished);
+      if (this.winnerModal) {
+        this.winnerModal.classList.toggle("hidden", !finished);
+      }
     }
 
     updateWinner() {
@@ -282,6 +299,80 @@
       const winnerLabel = this.winnerName ? `${this.winnerName} wins!` : "Winner declared";
       this.winnerNameEl.textContent = winnerLabel;
       this.winnerDetails.textContent = `Prize: ${this.prizeAmount} Birr`;
+      this.renderWinnerCard();
+    }
+
+    renderWinnerCard() {
+      if (!this.winnerGrid || !this.winnerCard || !Array.isArray(this.winnerCard.grid)) {
+        return;
+      }
+      this.winnerGrid.innerHTML = "";
+      if (this.winnerCardLabel) {
+        this.winnerCardLabel.textContent = `Winning Card #${this.winnerCard.card_number}`;
+      }
+      this.winnerCard.grid.forEach((row) => {
+        row.forEach((cell) => {
+          const tile = document.createElement("div");
+          tile.className = "bingo-cell";
+          if (cell === null) {
+            tile.classList.add("free");
+            tile.textContent = "FREE";
+          } else {
+            if (this.calledSet.has(cell)) {
+              tile.classList.add("marked");
+            }
+            tile.textContent = cell;
+          }
+          this.winnerGrid.appendChild(tile);
+        });
+      });
+    }
+
+    scheduleFinishRedirect() {
+      if (this.state !== "finished") {
+        this.clearFinishTimer();
+        return;
+      }
+      if (this.finishTimer) {
+        return;
+      }
+      let remaining = 3;
+      this.updateCountdown(remaining);
+      this.finishTimer = setInterval(() => {
+        remaining -= 1;
+        this.updateCountdown(remaining);
+        if (remaining <= 0) {
+          this.clearFinishTimer();
+          window.location.href = `/game/lobby/${this.telegramId}/`;
+        }
+      }, 1000);
+      this.finishTimeout = setTimeout(() => {
+        this.clearFinishTimer();
+        window.location.href = `/game/lobby/${this.telegramId}/`;
+      }, 3500);
+    }
+
+    clearFinishTimer() {
+      if (this.finishTimer) {
+        clearInterval(this.finishTimer);
+        this.finishTimer = null;
+      }
+      if (this.finishTimeout) {
+        clearTimeout(this.finishTimeout);
+        this.finishTimeout = null;
+      }
+      this.updateCountdown(null);
+    }
+
+    updateCountdown(value) {
+      if (!this.winnerCountdown) {
+        return;
+      }
+      if (typeof value !== "number" || value <= 0) {
+        this.winnerCountdown.textContent = "";
+        return;
+      }
+      this.winnerCountdown.textContent = `Next round starts in ${value}s`;
     }
 
     updateActionButtons() {
@@ -329,6 +420,7 @@
             this.state = "finished";
             this.winnerName = "You";
             this.prizeAmount = data.prize;
+            this.winnerCard = data.winner_card || this.winnerCard;
             this.notify("success", data.message);
             this.renderAll();
             return;
