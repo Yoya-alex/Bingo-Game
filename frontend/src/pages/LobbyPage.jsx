@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { fetchJson, postJson } from "../api/client.js";
 import HeaderComponent from "../components/HeaderComponent.jsx";
 import CardSelectionComponent from "../components/CardSelectionComponent.jsx";
+import BingoGridComponent from "../components/BingoGridComponent.jsx";
 import CalledNumbersComponent from "../components/CalledNumbersComponent.jsx";
 import SpectatorViewComponent from "../components/SpectatorViewComponent.jsx";
 import WinnerAnnouncementComponent from "../components/WinnerAnnouncementComponent.jsx";
@@ -14,10 +15,11 @@ const EMPTY_NOTIFICATION = { type: "", message: "" };
 export default function LobbyPage() {
   const { telegramId } = useParams();
   const navigate = useNavigate();
-  const pollRef = useRef(null);
+  const lobbyPollRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState(EMPTY_NOTIFICATION);
   const [finishCountdown, setFinishCountdown] = useState(null);
+  const [isSelecting, setIsSelecting] = useState(false);
   const [data, setData] = useState({
     user: null,
     game: null,
@@ -32,12 +34,21 @@ export default function LobbyPage() {
     winner: null,
     prize_amount: 0,
     winner_card: null,
+    user_card: null,
   });
-  const [pendingCard, setPendingCard] = useState(null);
 
-  const takenSet = useMemo(() => new Set(data.taken_cards), [data.taken_cards]);
-  const isWatching = data.game?.state === "playing";
+  const selectedCardNumber = data.user_card?.card_number ?? null;
+  const takenSet = useMemo(() => {
+    const taken = data.taken_cards.filter((num) => num !== selectedCardNumber);
+    return new Set(taken);
+  }, [data.taken_cards, selectedCardNumber]);
+  const hasCard = Boolean(selectedCardNumber);
+  const isWatching = data.game?.state === "playing" && !hasCard;
   const displayState = isWatching ? "watching" : data.game?.state || "waiting";
+  const calledNumbers = useMemo(
+    () => (data.called_numbers || []).map((entry) => Number(entry?.number)).filter((value) => Number.isFinite(value)),
+    [data.called_numbers]
+  );
 
   useEffect(() => {
     setLoading(true);
@@ -50,28 +61,14 @@ export default function LobbyPage() {
   }, [telegramId]);
 
   useEffect(() => {
-    if (!data.game?.id) {
-      return;
-    }
-    pollRef.current = setInterval(() => {
-      fetchJson(`/game/api/game-status/${data.game.id}/`)
-        .then((payload) => {
-          setData((prev) => ({
-            ...prev,
-            game: { ...prev.game, state: payload.state },
-            total_players: payload.total_players,
-            countdown: payload.countdown,
-            called_numbers: payload.called_numbers,
-            winner: payload.winner,
-            prize_amount: payload.prize_amount,
-            winner_card: payload.winner_card,
-          }));
-        })
-        .catch(() => notify("error", "Unable to sync game state."));
+    lobbyPollRef.current = setInterval(() => {
+      fetchJson(`/game/api/lobby-state/${telegramId}/`)
+        .then((payload) => setData(payload))
+        .catch(() => notify("error", "Unable to sync lobby state."));
     }, 2500);
 
-    return () => clearInterval(pollRef.current);
-  }, [data.game?.id]);
+    return () => clearInterval(lobbyPollRef.current);
+  }, [telegramId]);
 
   function notify(type, message) {
     setNotification({ type, message });
@@ -79,27 +76,29 @@ export default function LobbyPage() {
   }
 
   function selectCard(cardNumber) {
-    setPendingCard(cardNumber);
-  }
-
-  function confirmCardSelection() {
-    if (!pendingCard) {
+    if (data.game?.state === "playing") {
+      notify("error", "Card selection is closed for this round.");
       return;
     }
+    if (isSelecting) {
+      return;
+    }
+    setIsSelecting(true);
     postJson("/game/api/select-card/", {
       telegram_id: Number(telegramId),
-      card_number: pendingCard,
+      card_number: cardNumber,
     })
-      .then((payload) => {
-        if (payload.redirect_url) {
-          navigate(`/play/${telegramId}/${payload.game_id || data.game.id}`);
-          return;
-        }
-        navigate(`/play/${telegramId}/${data.game.id}`);
-      })
+      .then(() => fetchJson(`/game/api/lobby-state/${telegramId}/`))
+      .then((statePayload) => setData(statePayload))
       .catch((error) => notify("error", error.message))
-      .finally(() => setPendingCard(null));
+      .finally(() => setIsSelecting(false));
   }
+
+  useEffect(() => {
+    if (data.game?.state === "playing" && hasCard) {
+      navigate(`/play/${telegramId}/${data.game.id}`);
+    }
+  }, [data.game?.state, data.game?.id, hasCard, navigate, telegramId]);
 
   useEffect(() => {
     if (data.game?.state !== "finished") {
@@ -129,7 +128,6 @@ export default function LobbyPage() {
     { label: "State", value: displayState.toUpperCase() },
     { label: "Countdown", value: data.countdown || "—" },
     { label: "Players", value: data.total_players },
-    { label: "Available", value: data.available_cards },
   ];
 
   if (loading) {
@@ -152,38 +150,28 @@ export default function LobbyPage() {
         />
 
         <div className="grid-layout">
-          <CardSelectionComponent numbers={data.all_numbers} takenSet={takenSet} onSelect={selectCard} />
-          {data.game?.state === "playing" && <CalledNumbersComponent calledNumbers={data.called_numbers || []} />}
+          {data.user_card?.grid && <BingoGridComponent grid={data.user_card.grid} interactive={false} />}
+          {data.game?.state !== "playing" && (
+            <CardSelectionComponent
+              numbers={data.all_numbers}
+              takenSet={takenSet}
+              selectedNumber={selectedCardNumber}
+              onSelect={selectCard}
+            />
+          )}
+          {data.game?.state === "playing" && <CalledNumbersComponent calledNumbers={calledNumbers} maxNumber={400} />}
           {data.game?.state === "playing" && <SpectatorViewComponent />}
         </div>
 
         <ActionButtonsComponent
           state={displayState}
-          hasCard={false}
+          hasCard={hasCard}
           onSelectCard={() => document.getElementById("cardSelectionComponent")?.scrollIntoView({ behavior: "smooth" })}
         />
 
         <NotificationComponent notification={notification} />
       </div>
 
-      {pendingCard && (
-        <div className="modal">
-          <div className="modal-card">
-            <div style={{ fontWeight: 700, fontSize: "1.1rem" }}>Confirm Card</div>
-            <p className="subtitle" style={{ marginTop: "8px" }}>
-              Use card #{pendingCard}?
-            </p>
-            <div className="modal-actions">
-              <button className="btn btn-secondary" onClick={() => setPendingCard(null)}>
-                Cancel
-              </button>
-              <button className="btn btn-primary" onClick={confirmCardSelection}>
-                Confirm
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       {data.game?.state === "finished" && (
         <div className="modal">
           <div className="modal-card wide">
@@ -191,7 +179,7 @@ export default function LobbyPage() {
               winnerName={data.winner}
               prizeAmount={data.prize_amount}
               winnerCard={data.winner_card}
-              calledNumbers={data.called_numbers || []}
+              calledNumbers={calledNumbers}
               countdown={finishCountdown}
             />
           </div>

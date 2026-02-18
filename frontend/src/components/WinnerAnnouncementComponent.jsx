@@ -16,6 +16,7 @@ export default function WinnerAnnouncementComponent({ winnerName, prizeAmount, w
           title={`Winning Card #${winnerCard.card_number}`}
           grid={winnerCard.grid}
           calledNumbers={calledNumbers || []}
+          interactive={false}
         />
       )}
     </section>

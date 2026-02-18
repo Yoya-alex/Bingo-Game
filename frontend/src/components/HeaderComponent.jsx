@@ -9,7 +9,7 @@ export default function HeaderComponent({ title, subtitle, stats }) {
         {stats.map((stat) => (
           <div className="stat-item" key={stat.label}>
             <span>{stat.label}</span>
-            <strong>{stat.value}</strong>
+            <div className="stat-value">{stat.value}</div>
           </div>
         ))}
       </div>

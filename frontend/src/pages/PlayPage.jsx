@@ -8,6 +8,7 @@ import SpectatorViewComponent from "../components/SpectatorViewComponent.jsx";
 import WinnerAnnouncementComponent from "../components/WinnerAnnouncementComponent.jsx";
 import ActionButtonsComponent from "../components/ActionButtonsComponent.jsx";
 import NotificationComponent from "../components/NotificationComponent.jsx";
+import VoiceSyncManager from "../utils/voiceSyncManager.js";
 
 const EMPTY_NOTIFICATION = { type: "", message: "" };
 
@@ -18,11 +19,18 @@ export default function PlayPage() {
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState(EMPTY_NOTIFICATION);
   const [finishCountdown, setFinishCountdown] = useState(null);
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [voiceSupported, setVoiceSupported] = useState(true);
+  const voiceManagerRef = useRef(null);
   const [state, setState] = useState({
     user: null,
     game: null,
     card: null,
+    marked_numbers: [],
     called_numbers: [],
+    server_time: null,
+    number_call_interval: 0,
+    bingo_number_max: 400,
     total_players: 0,
     prize_amount: 0,
     winner: null,
@@ -30,9 +38,60 @@ export default function PlayPage() {
     countdown: 0,
   });
 
-  const calledNumbers = state.called_numbers || [];
+  const calledNumberEntries = state.called_numbers || [];
+  const calledNumbers = useMemo(
+    () => calledNumberEntries.map((entry) => Number(entry?.number)).filter((value) => Number.isFinite(value)),
+    [calledNumberEntries]
+  );
+  const markedNumbers = state.marked_numbers || [];
+  const currentCall = calledNumbers.length ? calledNumbers[calledNumbers.length - 1] : null;
   const hasCard = Boolean(state.card?.card_number);
   const displayState = !hasCard && state.game?.state === "playing" ? "watching" : state.game?.state;
+
+  const formatCalledNumber = useMemo(() => {
+    const maxNumber = Math.max(5, Number(state.bingo_number_max) || 400);
+    const step = Math.max(1, Math.floor(maxNumber / 5));
+    const letters = ["B", "I", "N", "G", "O"];
+
+    return (value) => {
+      const number = Number(value);
+      if (!Number.isFinite(number)) {
+        return "—";
+      }
+      const index = Math.min(4, Math.max(0, Math.floor((number - 1) / step)));
+      return `${letters[index]}${number}`;
+    };
+  }, [state.bingo_number_max]);
+
+  const derashAmount = useMemo(() => {
+    const value = state.total_players * 10 * 0.8;
+    return `${new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value)} Birr`;
+  }, [state.total_players]);
+
+  function toCallParts(value) {
+    const formatted = String(formatCalledNumber(value));
+    const match = formatted.match(/^([A-Za-z]+)(\d+)$/);
+    if (match) {
+      return { letter: match[1].toUpperCase(), number: match[2] };
+    }
+    return { letter: "#", number: formatted };
+  }
+
+  function renderCallBadge(value, keyPrefix) {
+    if (value == null) {
+      return "—";
+    }
+    const parts = toCallParts(value);
+    return (
+      <span key={`${keyPrefix}-${value}`} className="call-badge">
+        <span className="call-letter">{parts.letter}</span>
+        <span className="call-value">{parts.number}</span>
+      </span>
+    );
+  }
 
   useEffect(() => {
     setLoading(true);
@@ -49,28 +108,25 @@ export default function PlayPage() {
       return;
     }
     pollRef.current = setInterval(() => {
-      fetchJson(`/game/api/game-status/${state.game.id}/`)
-        .then((payload) => {
-          setState((prev) => ({
-            ...prev,
-            game: { ...prev.game, state: payload.state },
-            total_players: payload.total_players,
-            called_numbers: payload.called_numbers,
-            prize_amount: payload.prize_amount,
-            winner: payload.winner,
-            winner_card: payload.winner_card,
-            countdown: payload.countdown,
-          }));
-        })
+      fetchJson(`/game/api/play-state/${telegramId}/${gameId}/`)
+        .then((payload) => setState(payload))
         .catch(() => notify("error", "Unable to sync game state."));
     }, 2500);
 
     return () => clearInterval(pollRef.current);
-  }, [state.game?.id]);
+  }, [state.game?.id, telegramId, gameId]);
 
   function notify(type, message) {
     setNotification({ type, message });
     setTimeout(() => setNotification(EMPTY_NOTIFICATION), 3500);
+  }
+
+  function toggleVoiceAssistant() {
+    if (!voiceSupported) {
+      notify("error", "Voice assistant is not supported on this device.");
+      return;
+    }
+    setVoiceEnabled((prev) => !prev);
   }
 
   function claimBingo() {
@@ -97,6 +153,58 @@ export default function PlayPage() {
       })
       .catch((error) => notify("error", error.message));
   }
+
+  function markCurrentNumber(number) {
+    if (!hasCard || state.game?.state !== "playing") {
+      return;
+    }
+    postJson("/game/api/mark-number/", {
+      telegram_id: Number(telegramId),
+      game_id: Number(gameId),
+      number,
+    })
+      .then((payload) => {
+        setState((prev) => ({
+          ...prev,
+          marked_numbers: payload.marked_numbers || prev.marked_numbers,
+        }));
+      })
+      .catch((error) => notify("error", error.message));
+  }
+
+  useEffect(() => {
+    voiceManagerRef.current = new VoiceSyncManager();
+    setVoiceSupported(voiceManagerRef.current.supported);
+    return () => {
+      voiceManagerRef.current?.destroy();
+      voiceManagerRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!voiceManagerRef.current) {
+      return;
+    }
+    voiceManagerRef.current.setEnabled(voiceEnabled);
+  }, [voiceEnabled]);
+
+  useEffect(() => {
+    if (!voiceManagerRef.current) {
+      return;
+    }
+
+    const result = voiceManagerRef.current.processUpdate({
+      state: state.game?.state,
+      calledNumbers: calledNumberEntries,
+      serverTime: state.server_time,
+      callIntervalSeconds: state.number_call_interval,
+      maxNumber: state.bingo_number_max,
+    });
+
+    if (result?.status === "unsupported") {
+      setVoiceSupported(false);
+    }
+  }, [state.game?.state, calledNumberEntries, state.server_time, state.number_call_interval, state.bingo_number_max]);
 
   useEffect(() => {
     if (state.game?.state !== "finished") {
@@ -126,12 +234,18 @@ export default function PlayPage() {
     const lastThree = calledNumbers.slice(-3).reverse();
     return [
       { label: "State", value: displayState?.toUpperCase() || "—" },
-      { label: "Countdown", value: state.countdown || "—" },
       { label: "Players", value: state.total_players },
-      { label: "Current Call", value: lastThree[0] || "—" },
-      { label: "Last 3", value: lastThree.join(" ") || "—" },
+      
+      { label: "Derash", value: derashAmount },
+      { label: "Current Call", value: renderCallBadge(lastThree[0], "current") },
     ];
-  }, [calledNumbers, displayState, state.total_players, state.countdown]);
+  }, [calledNumbers, displayState, state.total_players, derashAmount]);
+
+  const voiceButtonLabel = !voiceSupported
+    ? "🔇 Voice Unsupported"
+    : voiceEnabled
+      ? "🔊 Voice ON"
+      : "🔊 Enable Voice Assistant";
 
   if (loading) {
     return (
@@ -153,12 +267,31 @@ export default function PlayPage() {
         />
 
         <div className="grid-layout">
-          {hasCard && <BingoGridComponent grid={state.card.grid} calledNumbers={calledNumbers} />}
-          <CalledNumbersComponent calledNumbers={calledNumbers} />
+          {hasCard && (
+            <BingoGridComponent
+              grid={state.card.grid}
+              markedNumbers={markedNumbers}
+              markSource="marked"
+              interactive={state.game?.state === "playing"}
+              clickableNumber={state.game?.state === "playing" ? currentCall : null}
+              onSelectNumber={markCurrentNumber}
+              footer={<ActionButtonsComponent state={displayState} hasCard={hasCard} onBingo={claimBingo} />}
+              
+            />
+            
+            
+          )
+          }
+          <CalledNumbersComponent calledNumbers={calledNumbers} maxNumber={state.bingo_number_max || 400} />
           {!hasCard && state.game?.state === "playing" && <SpectatorViewComponent />}
         </div>
 
-        <ActionButtonsComponent state={displayState} hasCard={hasCard} onBingo={claimBingo} />
+       
+        <div className="action-bar">
+          <button className="btn btn-secondary" onClick={toggleVoiceAssistant} disabled={!voiceSupported || state.game?.state !== "playing"}>
+            {voiceButtonLabel}
+          </button>
+        </div>
         <NotificationComponent notification={notification} />
       </div>
       {state.game?.state === "finished" && (
