@@ -33,6 +33,11 @@ class WalletAdjustStates(StatesGroup):
     waiting_for_reason = State()
 
 
+class DepositApprovalStates(StatesGroup):
+    waiting_for_amount = State()
+    waiting_for_confirm = State()
+
+
 @sync_to_async
 def _get_dashboard_stats():
     """Collect high-level stats for the admin dashboard."""
@@ -83,18 +88,19 @@ def _get_pending_withdrawals(limit: int = 5):
 @sync_to_async
 def _get_transaction_or_none(tx_id: int):
     try:
-        return Transaction.objects.select_related("user__wallet").get(id=tx_id)
+        return Transaction.objects.select_related("user__wallet", "deposit_detail").get(id=tx_id)
     except Transaction.DoesNotExist:
         return None
 
 
 @sync_to_async
-def _approve_deposit_atomic(tx_id: int, admin_telegram_id: int):
+def _approve_deposit_atomic(tx_id: int, admin_telegram_id: int, amount: Decimal):
     """
     Atomically approve a deposit:
     - lock wallet row
     - credit main balance
-    - mark transaction approved
+    - set verified amount
+    - mark transaction completed
     - record processed_by when possible
     """
     from django.db import transaction as db_transaction
@@ -111,7 +117,7 @@ def _approve_deposit_atomic(tx_id: int, admin_telegram_id: int):
         before_main = wallet.main_balance
         before_bonus = wallet.bonus_balance
 
-        wallet.main_balance += tx.amount
+        wallet.main_balance += amount
         wallet.save()
 
         admin_user = None
@@ -120,7 +126,10 @@ def _approve_deposit_atomic(tx_id: int, admin_telegram_id: int):
         except User.DoesNotExist:
             admin_user = None
 
-        tx.status = "approved"
+        tx.amount = amount
+        base_description = tx.description or "Deposit verified"
+        tx.description = f"{base_description} | Admin amount: {amount} Birr"
+        tx.status = "completed"
         tx.processed_at = timezone.now()
         tx.processed_by = admin_user
         tx.save()
@@ -314,7 +323,7 @@ def _adjust_wallet_atomic(
 @sync_to_async
 def _get_wallet_stats():
     """Aggregate high-level wallet/transaction statistics for /wallet_stats."""
-    qs = Transaction.objects.filter(status="approved")
+    qs = Transaction.objects.filter(status__in=["approved", "completed"])
 
     def _sum_for(tx_type: str):
         return (
@@ -448,9 +457,10 @@ async def admin_deposits_menu(message: Message):
     buttons = []
     for tx in pending:
         u = tx.user
+        amount_text = f"{tx.amount} Birr" if tx.amount is not None else "Pending"
         lines.append(
             f"#{tx.id} • {u.first_name} (@{u.username or '—'})\n"
-            f"Amount: {tx.amount} • {tx.created_at:%Y-%m-%d %H:%M}"
+            f"Amount: {amount_text} • {tx.created_at:%Y-%m-%d %H:%M}"
         )
         buttons.append(
             [
@@ -483,14 +493,18 @@ async def admin_deposit_detail(message: Message):
 
     user = tx.user
     status = tx.status.upper()
+    deposit_detail = getattr(tx, "deposit_detail", None)
+    confirmation_text = deposit_detail.payment_proof if deposit_detail else "—"
+    amount_text = f"{tx.amount} Birr" if tx.amount is not None else "Pending"
 
     text = (
         f"<b>💰 Deposit #{tx.id}</b>\n\n"
         f"👤 User: {user.first_name} (@{user.username or '—'})\n"
         f"🆔 Telegram ID: {user.telegram_id}\n"
-        f"💵 Amount: {tx.amount} Birr\n"
+        f"💵 Amount: {amount_text}\n"
         f"📅 Created: {tx.created_at:%Y-%m-%d %H:%M}\n"
         f"📄 Status: {status}\n\n"
+        f"🧾 Confirmation Text:\n{confirmation_text}\n\n"
         "Approve or reject this deposit?\n\n"
         "Use:\n"
         f"/adm_dep_approve_{tx.id}\n"
@@ -519,14 +533,18 @@ async def admin_deposit_detail_inline(callback: CallbackQuery):
 
     user = tx.user
     status = tx.status.upper()
+    deposit_detail = getattr(tx, "deposit_detail", None)
+    confirmation_text = deposit_detail.payment_proof if deposit_detail else "—"
+    amount_text = f"{tx.amount} Birr" if tx.amount is not None else "Pending"
 
     text = (
         f"<b>💰 Deposit #{tx.id}</b>\n\n"
         f"👤 User: {user.first_name} (@{user.username or '—'})\n"
         f"🆔 Telegram ID: {user.telegram_id}\n"
-        f"💵 Amount: {tx.amount} Birr\n"
+        f"💵 Amount: {amount_text}\n"
         f"📅 Created: {tx.created_at:%Y-%m-%d %H:%M}\n"
         f"📄 Status: {status}\n\n"
+        f"🧾 Confirmation Text:\n{confirmation_text}\n\n"
         "Approve or reject this deposit?"
     )
 
@@ -550,8 +568,8 @@ async def admin_deposit_detail_inline(callback: CallbackQuery):
 
 
 @router.message(F.text.regexp(r"^/adm_dep_approve_(\d+)$"))
-async def admin_deposit_approve_confirm(message: Message):
-    """Two-step confirmation for deposit approval."""
+async def admin_deposit_approve_confirm(message: Message, state: FSMContext):
+    """Request verified amount before approving a deposit."""
     if not await _ensure_admin(message):
         return
 
@@ -567,21 +585,24 @@ async def admin_deposit_approve_confirm(message: Message):
         return
 
     user = tx.user
+    deposit_detail = getattr(tx, "deposit_detail", None)
+    confirmation_text = deposit_detail.payment_proof if deposit_detail else "—"
+    await state.update_data(tx_id=tx.id)
+    await state.set_state(DepositApprovalStates.waiting_for_amount)
     text = (
-        "<b>✅ Approve Deposit?</b>\n\n"
+        "<b>✅ Approve Deposit</b>\n\n"
         f"User: {user.first_name} (@{user.username or '—'})\n"
-        f"Amount: {tx.amount} Birr\n"
         f"Transaction ID: #{tx.id}\n\n"
-        "Reply with:\n"
-        f"/adm_dep_approve_yes_{tx.id} to CONFIRM\n"
-        f"/adm_dep_cancel_{tx.id} to cancel"
+        f"🧾 Confirmation Text:\n{confirmation_text}\n\n"
+        "Please enter the verified deposit amount (in Birr).\n"
+        "Send 'cancel' to abort."
     )
     await message.answer(text)
 
 
 @router.callback_query(F.data.startswith("adm_dep:approve:"))
-async def admin_deposit_approve_confirm_inline(callback: CallbackQuery):
-    """Ask for confirmation before approving a deposit via inline button."""
+async def admin_deposit_approve_confirm_inline(callback: CallbackQuery, state: FSMContext):
+    """Request verified amount before approving a deposit via inline button."""
     if not await _ensure_admin(callback):
         await callback.answer()
         return
@@ -598,108 +619,223 @@ async def admin_deposit_approve_confirm_inline(callback: CallbackQuery):
         return
 
     user = tx.user
+    deposit_detail = getattr(tx, "deposit_detail", None)
+    confirmation_text = deposit_detail.payment_proof if deposit_detail else "—"
+    await state.update_data(tx_id=tx.id)
+    await state.set_state(DepositApprovalStates.waiting_for_amount)
     text = (
-        "<b>✅ Approve Deposit?</b>\n\n"
+        "<b>✅ Approve Deposit</b>\n\n"
         f"User: {user.first_name} (@{user.username or '—'})\n"
-        f"Amount: {tx.amount} Birr\n"
         f"Transaction ID: #{tx.id}\n\n"
-        "Confirm this approval?"
+        f"🧾 Confirmation Text:\n{confirmation_text}\n\n"
+        "Please enter the verified deposit amount (in Birr)."
     )
 
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="✅ Yes",
-                    callback_data=f"adm_dep:approve_yes:{tx.id}",
-                ),
-                InlineKeyboardButton(
-                    text="❌ Cancel",
-                    callback_data=f"adm_dep:cancel:{tx.id}",
-                ),
-            ]
-        ]
-    )
-
-    await callback.message.answer(text, reply_markup=keyboard)
+    await callback.message.answer(text)
     await callback.answer()
 
 
 @router.message(F.text.regexp(r"^/adm_dep_approve_yes_(\d+)$"))
-async def admin_deposit_approve_execute(message: Message):
-    """Execute atomic deposit approval after confirmation."""
+async def admin_deposit_approve_execute(message: Message, state: FSMContext):
+    """Handle legacy approve command by requesting the verified amount."""
     if not await _ensure_admin(message):
         return
 
-    admin_telegram_id = message.from_user.id
     try:
         tx_id = int(message.text.split("_")[-1])
     except (TypeError, ValueError):
         await message.answer("❌ Invalid deposit reference.")
         return
 
-    success, info, before, after = await _approve_deposit_atomic(
-        tx_id, admin_telegram_id
-    )
-    if not success:
-        await message.answer(f"❌ {info}")
-        return
-
-    tx = await _get_transaction_or_none(tx_id)
-    user = tx.user if tx else None
-
+    await state.update_data(tx_id=tx_id)
+    await state.set_state(DepositApprovalStates.waiting_for_amount)
     await message.answer(
-        f"✅ Deposit #{tx_id} approved.\n"
-        f"User: {user.first_name if user else 'Unknown'}\n"
-        f"Amount: {tx.amount if tx else '—'} Birr\n"
-        f"Balance: {before[0]} → {after[0]} Birr (main)",
-        reply_markup=admin_main_menu_keyboard(),
-    )
-
-    # Notify user (if we have a telegram_id)
-    if user:
-        try:
-            await message.bot.send_message(
-                user.telegram_id,
-                f"💰 Your deposit of {tx.amount} Birr (Transaction #{tx.id}) "
-                f"has been <b>approved</b>.",
-            )
-        except Exception:
-            pass
-
-    # Broadcast admin action
-    await send_admin_notification(
-        message.bot,
-        text=(
-            "👮 <b>Admin Action</b>\n\n"
-            f"Admin: @{message.from_user.username or message.from_user.id}\n"
-            f"Action: Approved deposit #{tx_id}\n"
-            f"User: @{user.username or user.telegram_id if user else 'Unknown'}\n"
-            f"Amount: {tx.amount if tx else '—'} Birr\n"
-            f"Time: {timezone.now():%Y-%m-%d %H:%M}"
-        ),
+        "Please enter the verified deposit amount (in Birr).\n"
+        "Send 'cancel' to abort."
     )
 
 
 @router.callback_query(F.data.startswith("adm_dep:approve_yes:"))
-async def admin_deposit_approve_execute_inline(callback: CallbackQuery):
-    """Execute atomic deposit approval after inline confirmation."""
+async def admin_deposit_approve_execute_inline(callback: CallbackQuery, state: FSMContext):
+    """Handle legacy inline approve by requesting the verified amount."""
     if not await _ensure_admin(callback):
         await callback.answer()
         return
 
-    admin_telegram_id = callback.from_user.id
     try:
         tx_id = int(callback.data.split(":")[-1])
     except (TypeError, ValueError):
         await callback.answer("Invalid deposit reference", show_alert=True)
         return
 
+    await state.update_data(tx_id=tx_id)
+    await state.set_state(DepositApprovalStates.waiting_for_amount)
+    await callback.message.answer(
+        "Please enter the verified deposit amount (in Birr).\n"
+        "Send 'cancel' to abort."
+    )
+    await callback.answer()
+
+
+@router.message(DepositApprovalStates.waiting_for_amount)
+async def admin_deposit_amount_submit(message: Message, state: FSMContext):
+    """Capture verified amount and request approve/reject confirmation."""
+    if not await _ensure_admin(message):
+        return
+
+    text = (message.text or "").strip().lower()
+    if text in {"cancel", "stop", "exit"}:
+        await state.clear()
+        await message.answer("✅ Deposit approval cancelled.")
+        return
+
+    try:
+        amount = Decimal(message.text)
+    except (TypeError, InvalidOperation):
+        await message.answer("❌ Please enter a valid amount in Birr.")
+        return
+
+    if amount <= 0:
+        await message.answer("❌ Amount must be greater than 0.")
+        return
+
+    if amount < settings.MIN_DEPOSIT:
+        await message.answer(
+            f"❌ Minimum deposit is {settings.MIN_DEPOSIT} Birr.\n"
+            f"Please enter an amount ≥ {settings.MIN_DEPOSIT}."
+        )
+        return
+
+    data = await state.get_data()
+    tx_id = data.get("tx_id")
+    if not tx_id:
+        await message.answer("❌ Deposit reference missing. Please retry the approval.")
+        await state.clear()
+        return
+
+    await state.update_data(amount=str(amount))
+    await state.set_state(DepositApprovalStates.waiting_for_confirm)
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ Approve",
+                    callback_data=f"adm_dep:confirm_amount:approve:{tx_id}",
+                ),
+                InlineKeyboardButton(
+                    text="❌ Reject",
+                    callback_data=f"adm_dep:confirm_amount:reject:{tx_id}",
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    text="Cancel",
+                    callback_data=f"adm_dep:confirm_amount:cancel:{tx_id}",
+                )
+            ],
+        ]
+    )
+
+    await message.answer(
+        f"Verified amount recorded: {amount} Birr.\n"
+        "Approve or reject this deposit?",
+        reply_markup=keyboard,
+    )
+
+
+@router.callback_query(F.data.startswith("adm_dep:confirm_amount:"))
+async def admin_deposit_amount_confirm(callback: CallbackQuery, state: FSMContext):
+    """Approve or reject a deposit after amount entry."""
+    if not await _ensure_admin(callback):
+        await callback.answer()
+        return
+
+    parts = callback.data.split(":")
+    if len(parts) != 4:
+        await callback.answer("Invalid action", show_alert=True)
+        return
+
+    action = parts[2]
+    try:
+        tx_id = int(parts[3])
+    except (TypeError, ValueError):
+        await callback.answer("Invalid deposit reference", show_alert=True)
+        return
+
+    data = await state.get_data()
+    amount_text = data.get("amount")
+    state_tx_id = data.get("tx_id")
+    if not amount_text or str(state_tx_id) != str(tx_id):
+        await callback.message.answer("❌ Approval context expired. Please re-enter the amount.")
+        await state.clear()
+        await callback.answer()
+        return
+
+    if action == "cancel":
+        await state.clear()
+        await callback.message.answer("✅ Action cancelled.")
+        await callback.answer()
+        return
+
+    if action == "reject":
+        success, info = await _reject_deposit_atomic(tx_id, callback.from_user.id)
+        if not success:
+            await callback.message.answer(f"❌ {info}")
+            await state.clear()
+            await callback.answer()
+            return
+
+        tx = await _get_transaction_or_none(tx_id)
+        user = tx.user if tx else None
+
+        await callback.message.answer(
+            f"✅ Deposit #{tx_id} rejected.",
+            reply_markup=admin_main_menu_keyboard(),
+        )
+
+        if user:
+            try:
+                await callback.message.bot.send_message(
+                    user.telegram_id,
+                    f"❌ Your deposit (Transaction #{tx.id}) has been <b>rejected</b>.\n"
+                    "Please contact support if you believe this is an error.",
+                )
+            except Exception:
+                pass
+
+        await send_admin_notification(
+            callback.message.bot,
+            text=(
+                "👮 <b>Admin Action</b>\n\n"
+                f"Admin: @{callback.from_user.username or callback.from_user.id}\n"
+                f"Action: Rejected deposit #{tx_id}\n"
+                f"Time: {timezone.now():%Y-%m-%d %H:%M}"
+            ),
+        )
+
+        await state.clear()
+        await callback.answer()
+        return
+
+    if action != "approve":
+        await callback.answer("Unknown action", show_alert=True)
+        return
+
+    try:
+        amount = Decimal(amount_text)
+    except (TypeError, InvalidOperation):
+        await callback.message.answer("❌ Invalid amount saved. Please re-enter the amount.")
+        await state.clear()
+        await callback.answer()
+        return
+
     success, info, before, after = await _approve_deposit_atomic(
-        tx_id, admin_telegram_id
+        tx_id, callback.from_user.id, amount
     )
     if not success:
         await callback.message.answer(f"❌ {info}")
+        await state.clear()
         await callback.answer()
         return
 
@@ -707,7 +843,7 @@ async def admin_deposit_approve_execute_inline(callback: CallbackQuery):
     user = tx.user if tx else None
 
     await callback.message.answer(
-        f"✅ Deposit #{tx_id} approved.\n"
+        f"✅ Deposit #{tx_id} completed.\n"
         f"User: {user.first_name if user else 'Unknown'}\n"
         f"Amount: {tx.amount if tx else '—'} Birr\n"
         f"Balance: {before[0]} → {after[0]} Birr (main)",
@@ -719,7 +855,7 @@ async def admin_deposit_approve_execute_inline(callback: CallbackQuery):
             await callback.message.bot.send_message(
                 user.telegram_id,
                 f"💰 Your deposit of {tx.amount} Birr (Transaction #{tx.id}) "
-                f"has been <b>approved</b>.",
+                f"has been <b>completed</b>.",
             )
         except Exception:
             pass
@@ -729,13 +865,14 @@ async def admin_deposit_approve_execute_inline(callback: CallbackQuery):
         text=(
             "👮 <b>Admin Action</b>\n\n"
             f"Admin: @{callback.from_user.username or callback.from_user.id}\n"
-            f"Action: Approved deposit #{tx_id}\n"
+            f"Action: Completed deposit #{tx_id}\n"
             f"User: @{user.username or user.telegram_id if user else 'Unknown'}\n"
             f"Amount: {tx.amount if tx else '—'} Birr\n"
             f"Time: {timezone.now():%Y-%m-%d %H:%M}"
         ),
     )
 
+    await state.clear()
     await callback.answer()
 
 

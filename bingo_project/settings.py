@@ -108,7 +108,9 @@ CARD_COUNT = int(os.getenv('CARD_COUNT', 400))
 MIN_DEPOSIT = int(os.getenv('MIN_DEPOSIT', 10))
 MIN_WITHDRAWAL = int(os.getenv('MIN_WITHDRAWAL', 50))
 WAITING_TIME = int(os.getenv('WAITING_TIME', 25))
-NUMBER_CALL_INTERVAL = int(os.getenv('NUMBER_CALL_INTERVAL', 3))
+NUMBER_CALL_INTERVAL = int(os.getenv('NUMBER_CALL_INTERVAL', 5))
+BINGO_NUMBER_MAX = int(os.getenv('BINGO_NUMBER_MAX', 75))
+GAME_MIN_PLAYERS = int(os.getenv('GAME_MIN_PLAYERS', 2))
 
 # Bot Configuration
 BOT_TOKEN = os.getenv('BOT_TOKEN', '')

@@ -76,7 +76,7 @@ async def show_rules(message: Message):
         "1️⃣ Select a card (1-400) from the waiting screen\n"
         "2️⃣ Each card costs 10 Birr\n"
         "3️⃣ Wait for the game to start (25 seconds countdown)\n"
-        "4️⃣ Numbers will be called randomly (1-75)\n"
+        f"4️⃣ Numbers will be called randomly (1-{settings.BINGO_NUMBER_MAX})\n"
         "5️⃣ Mark numbers on your 5×5 grid\n"
         "6️⃣ Complete a line (horizontal, vertical, or diagonal)\n"
         "7️⃣ Click BINGO button to claim your win!\n\n"

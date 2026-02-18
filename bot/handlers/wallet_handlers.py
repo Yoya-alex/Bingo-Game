@@ -14,8 +14,7 @@ router = Router()
 
 
 class DepositStates(StatesGroup):
-    waiting_for_amount = State()
-    waiting_for_proof = State()
+    waiting_for_confirmation = State()
 
 
 class WithdrawalStates(StatesGroup):
@@ -94,8 +93,8 @@ async def deposit_menu(message: Message):
         "   <b>Bank:</b> Commercial Bank of Ethiopia\n"
         "   <b>Account:</b> 1000123456789\n"
         "   <b>Name:</b> Bingo Bot\n\n"
-        "2️⃣ Take a screenshot of the transaction\n"
-        "3️⃣ Click 'Submit Deposit Proof' below\n\n"
+        "2️⃣ Wait for the payment confirmation text\n"
+        "3️⃣ Click 'Submit Deposit Proof' below and send that text\n\n"
         f"<i>Minimum deposit: {settings.MIN_DEPOSIT} Birr</i>"
     )
     
@@ -106,44 +105,16 @@ async def deposit_menu(message: Message):
 async def submit_deposit_start(callback: CallbackQuery, state: FSMContext):
     """Start deposit submission process"""
     await callback.message.answer(
-        "📤 <b>Deposit Amount</b>\n\n"
-        "Please enter the amount you deposited (in Birr):"
+        "📤 <b>Payment Confirmation</b>\n\n"
+        "Please paste the payment confirmation text you received:"
     )
-    await state.set_state(DepositStates.waiting_for_amount)
+    await state.set_state(DepositStates.waiting_for_confirmation)
     await callback.answer()
 
 
-@router.message(DepositStates.waiting_for_amount)
-async def process_deposit_amount(message: Message, state: FSMContext):
-    """Capture and validate deposit amount before proof."""
-    try:
-        amount = float(message.text)
-    except ValueError:
-        await message.answer("❌ Please enter a valid number for the amount.")
-        return
-
-    if amount <= 0:
-        await message.answer("❌ Amount must be greater than 0.")
-        return
-
-    if amount < settings.MIN_DEPOSIT:
-        await message.answer(
-            f"❌ Minimum deposit is {settings.MIN_DEPOSIT} Birr.\n"
-            f"Please enter an amount ≥ {settings.MIN_DEPOSIT}."
-        )
-        return
-
-    await state.update_data(amount=amount)
-    await message.answer(
-        "📤 <b>Submit Deposit Proof</b>\n\n"
-        "Now send a screenshot or photo of your transaction receipt."
-    )
-    await state.set_state(DepositStates.waiting_for_proof)
-
-
-@router.message(DepositStates.waiting_for_proof, F.photo)
-async def process_deposit_proof(message: Message, state: FSMContext):
-    """Process deposit proof submission"""
+@router.message(DepositStates.waiting_for_confirmation, F.text)
+async def process_deposit_confirmation(message: Message, state: FSMContext):
+    """Process deposit confirmation text submission"""
     user = await get_user_with_wallet(message.from_user.id)
     
     if not user:
@@ -151,26 +122,26 @@ async def process_deposit_proof(message: Message, state: FSMContext):
         await state.clear()
         return
     
-    # Get photo file_id
-    photo_file_id = message.photo[-1].file_id
-    data = await state.get_data()
-    amount = data.get("amount", 0)
+    confirmation_text = (message.text or "").strip()
+    if not confirmation_text:
+        await message.answer("❌ Please paste the payment confirmation text.")
+        return
     
-    # Create transaction with pending status and provided amount
+    # Create transaction with pending status (amount entered by admin later)
     transaction = await create_transaction(
         user,
         'deposit',
-        amount,
+        None,
         'pending',
         'Deposit pending verification',
     )
     
     # Create deposit detail
-    await create_deposit(transaction, photo_file_id, 'Bank Transfer')
+    await create_deposit(transaction, confirmation_text, 'Bank Transfer')
     
     await message.answer(
         "✅ <b>Deposit submitted!</b>\n\n"
-        f"Amount: {amount} Birr\n"
+        "Amount: Pending verification\n"
         "Your deposit is pending admin verification.\n"
         "You'll be notified once it's approved.\n\n"
         f"Transaction ID: #{transaction.id}",
@@ -184,7 +155,8 @@ async def process_deposit_proof(message: Message, state: FSMContext):
             text=(
                 "🔔 <b>New Deposit Request</b>\n\n"
                 f"User: {user.first_name} (@{user.username or '—'})\n"
-                f"Amount: {amount} Birr\n"
+                "Amount: Pending verification\n"
+                f"Confirmation: {confirmation_text}\n"
                 f"Transaction ID: #{transaction.id}"
             ),
         )

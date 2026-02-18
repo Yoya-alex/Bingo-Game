@@ -8,7 +8,7 @@ from users.models import User
 from game.models import Game, BingoCard
 from wallet.models import Transaction
 from bot.keyboards import main_menu_keyboard, card_selection_keyboard, bingo_button_keyboard
-from bot.utils.game_logic import generate_bingo_grid, check_bingo_win
+from bot.utils.game_logic import check_bingo_win
 
 router = Router()
 
@@ -53,16 +53,13 @@ def check_card_available(game, card_number):
 
 
 @sync_to_async
-def create_bingo_card(game, user, card_number, grid):
+def create_bingo_card(game, user, card_number):
     """Create a bingo card"""
-    card = BingoCard.objects.create(
+    return BingoCard.objects.create(
         game=game,
         user=user,
         card_number=card_number
     )
-    card.set_grid(grid)
-    card.save()
-    return card
 
 
 @sync_to_async
@@ -103,7 +100,7 @@ def get_game_with_cards(game_id):
 def mark_winner_and_distribute_prize(game, user_card):
     """Mark winner and distribute prize"""
     # Auto-transition to playing if still waiting
-    if game.state == 'waiting':
+    if game.state == 'waiting' and game.cards.count() >= settings.GAME_MIN_PLAYERS:
         game.state = 'playing'
         game.started_at = timezone.now()
     
@@ -283,11 +280,8 @@ async def select_card(callback: CallbackQuery):
             f'Game #{game.id} - Card #{card_number}'
         )
         
-        # Generate bingo grid
-        grid = generate_bingo_grid()
-        
         # Create card
-        card = await create_bingo_card(game, user, card_number, grid)
+        card = await create_bingo_card(game, user, card_number)
         
         await callback.answer("✅ Card selected!", show_alert=True)
         await show_waiting_screen(callback.message, game, card)
