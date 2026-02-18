@@ -76,7 +76,12 @@ class TransactionAdmin(admin.ModelAdmin):
     
     def approve_transactions(self, request, queryset):
         for transaction in queryset.filter(status='pending'):
-            transaction.status = 'approved'
+            if transaction.transaction_type == 'deposit':
+                if transaction.amount is None:
+                    continue
+                transaction.status = 'completed'
+            else:
+                transaction.status = 'approved'
             transaction.processed_at = timezone.now()
             transaction.processed_by = None  # You can link to admin user if needed
             transaction.save()

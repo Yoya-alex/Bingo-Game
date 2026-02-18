@@ -1,8 +1,11 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.cache import never_cache
 from django.conf import settings
 from django.utils import timezone
+from django.db import transaction
+from decimal import Decimal
 from users.models import User
 from game.models import Game, BingoCard
 from wallet.models import Transaction
@@ -21,6 +24,36 @@ def get_winner_card_payload(game):
         'card_number': winner_card.card_number,
         'grid': winner_card.get_grid(),
     }
+
+
+def ensure_game_started(game_id):
+    """Atomically transition a waiting game to playing when countdown ends."""
+    with transaction.atomic():
+        game = Game.objects.select_for_update().get(id=game_id)
+        called_numbers = game.get_called_numbers()
+
+        if game.state == 'playing' and game.cards.count() < settings.GAME_MIN_PLAYERS:
+            game.state = 'waiting'
+            game.started_at = None
+            game.save()
+            return game
+
+        if game.state == 'playing' and len(called_numbers) >= settings.BINGO_NUMBER_MAX:
+            game.state = 'finished'
+            if not game.finished_at:
+                game.finished_at = timezone.now()
+            game.save()
+            return game
+
+        if game.state != 'waiting':
+            return game
+
+        time_elapsed = (timezone.now() - game.created_at).total_seconds()
+        if time_elapsed >= settings.WAITING_TIME and game.cards.count() >= settings.GAME_MIN_PLAYERS:
+            game.state = 'playing'
+            game.started_at = timezone.now()
+            game.save()
+        return game
 
 
 def game_lobby(request, telegram_id):
@@ -61,62 +94,70 @@ def select_card_api(request):
         user = User.objects.select_related('wallet').get(telegram_id=telegram_id)
         wallet = user.wallet
         
-        # Get or create active game
-        game = Game.objects.filter(state='waiting').first()
-        if not game:
-            game = Game.objects.create(state='waiting')
-        
         if card_number < 1 or card_number > settings.CARD_COUNT:
             return JsonResponse({'error': 'Invalid card number'}, status=400)
 
-        # Check if card is available
-        if game.cards.filter(card_number=card_number).exists():
+        user_card = (
+            BingoCard.objects.select_related('game')
+            .filter(user=user, game__state='waiting')
+            .order_by('-game__created_at')
+            .first()
+        )
+
+        if user_card:
+            game = user_card.game
+        else:
+            # Use a waiting game that already has participants, otherwise create a fresh one.
+            game = Game.objects.filter(state='waiting', cards__isnull=False).order_by('-created_at').first()
+            if not game:
+                game = Game.objects.create(state='waiting')
+
+        # Check if card is available for this user
+        if game.cards.filter(card_number=card_number).exclude(user=user).exists():
             return JsonResponse({'error': 'Card already taken'}, status=400)
         
-        # Check if user already has a card
-        if game.cards.filter(user=user).exists():
-            return JsonResponse({'error': 'You already have a card'}, status=400)
-        
-        # Check balance
-        if wallet.total_balance < settings.CARD_PRICE:
-            return JsonResponse({'error': 'Insufficient balance'}, status=400)
-        
-        # Deduct balance
-        if wallet.main_balance >= settings.CARD_PRICE:
-            wallet.main_balance -= settings.CARD_PRICE
+        if user_card:
+            user_card.card_number = card_number
+            user_card.save()
+            card = user_card
         else:
-            remaining = settings.CARD_PRICE - wallet.main_balance
-            wallet.main_balance = 0
-            wallet.bonus_balance -= remaining
-        wallet.save()
-        
-        # Log transaction
-        Transaction.objects.create(
-            user=user,
-            transaction_type='game_entry',
-            amount=settings.CARD_PRICE,
-            status='approved',
-            description=f'Game #{game.id} - Card #{card_number}'
-        )
-        
-        # Generate bingo grid
-        from bot.utils.game_logic import generate_bingo_grid
-        grid = generate_bingo_grid()
-        
-        # Create card
-        card = BingoCard.objects.create(
-            game=game,
-            user=user,
-            card_number=card_number
-        )
-        card.set_grid(grid)
-        card.save()
+            # Check balance
+            if wallet.total_balance < settings.CARD_PRICE:
+                return JsonResponse({'error': 'Insufficient balance'}, status=400)
+
+            # Deduct balance
+            if wallet.main_balance >= settings.CARD_PRICE:
+                wallet.main_balance -= settings.CARD_PRICE
+            else:
+                remaining = settings.CARD_PRICE - wallet.main_balance
+                wallet.main_balance = 0
+                wallet.bonus_balance -= remaining
+            wallet.save()
+
+            # Log transaction
+            Transaction.objects.create(
+                user=user,
+                transaction_type='game_entry',
+                amount=settings.CARD_PRICE,
+                status='approved',
+                description=f'Game #{game.id} - Card #{card_number}'
+            )
+
+            # Create card
+            card = BingoCard.objects.create(
+                game=game,
+                user=user,
+                card_number=card_number
+            )
         
         return JsonResponse({
             'success': True,
             'game_id': game.id,
             'card_number': card_number,
-            'redirect_url': f'/game/play/{telegram_id}/{game.id}/'
+            'card': {
+                'card_number': card.card_number,
+                'grid': card.get_grid(),
+            },
         })
         
     except Exception as e:
@@ -124,10 +165,11 @@ def select_card_api(request):
 
 
 @csrf_exempt
+@never_cache
 def game_status_api(request, game_id):
     """API endpoint to get game status (for real-time updates)"""
     try:
-        game = get_object_or_404(Game, id=game_id)
+        game = ensure_game_started(game_id)
         
         # Calculate countdown
         time_elapsed = (timezone.now() - game.created_at).total_seconds()
@@ -137,9 +179,11 @@ def game_status_api(request, game_id):
         return JsonResponse({
             'game_id': game.id,
             'state': game.state,
+            'server_time': timezone.now().isoformat(),
+            'number_call_interval': settings.NUMBER_CALL_INTERVAL,
             'countdown': countdown,
             'total_players': game.cards.count(),
-            'called_numbers': game.get_called_numbers(),
+            'called_numbers': game.get_called_number_entries(),
             'winner': game.winner.first_name if game.winner else None,
             'prize_amount': float(game.prize_amount) if game.prize_amount else 0,
             'winner_card': winner_card,
@@ -148,6 +192,7 @@ def game_status_api(request, game_id):
         return JsonResponse({'error': str(e)}, status=500)
 
 
+@never_cache
 def lobby_state_api(request, telegram_id):
     """Return lobby data for React UI."""
     try:
@@ -155,20 +200,59 @@ def lobby_state_api(request, telegram_id):
     except User.DoesNotExist:
         return JsonResponse({'error': 'User not found. Please start the bot first.'}, status=404)
 
-    game = Game.objects.filter(state='waiting').first()
+    def get_active_game():
+        user_waiting_game = (
+            Game.objects.filter(state='waiting', cards__user=user)
+            .order_by('-created_at')
+            .first()
+        )
+        if user_waiting_game:
+            return user_waiting_game
+
+        waiting_game = Game.objects.filter(state='waiting', cards__isnull=False).order_by('-created_at').first()
+        playing_game = Game.objects.filter(state='playing').order_by('-created_at').first()
+        return waiting_game or playing_game
+
+    game = get_active_game()
+    if game:
+        game = ensure_game_started(game.id)
+        if game.state == 'finished':
+            game = get_active_game()
+            if game:
+                game = ensure_game_started(game.id)
+
     if not game:
-        game = Game.objects.create(state='waiting')
+        return JsonResponse({
+            'user': {
+                'first_name': user.first_name,
+                'telegram_id': user.telegram_id,
+            },
+            'game': {
+                'id': None,
+                'state': 'waiting',
+            },
+            'server_time': timezone.now().isoformat(),
+            'number_call_interval': settings.NUMBER_CALL_INTERVAL,
+            'wallet_balance': float(user.wallet.total_balance),
+            'taken_cards': [],
+            'all_numbers': list(range(1, settings.CARD_COUNT + 1)),
+            'total_players': 0,
+            'available_cards': settings.CARD_COUNT,
+            'stake': settings.CARD_PRICE,
+            'countdown': 0,
+            'called_numbers': [],
+            'winner': None,
+            'prize_amount': 0,
+            'winner_card': None,
+            'user_card': None,
+        })
 
     taken_cards = list(game.cards.values_list('card_number', flat=True))
     time_elapsed = (timezone.now() - game.created_at).total_seconds()
     countdown = max(0, int(settings.WAITING_TIME - time_elapsed))
     total_players = game.cards.count()
     winner_card = get_winner_card_payload(game)
-    has_card = game.cards.filter(user=user).exists()
-    if total_players == 0:
-        state = 'waiting'
-    else:
-        state = 'watching' if game.state == 'playing' and not has_card else game.state
+    user_card = game.cards.filter(user=user).first()
 
     return JsonResponse({
         'user': {
@@ -177,26 +261,34 @@ def lobby_state_api(request, telegram_id):
         },
         'game': {
             'id': game.id,
-            'state': state,
+            'state': game.state,
         },
+        'server_time': timezone.now().isoformat(),
+        'number_call_interval': settings.NUMBER_CALL_INTERVAL,
         'wallet_balance': float(user.wallet.total_balance),
         'taken_cards': taken_cards,
-        'all_numbers': list(range(1, 81)),
+        'all_numbers': list(range(1, settings.CARD_COUNT + 1)),
         'total_players': total_players,
-        'available_cards': 80 - len(taken_cards),
+        'available_cards': settings.CARD_COUNT - len(taken_cards),
         'stake': settings.CARD_PRICE,
         'countdown': countdown,
+        'called_numbers': game.get_called_number_entries(),
         'winner': game.winner.first_name if game.winner else None,
         'prize_amount': float(game.prize_amount) if game.prize_amount else 0,
         'winner_card': winner_card,
+        'user_card': {
+            'card_number': user_card.card_number,
+            'grid': user_card.get_grid(),
+        } if user_card else None,
     })
 
 
+@never_cache
 def play_state_api(request, telegram_id, game_id):
     """Return play data for React UI."""
     try:
         user = User.objects.get(telegram_id=telegram_id)
-        game = get_object_or_404(Game, id=game_id)
+        game = ensure_game_started(game_id)
         user_card = get_object_or_404(BingoCard, game=game, user=user)
     except User.DoesNotExist:
         return JsonResponse({'error': 'User not found.'}, status=404)
@@ -204,7 +296,10 @@ def play_state_api(request, telegram_id, game_id):
     grid = user_card.get_grid()
     called_numbers = game.get_called_numbers()
     total_players = game.cards.count()
-    prize_amount = total_players * settings.CARD_PRICE if game.prize_amount == 0 else game.prize_amount
+    if game.prize_amount == 0:
+        prize_amount = Decimal(total_players) * Decimal(settings.CARD_PRICE) * Decimal("0.8")
+    else:
+        prize_amount = game.prize_amount
 
     time_elapsed = (timezone.now() - game.created_at).total_seconds()
     countdown = max(0, int(settings.WAITING_TIME - time_elapsed))
@@ -219,17 +314,69 @@ def play_state_api(request, telegram_id, game_id):
             'id': game.id,
             'state': game.state,
         },
+        'server_time': timezone.now().isoformat(),
+        'number_call_interval': settings.NUMBER_CALL_INTERVAL,
         'card': {
             'card_number': user_card.card_number,
             'grid': grid,
         },
-        'called_numbers': called_numbers,
+        'bingo_number_max': settings.BINGO_NUMBER_MAX,
+        'marked_numbers': user_card.get_marked_positions(),
+        'called_numbers': game.get_called_number_entries(),
         'total_players': total_players,
         'prize_amount': float(prize_amount),
         'winner': game.winner.first_name if game.winner else None,
         'countdown': countdown,
         'winner_card': winner_card,
     })
+
+
+@csrf_exempt
+def mark_number_api(request):
+    """Mark the current called number on the player's bingo card."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+    try:
+        data = json.loads(request.body)
+        telegram_id = data.get('telegram_id')
+        game_id = data.get('game_id')
+        number = int(data.get('number'))
+
+        user = User.objects.get(telegram_id=telegram_id)
+        game = get_object_or_404(Game, id=game_id)
+        card = get_object_or_404(BingoCard, game=game, user=user)
+
+        if game.state != 'playing':
+            return JsonResponse({'error': 'Marking is available only while game is playing.'}, status=400)
+
+        called_number_entries = game.get_called_number_entries()
+        if not called_number_entries:
+            return JsonResponse({'error': 'No called number is available yet.'}, status=400)
+
+        current_called = called_number_entries[-1]['number']
+        if number != current_called:
+            return JsonResponse({'error': 'Only the current called number can be marked.'}, status=400)
+
+        grid_values = {value for row in card.get_grid() for value in row if value is not None}
+        if number not in grid_values:
+            return JsonResponse({'error': 'Current called number is not on your card.'}, status=400)
+
+        marked_numbers = card.get_marked_positions()
+        if number not in marked_numbers:
+            marked_numbers.append(number)
+            card.set_marked_positions(marked_numbers)
+            card.save(update_fields=['marked_positions'])
+
+        return JsonResponse({
+            'success': True,
+            'marked_numbers': marked_numbers,
+            'current_called': current_called,
+        })
+    except ValueError:
+        return JsonResponse({'error': 'Invalid number'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
 
 
 @csrf_exempt
@@ -251,8 +398,8 @@ def claim_bingo_api(request):
         if game.state == 'finished':
             return JsonResponse({'error': 'Game already finished'}, status=400)
         
-        # Auto-transition to playing if still waiting and has players
-        if game.state == 'waiting' and game.cards.count() > 0:
+        # Auto-transition to playing if still waiting and enough players joined
+        if game.state == 'waiting' and game.cards.count() >= settings.GAME_MIN_PLAYERS:
             game.state = 'playing'
             game.started_at = timezone.now()
             game.save()
@@ -265,13 +412,15 @@ def claim_bingo_api(request):
         from bot.utils.game_logic import check_bingo_win
         grid = card.get_grid()
         called_numbers = game.get_called_numbers()
-        
-        is_winner, pattern = check_bingo_win(grid, called_numbers)
+
+        called_set = set(called_numbers)
+        marked_numbers = [number for number in card.get_marked_positions() if number in called_set]
+        is_winner, pattern = check_bingo_win(grid, marked_numbers)
         
         if is_winner:
             # Calculate prize
             total_players = game.cards.count()
-            prize = total_players * settings.CARD_PRICE
+            prize = Decimal(total_players) * Decimal(settings.CARD_PRICE) * Decimal("0.8")
             
             # Update game state
             game.state = 'finished'
