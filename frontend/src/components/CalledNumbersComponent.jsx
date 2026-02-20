@@ -2,6 +2,7 @@ import { useMemo } from "react";
 
 export default function CalledNumbersComponent({ calledNumbers, maxNumber = 400 }) {
   const calledSet = useMemo(() => new Set(calledNumbers || []), [calledNumbers]);
+  const currentNumber = calledNumbers?.length ? Number(calledNumbers[calledNumbers.length - 1]) : null;
   const columns = useMemo(() => {
     const limit = Math.max(1, Number(maxNumber) || 400);
     const step = Math.floor(limit / 5);
@@ -24,7 +25,10 @@ export default function CalledNumbersComponent({ calledNumbers, maxNumber = 400 
             <div className="called-col-head" data-letter={column.letter}>{column.letter}</div>
             <div className="called-col-grid">
               {column.numbers.map((num) => (
-                <div key={num} className={`called-cell${calledSet.has(num) ? " called" : ""}`}>
+                <div
+                  key={num}
+                  className={`called-cell${calledSet.has(num) ? " called" : ""}${num === currentNumber ? " current" : ""}`}
+                >
                   {num}
                 </div>
               ))}

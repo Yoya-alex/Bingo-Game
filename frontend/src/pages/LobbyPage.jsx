@@ -126,7 +126,7 @@ export default function LobbyPage() {
 
   const stats = [
     { label: "State", value: displayState.toUpperCase() },
-    { label: "Countdown", value: data.countdown || "—" },
+    { label: "Count", value: data.countdown || "—" },
     { label: "Players", value: data.total_players },
   ];
 
@@ -147,7 +147,10 @@ export default function LobbyPage() {
           title="Bingo Lobby"
           subtitle={`Game #${data.game?.id ?? "—"} • ${data.user?.first_name ?? "Player"} • Balance ${data.wallet_balance} Birr`}
           stats={stats}
+          
         />
+        
+        <NotificationComponent notification={notification} />
 
         <div className="grid-layout">
           {data.user_card?.grid && <BingoGridComponent grid={data.user_card.grid} interactive={false} />}

@@ -231,21 +231,17 @@ export default function PlayPage() {
   }, [state.game?.state, telegramId]);
 
   const stats = useMemo(() => {
-    const lastThree = calledNumbers.slice(-3).reverse();
     return [
       { label: "State", value: displayState?.toUpperCase() || "—" },
       { label: "Players", value: state.total_players },
-      
+      {label:"Medeb", value: "10 Birr"},
       { label: "Derash", value: derashAmount },
-      { label: "Current Call", value: renderCallBadge(lastThree[0], "current") },
+      {label:"called", value: calledNumbers.length ? `${calledNumbers.length}/75` : "-"},
     ];
   }, [calledNumbers, displayState, state.total_players, derashAmount]);
 
-  const voiceButtonLabel = !voiceSupported
-    ? "🔇 Voice Unsupported"
-    : voiceEnabled
-      ? "🔊 Voice ON"
-      : "🔊 Enable Voice Assistant";
+  const voiceStateClass = !voiceSupported ? "voice-unsupported" : voiceEnabled ? "voice-on" : "voice-off";
+  const voiceButtonTitle = !voiceSupported ? "Voice unsupported" : voiceEnabled ? "Voice assistant on" : "Voice assistant off";
 
   if (loading) {
     return (
@@ -259,13 +255,31 @@ export default function PlayPage() {
 
   return (
     <div className="app-shell">
+      <button
+        className={`theme-toggle voice-toggle voice-icon-btn ${voiceStateClass}`}
+        onClick={toggleVoiceAssistant}
+        disabled={!voiceSupported || state.game?.state !== "playing"}
+        aria-label={voiceButtonTitle}
+        title={voiceButtonTitle}
+      >
+        <span className="voice-icon" aria-hidden="true">🔊</span>
+      </button>
       <div className="app-card">
         <HeaderComponent
-          title="Bingo Arena"
+          title="Bingo "
           subtitle={`Game #${state.game.id} • Card #${state.card.card_number} • ${state.user.first_name}`}
           stats={stats}
         />
 
+        {state.game?.state !== "finished" && (
+          <div className="stat-strip current-call" style={{ marginTop: "10px" }}>
+            <div className="stat-item current-call-item">
+              <span className="current-call-label">Current Call</span>
+              <div className="stat-value current-call-value">{renderCallBadge(currentCall, "current")}</div>
+            </div>
+          </div>
+        )}
+        <NotificationComponent notification={notification} />
         <div className="grid-layout">
           {hasCard && (
             <BingoGridComponent
@@ -285,14 +299,6 @@ export default function PlayPage() {
           <CalledNumbersComponent calledNumbers={calledNumbers} maxNumber={state.bingo_number_max || 400} />
           {!hasCard && state.game?.state === "playing" && <SpectatorViewComponent />}
         </div>
-
-       
-        <div className="action-bar">
-          <button className="btn btn-secondary" onClick={toggleVoiceAssistant} disabled={!voiceSupported || state.game?.state !== "playing"}>
-            {voiceButtonLabel}
-          </button>
-        </div>
-        <NotificationComponent notification={notification} />
       </div>
       {state.game?.state === "finished" && (
         <div className="modal">
