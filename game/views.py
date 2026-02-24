@@ -111,6 +111,7 @@ def select_card_api(request):
             game = Game.objects.filter(state='waiting', cards__isnull=False).order_by('-created_at').first()
             if not game:
                 game = Game.objects.create(state='waiting')
+            previous_player_count = game.cards.count()
 
         # Check if card is available for this user
         if game.cards.filter(card_number=card_number).exclude(user=user).exists():
@@ -149,6 +150,11 @@ def select_card_api(request):
                 user=user,
                 card_number=card_number
             )
+
+            current_player_count = previous_player_count + 1
+            if previous_player_count < settings.GAME_MIN_PLAYERS <= current_player_count:
+                game.created_at = timezone.now()
+                game.save(update_fields=['created_at'])
         
         return JsonResponse({
             'success': True,
