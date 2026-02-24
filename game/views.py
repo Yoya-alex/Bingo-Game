@@ -112,7 +112,6 @@ def select_card_api(request):
             if not game:
                 game = Game.objects.create(state='waiting')
             previous_player_count = game.cards.count()
-
         # Check if card is available for this user
         if game.cards.filter(card_number=card_number).exclude(user=user).exists():
             return JsonResponse({'error': 'Card already taken'}, status=400)
