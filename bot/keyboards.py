@@ -19,6 +19,7 @@ def admin_main_menu_keyboard():
         [KeyboardButton(text="💰 Deposits"), KeyboardButton(text="🏧 Withdrawals")],
         [KeyboardButton(text="👛 Wallet Management"), KeyboardButton(text="🎮 Game Management")],
         [KeyboardButton(text="👤 User Management"), KeyboardButton(text="📜 Transaction Logs")],
+        [KeyboardButton(text="📢 Announcement")],
         [KeyboardButton(text="⚙️ Settings"), KeyboardButton(text="🔍 Search")],
         [KeyboardButton(text="🏠 User Menu")],
     ]

@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     "users",
     "wallet",
     "game",
+    "notifications",
 ]
 
 MIDDLEWARE = [
