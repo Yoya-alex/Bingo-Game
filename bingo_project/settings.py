@@ -30,7 +30,7 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure--a6xe@%*ct@50t+y_cuw!0vher
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']  # Allow all hosts for development
 
 
 # Application definition
@@ -82,22 +82,24 @@ WSGI_APPLICATION = "bingo_project.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-DB_NAME = os.getenv("DB_NAME")
+# Using SQLite for easier setup
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": DB_NAME,
-        "USER": os.getenv("DB_USER", "postgres"),
-        "PASSWORD": os.getenv("DB_PASSWORD", ""),
-        "HOST": os.getenv("DB_HOST", "localhost"),
-        "PORT": int(os.getenv("DB_PORT", "5432")),
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "db.sqlite3",
     }
 }
-# SQLite config is intentionally disabled to force Postgres.
+
+# PostgreSQL config (commented out)
+# DB_NAME = os.getenv("DB_NAME")
 # DATABASES = {
 #     "default": {
-#         "ENGINE": "django.db.backends.sqlite3",
-#         "NAME": BASE_DIR / "db.sqlite3",
+#         "ENGINE": "django.db.backends.postgresql",
+#         "NAME": DB_NAME,
+#         "USER": os.getenv("DB_USER", "postgres"),
+#         "PASSWORD": os.getenv("DB_PASSWORD", ""),
+#         "HOST": os.getenv("DB_HOST", "localhost"),
+#         "PORT": int(os.getenv("DB_PORT", "5432")),
 #     }
 # }
 
@@ -119,6 +121,9 @@ ADMIN_IDS = [int(id.strip()) for id in os.getenv('ADMIN_IDS', '').split(',') if 
 # React UI Configuration
 USE_REACT_UI = os.getenv('USE_REACT_UI', 'True') == 'True'
 REACT_APP_URL = os.getenv('REACT_APP_URL', 'http://localhost:5173')
+
+# Payment Configuration
+TELEBIRR_NUMBER = os.getenv('TELEBIRR_NUMBER', '0912345678')
 
 
 # Password validation
