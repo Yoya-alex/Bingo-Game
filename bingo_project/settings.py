@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     "users",
     "wallet",
     "game",
+    "notifications",
 ]
 
 MIDDLEWARE = [
@@ -108,7 +109,7 @@ WELCOME_BONUS = int(os.getenv('WELCOME_BONUS', 10))
 CARD_PRICE = int(os.getenv('CARD_PRICE', 10))
 CARD_COUNT = int(os.getenv('CARD_COUNT', 400))
 MIN_DEPOSIT = int(os.getenv('MIN_DEPOSIT', 10))
-MIN_WITHDRAWAL = int(os.getenv('MIN_WITHDRAWAL', 50))
+MIN_WITHDRAWAL = int(os.getenv('MIN_WITHDRAWAL', 100))
 WAITING_TIME = int(os.getenv('WAITING_TIME', 25))
 NUMBER_CALL_INTERVAL = int(os.getenv('NUMBER_CALL_INTERVAL', 5))
 BINGO_NUMBER_MAX = int(os.getenv('BINGO_NUMBER_MAX', 75))

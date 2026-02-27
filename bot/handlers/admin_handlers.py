@@ -12,6 +12,7 @@ from django.conf import settings
 from users.models import User
 from wallet.models import Wallet, Transaction
 from game.models import Game
+from notifications.models import Notification, NotificationDelivery
 from bot.keyboards import (
     admin_main_menu_keyboard,
     main_menu_keyboard,
@@ -35,6 +36,11 @@ class WalletAdjustStates(StatesGroup):
 
 class DepositApprovalStates(StatesGroup):
     waiting_for_amount = State()
+    waiting_for_confirm = State()
+
+
+class AnnouncementStates(StatesGroup):
+    waiting_for_message = State()
     waiting_for_confirm = State()
 
 
@@ -363,6 +369,69 @@ def _get_wallet_stats():
         "pending_deposits": pending_deposits,
         "pending_withdrawals": pending_withdrawals,
     }
+
+
+@sync_to_async
+def _get_active_users_for_notifications():
+    """Return active non-admin users with telegram IDs for broadcast delivery."""
+    return list(
+        User.objects.filter(is_active=True, is_admin=False)
+        .exclude(telegram_id__isnull=True)
+        .only("id", "telegram_id")
+    )
+
+
+@sync_to_async
+def _create_announcement_notification(admin_telegram_id: int, message: str, total: int):
+    """Create persisted notification record before broadcasting."""
+    admin_user = None
+    try:
+        admin_user = User.objects.get(telegram_id=admin_telegram_id)
+    except User.DoesNotExist:
+        admin_user = None
+
+    return Notification.objects.create(
+        notification_type="admin_announcement",
+        title="Admin Announcement",
+        message=message,
+        status="sending",
+        total_recipients=total,
+        created_by=admin_user,
+    )
+
+
+@sync_to_async
+def _create_notification_delivery(
+    notification_id: int,
+    user_id: int,
+    status: str,
+    error_message: str = "",
+):
+    """Create delivery log for one user."""
+    delivered_at = timezone.now() if status == "delivered" else None
+    return NotificationDelivery.objects.create(
+        notification_id=notification_id,
+        user_id=user_id,
+        status=status,
+        error_message=error_message,
+        delivered_at=delivered_at,
+    )
+
+
+@sync_to_async
+def _finalize_announcement_notification(
+    notification_id: int,
+    delivered_count: int,
+    failed_count: int,
+):
+    """Finalize aggregate counters and status after broadcast loop."""
+    final_status = "completed" if delivered_count > 0 else "failed"
+    Notification.objects.filter(id=notification_id).update(
+        delivered_count=delivered_count,
+        failed_count=failed_count,
+        status=final_status,
+        sent_at=timezone.now(),
+    )
 
 
 async def _ensure_admin(message_or_callback) -> bool:
@@ -1524,6 +1593,177 @@ async def admin_transaction_logs(message: Message):
         )
 
     await message.answer("\n".join(lines), reply_markup=admin_main_menu_keyboard())
+
+
+@router.message(F.text == "📢 Announcement")
+async def admin_announcement_start(message: Message, state: FSMContext):
+    """Start announcement flow for broadcasting a message to all users."""
+    if not await _ensure_admin(message):
+        return
+
+    await message.answer(
+        "<b>📢 Announcement</b>\n\n"
+        "Send the message you want to broadcast to all active users.\n"
+        "Type <b>cancel</b> to abort."
+    )
+    await state.set_state(AnnouncementStates.waiting_for_message)
+
+
+@router.message(AnnouncementStates.waiting_for_message)
+async def admin_announcement_broadcast(message: Message, state: FSMContext):
+    """Capture announcement text and ask for confirmation."""
+    if not await _ensure_admin(message):
+        await state.clear()
+        return
+
+    announcement_text = (message.text or "").strip()
+    if not announcement_text:
+        await message.answer("❌ Announcement message cannot be empty.")
+        return
+
+    if announcement_text.lower() == "cancel":
+        await message.answer(
+            "✅ Announcement cancelled.",
+            reply_markup=admin_main_menu_keyboard(),
+        )
+        await state.clear()
+        return
+
+    await state.update_data(announcement_text=announcement_text)
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ Send Announcement",
+                    callback_data="adm_announce:send",
+                ),
+                InlineKeyboardButton(
+                    text="❌ Cancel",
+                    callback_data="adm_announce:cancel",
+                ),
+            ]
+        ]
+    )
+
+    await message.answer(
+        "<b>📢 Announcement Preview</b>\n\n"
+        f"{announcement_text}\n\n"
+        "Send this to all active users?",
+        reply_markup=keyboard,
+    )
+
+    await state.set_state(AnnouncementStates.waiting_for_confirm)
+
+
+@router.callback_query(F.data == "adm_announce:send")
+async def admin_announcement_send(callback: CallbackQuery, state: FSMContext):
+    """Broadcast the confirmed announcement to all active users."""
+    if not await _ensure_admin(callback):
+        await state.clear()
+        await callback.answer()
+        return
+
+    data = await state.get_data()
+    announcement_text = (data.get("announcement_text") or "").strip()
+    if not announcement_text:
+        await callback.message.answer(
+            "❌ No announcement message found. Please start again.",
+            reply_markup=admin_main_menu_keyboard(),
+        )
+        await state.clear()
+        await callback.answer()
+        return
+
+    users = await _get_active_users_for_notifications()
+    if not users:
+        await callback.message.answer(
+            "❌ No active users found to receive announcement.",
+            reply_markup=admin_main_menu_keyboard(),
+        )
+        await state.clear()
+        await callback.answer()
+        return
+
+    notification = await _create_announcement_notification(
+        callback.from_user.id,
+        announcement_text,
+        len(users),
+    )
+
+    await callback.message.answer(
+        f"📤 Sending announcement to {len(users)} users..."
+    )
+
+    sent_count = 0
+    failed_count = 0
+
+    for user in users:
+        try:
+            await callback.message.bot.send_message(
+                user.telegram_id,
+                f"📢 <b>Admin Announcement</b>\n\n{announcement_text}",
+            )
+            await _create_notification_delivery(
+                notification.id,
+                user.id,
+                "delivered",
+            )
+            sent_count += 1
+        except Exception as error:
+            await _create_notification_delivery(
+                notification.id,
+                user.id,
+                "failed",
+                str(error)[:500],
+            )
+            failed_count += 1
+
+    await _finalize_announcement_notification(
+        notification.id,
+        sent_count,
+        failed_count,
+    )
+
+    await callback.message.answer(
+        "✅ <b>Announcement broadcast completed</b>\n\n"
+        f"🆔 Notification ID: #{notification.id}\n"
+        f"👥 Total target users: {len(users)}\n"
+        f"✅ Delivered: {sent_count}\n"
+        f"❌ Failed: {failed_count}",
+        reply_markup=admin_main_menu_keyboard(),
+    )
+
+    await send_admin_notification(
+        callback.message.bot,
+        text=(
+            "👮 <b>Admin Announcement Sent</b>\n\n"
+            f"Admin: @{callback.from_user.username or callback.from_user.id}\n"
+            f"Notification ID: #{notification.id}\n"
+            f"Delivered: {sent_count}\n"
+            f"Failed: {failed_count}\n"
+            f"Time: {timezone.now():%Y-%m-%d %H:%M}"
+        ),
+    )
+
+    await state.clear()
+    await callback.answer("Announcement sent")
+
+
+@router.callback_query(F.data == "adm_announce:cancel")
+async def admin_announcement_cancel(callback: CallbackQuery, state: FSMContext):
+    """Cancel announcement before broadcasting."""
+    if not await _ensure_admin(callback):
+        await state.clear()
+        await callback.answer()
+        return
+
+    await state.clear()
+    await callback.message.answer(
+        "✅ Announcement cancelled.",
+        reply_markup=admin_main_menu_keyboard(),
+    )
+    await callback.answer("Cancelled")
 
 
 @router.message(Command("wallet_stats"))

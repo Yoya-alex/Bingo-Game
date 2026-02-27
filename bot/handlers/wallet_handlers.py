@@ -219,7 +219,8 @@ async def request_withdrawal_start(callback: CallbackQuery, state: FSMContext):
     """Start withdrawal request process"""
     await callback.message.answer(
         "💸 <b>Withdrawal Request</b>\n\n"
-        "Please enter the amount you want to withdraw (in Birr):"
+        f"Please enter the amount you want to withdraw (in Birr).\n"
+        f"Amount must be greater than {settings.MIN_WITHDRAWAL} Birr:"
     )
     await state.set_state(WithdrawalStates.waiting_for_amount)
     await callback.answer()
@@ -241,6 +242,12 @@ async def process_withdrawal_amount(message: Message, state: FSMContext):
         
         if amount <= 0:
             await message.answer("❌ Amount must be greater than 0")
+            return
+
+        if amount <= settings.MIN_WITHDRAWAL:
+            await message.answer(
+                f"❌ Withdrawal amount must be greater than {settings.MIN_WITHDRAWAL} Birr"
+            )
             return
         
         if amount < 100:
