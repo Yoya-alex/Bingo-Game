@@ -131,3 +131,95 @@ def get_next_number(called_numbers):
     if not available:
         return None
     return random.choice(available)
+
+
+def generate_winning_grid_from_called_numbers(called_numbers):
+    """
+    Generate a valid bingo grid that creates a winning pattern from the called numbers.
+    This is used for bot wins to ensure they have a legitimate winning card.
+    Returns: (grid, pattern_name)
+    """
+    if len(called_numbers) < 5:
+        return None, None
+    
+    # Create a 5x5 grid
+    grid = [[0 for _ in range(5)] for _ in range(5)]
+    grid[2][2] = None  # Free space
+    
+    # Determine column ranges for standard bingo
+    max_number = max(1, int(getattr(settings, 'BINGO_NUMBER_MAX', 75)))
+    column_ranges = _column_ranges(max_number)
+    
+    # Choose a random winning pattern with descriptive names
+    pattern_choices = [
+        ('horizontal_0', 'Horizontal Row 1'),
+        ('horizontal_1', 'Horizontal Row 2'),
+        ('horizontal_2', 'Horizontal Row 3'),
+        ('horizontal_3', 'Horizontal Row 4'),
+        ('horizontal_4', 'Horizontal Row 5'),
+        ('vertical_0', 'Vertical Column B'),
+        ('vertical_1', 'Vertical Column I'),
+        ('vertical_2', 'Vertical Column N'),
+        ('vertical_3', 'Vertical Column G'),
+        ('vertical_4', 'Vertical Column O'),
+        ('diagonal_lr', 'Diagonal (↘)'),
+        ('diagonal_rl', 'Diagonal (↙)')
+    ]
+    
+    pattern_key, pattern_name = random.choice(pattern_choices)
+    
+    # Get positions for the winning pattern
+    winning_positions = []
+    
+    if pattern_key.startswith('horizontal'):
+        row = int(pattern_key.split('_')[1])
+        winning_positions = [(row, col) for col in range(5)]
+    elif pattern_key.startswith('vertical'):
+        col = int(pattern_key.split('_')[1])
+        winning_positions = [(row, col) for row in range(5)]
+    elif pattern_key == 'diagonal_lr':
+        winning_positions = [(i, i) for i in range(5)]
+    elif pattern_key == 'diagonal_rl':
+        winning_positions = [(i, 4-i) for i in range(5)]
+    
+    # Remove free space from winning positions if present
+    winning_positions = [(r, c) for r, c in winning_positions if not (r == 2 and c == 2)]
+    
+    # Assign called numbers to winning positions
+    called_copy = called_numbers.copy()
+    random.shuffle(called_copy)
+    
+    for idx, (row, col) in enumerate(winning_positions):
+        if idx < len(called_copy):
+            # Make sure number fits in the column range
+            num = called_copy[idx]
+            col_start, col_end = column_ranges[col]
+            
+            # Find a called number that fits this column
+            valid_num = None
+            for n in called_copy:
+                if col_start <= n <= col_end:
+                    valid_num = n
+                    called_copy.remove(n)
+                    break
+            
+            if valid_num:
+                grid[row][col] = valid_num
+            else:
+                # If no valid called number, use any from range
+                grid[row][col] = random.randint(col_start, col_end)
+    
+    # Fill remaining positions with numbers from appropriate column ranges
+    for row in range(5):
+        for col in range(5):
+            if grid[row][col] == 0 and not (row == 2 and col == 2):
+                col_start, col_end = column_ranges[col]
+                # Use uncalled numbers
+                available = [n for n in range(col_start, col_end + 1) 
+                           if n not in called_numbers and n not in [grid[r][c] for r in range(5) for c in range(5)]]
+                if available:
+                    grid[row][col] = random.choice(available)
+                else:
+                    grid[row][col] = random.randint(col_start, col_end)
+    
+    return grid, pattern_name

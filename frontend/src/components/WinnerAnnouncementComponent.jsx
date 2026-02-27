@@ -1,7 +1,10 @@
 import BingoGridComponent from "./BingoGridComponent.jsx";
 
 export default function WinnerAnnouncementComponent({ winnerName, prizeAmount, winnerCard, calledNumbers, countdown }) {
-  const label = winnerName ? `${winnerName} wins!` : "Winner declared";
+  const winnerUsername = winnerCard?.winner_username;
+  const displayName = winnerUsername ? `${winnerName} (@${winnerUsername})` : winnerName;
+  const label = winnerName ? `${displayName} wins!` : "Winner declared";
+  
   return (
     <section className="component winner-card" id="winnerAnnouncementComponent">
       <div className="component-title">Winner Announcement</div>

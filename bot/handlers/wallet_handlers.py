@@ -7,7 +7,7 @@ from django.conf import settings
 
 from users.models import User
 from wallet.models import Wallet, Transaction, Deposit, Withdrawal
-from bot.keyboards import main_menu_keyboard, deposit_keyboard, withdrawal_keyboard
+from bot.keyboards import main_menu_keyboard, deposit_keyboard, withdrawal_keyboard, payment_method_keyboard
 from bot.utils.notification_service import send_admin_notification
 
 router = Router()
@@ -73,11 +73,15 @@ async def show_balance(message: Message):
     wallet = user.wallet
     balance_text = (
         f"<b>💰 YOUR BALANCE</b>\n\n"
-        f"💵 Main Balance: {wallet.main_balance} Birr\n"
+        f"💵 Deposit Balance: {wallet.main_balance} Birr\n"
+        f"🏆 Winnings Balance: {wallet.winnings_balance} Birr\n"
         f"🎁 Bonus Balance: {wallet.bonus_balance} Birr\n"
         f"━━━━━━━━━━━━━━━━\n"
         f"💎 Total Balance: {wallet.total_balance} Birr\n\n"
-        f"<i>Note: Bonus balance can only be used for playing</i>"
+        f"<i>Note:\n"
+        f"• All balances can be used for playing\n"
+        f"• Only winnings can be withdrawn\n"
+        f"• Deposit and bonus cannot be withdrawn</i>"
     )
     
     await message.answer(balance_text, reply_markup=main_menu_keyboard())
@@ -86,19 +90,21 @@ async def show_balance(message: Message):
 @router.message(F.text == "➕ Deposit")
 async def deposit_menu(message: Message):
     """Show deposit menu"""
+    telebirr_number = getattr(settings, 'TELEBIRR_NUMBER', '0912345678')
+    
     deposit_text = (
         "<b>➕ DEPOSIT</b>\n\n"
         "To deposit money:\n\n"
         "1️⃣ Transfer money to:\n"
-        "   <b>Bank:</b> Commercial Bank of Ethiopia\n"
-        "   <b>Account:</b> 1000123456789\n"
+        f"   <b>Telebirr:</b> <code>{telebirr_number}</code>\n"
         "   <b>Name:</b> Bingo Bot\n\n"
+        "   <i>Tap the number above to copy it</i>\n\n"
         "2️⃣ Wait for the payment confirmation text\n"
         "3️⃣ Click 'Submit Deposit Proof' below and send that text\n\n"
         f"<i>Minimum deposit: {settings.MIN_DEPOSIT} Birr</i>"
     )
     
-    await message.answer(deposit_text, reply_markup=deposit_keyboard())
+    await message.answer(deposit_text, reply_markup=deposit_keyboard(), parse_mode="HTML")
 
 
 @router.callback_query(F.data == "submit_deposit")
@@ -137,7 +143,7 @@ async def process_deposit_confirmation(message: Message, state: FSMContext):
     )
     
     # Create deposit detail
-    await create_deposit(transaction, confirmation_text, 'Bank Transfer')
+    await create_deposit(transaction, confirmation_text, 'Telebirr')
     
     await message.answer(
         "✅ <b>Deposit submitted!</b>\n\n"
@@ -146,6 +152,7 @@ async def process_deposit_confirmation(message: Message, state: FSMContext):
         "You'll be notified once it's approved.\n\n"
         f"Transaction ID: #{transaction.id}",
         reply_markup=main_menu_keyboard(),
+        parse_mode="HTML"
     )
 
     # Notify admins about new deposit request
@@ -177,15 +184,34 @@ async def withdrawal_menu(message: Message):
         return
     
     wallet = user.wallet
+    
+    # Check minimum withdrawal amount - only winnings can be withdrawn
+    if wallet.winnings_balance < 100:
+        await message.answer(
+            f"<b>➖ WITHDRAWAL</b>\n\n"
+            f"🏆 Winnings Balance: {wallet.winnings_balance} Birr\n"
+            f"💵 Deposit Balance: {wallet.main_balance} Birr (cannot withdraw)\n"
+            f"🎁 Bonus Balance: {wallet.bonus_balance} Birr (cannot withdraw)\n\n"
+            f"❌ <b>Insufficient winnings!</b>\n"
+            f"Minimum withdrawal amount is 100 Birr.\n\n"
+            f"<i>Note: Only prize/winnings money can be withdrawn.\n"
+            f"Deposit and bonus balance cannot be withdrawn.</i>",
+            reply_markup=main_menu_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+    
     withdrawal_text = (
         f"<b>➖ WITHDRAWAL</b>\n\n"
-        f"💵 Available for withdrawal: {wallet.main_balance} Birr\n\n"
-        f"<i>Note: Only main balance can be withdrawn.\n"
-        f"Bonus balance cannot be withdrawn.</i>\n\n"
+        f"🏆 Available for withdrawal: {wallet.winnings_balance} Birr\n"
+        f"💵 Deposit Balance: {wallet.main_balance} Birr (cannot withdraw)\n"
+        f"🎁 Bonus Balance: {wallet.bonus_balance} Birr (cannot withdraw)\n\n"
+        f"<i>Note: Only prize/winnings money can be withdrawn.\n"
+        f"Minimum withdrawal: 100 Birr</i>\n\n"
         f"Click below to request withdrawal:"
     )
     
-    await message.answer(withdrawal_text, reply_markup=withdrawal_keyboard())
+    await message.answer(withdrawal_text, reply_markup=withdrawal_keyboard(), parse_mode="HTML")
 
 
 @router.callback_query(F.data == "request_withdrawal")
@@ -217,18 +243,27 @@ async def process_withdrawal_amount(message: Message, state: FSMContext):
             await message.answer("❌ Amount must be greater than 0")
             return
         
-        if amount > wallet.main_balance:
+        if amount < 100:
             await message.answer(
-                f"❌ Insufficient balance!\n"
-                f"Available: {wallet.main_balance} Birr"
+                f"❌ Minimum withdrawal amount is 100 Birr!\n"
+                f"Please enter an amount of 100 Birr or more."
+            )
+            return
+        
+        if amount > wallet.winnings_balance:
+            await message.answer(
+                f"❌ Insufficient winnings!\n"
+                f"Available winnings: {wallet.winnings_balance} Birr\n\n"
+                f"<i>Note: Only prize/winnings money can be withdrawn.</i>"
             )
             return
         
         await state.update_data(amount=amount)
         await message.answer(
             "📱 <b>Payment Method</b>\n\n"
-            "Please enter your payment method:\n"
-            "(e.g., Bank Transfer, Mobile Money, etc.)"
+            "Please select your payment method:",
+            reply_markup=payment_method_keyboard(),
+            parse_mode="HTML"
         )
         await state.set_state(WithdrawalStates.waiting_for_method)
         
@@ -245,6 +280,24 @@ async def process_withdrawal_method(message: Message, state: FSMContext):
         "Please enter your account number or phone number:"
     )
     await state.set_state(WithdrawalStates.waiting_for_account)
+
+
+@router.callback_query(F.data.startswith("payment_method:"), WithdrawalStates.waiting_for_method)
+async def process_payment_method_callback(callback: CallbackQuery, state: FSMContext):
+    """Handle payment method button selection"""
+    method = callback.data.split(":")[1]
+    
+    if method == "cbe":
+        payment_method = "CBE (Commercial Bank of Ethiopia)"
+        prompt = "🏦 <b>CBE Account Information</b>\n\nPlease enter your CBE account number:"
+    else:  # telebirr
+        payment_method = "Telebirr"
+        prompt = "📱 <b>Telebirr Account Information</b>\n\nPlease enter your Telebirr phone number:"
+    
+    await state.update_data(payment_method=payment_method)
+    await callback.message.answer(prompt, parse_mode="HTML")
+    await state.set_state(WithdrawalStates.waiting_for_account)
+    await callback.answer()
 
 
 @router.message(WithdrawalStates.waiting_for_account)

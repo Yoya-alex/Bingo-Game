@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 
-export default function CalledNumbersComponent({ calledNumbers, maxNumber = 400 }) {
+export default function CalledNumbersComponent({ calledNumbers, maxNumber = 400, onNumberClick, interactive = true }) {
   const calledSet = useMemo(() => new Set(calledNumbers || []), [calledNumbers]);
   const currentNumber = calledNumbers?.length ? Number(calledNumbers[calledNumbers.length - 1]) : null;
   const columns = useMemo(() => {
@@ -16,6 +16,12 @@ export default function CalledNumbersComponent({ calledNumbers, maxNumber = 400 
     });
   }, [maxNumber]);
 
+  const handleNumberClick = (num) => {
+    if (interactive && calledSet.has(num) && onNumberClick) {
+      onNumberClick(num);
+    }
+  };
+
   return (
     <section className="component" id="calledNumbersComponent">
       <div className="component-title">Called Numbers</div>
@@ -24,14 +30,23 @@ export default function CalledNumbersComponent({ calledNumbers, maxNumber = 400 
           <div key={column.letter} className="called-column">
             <div className="called-col-head" data-letter={column.letter}>{column.letter}</div>
             <div className="called-col-grid">
-              {column.numbers.map((num) => (
-                <div
-                  key={num}
-                  className={`called-cell${calledSet.has(num) ? " called" : ""}${num === currentNumber ? " current" : ""}`}
-                >
-                  {num}
-                </div>
-              ))}
+              {column.numbers.map((num) => {
+                const isCalled = calledSet.has(num);
+                const isCurrent = num === currentNumber;
+                const isClickable = interactive && isCalled;
+                
+                return (
+                  <div
+                    key={num}
+                    className={`called-cell${isCalled ? " called" : ""}${isCurrent ? " current" : ""}${isClickable ? " clickable" : ""}`}
+                    onClick={() => handleNumberClick(num)}
+                    style={{ cursor: isClickable ? 'pointer' : 'default' }}
+                    title={isClickable ? `Click to mark ${num} on your card` : ''}
+                  >
+                    {num}
+                  </div>
+                );
+              })}
             </div>
           </div>
         ))}

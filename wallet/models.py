@@ -5,8 +5,9 @@ from users.models import User
 
 class Wallet(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='wallet')
-    main_balance = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    bonus_balance = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    main_balance = models.DecimalField(max_digits=10, decimal_places=2, default=0)  # Deposit money (cannot withdraw)
+    bonus_balance = models.DecimalField(max_digits=10, decimal_places=2, default=0)  # Bonus money
+    winnings_balance = models.DecimalField(max_digits=10, decimal_places=2, default=0)  # Prize money (can withdraw)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -15,7 +16,13 @@ class Wallet(models.Model):
     
     @property
     def total_balance(self):
-        return self.main_balance + self.bonus_balance
+        """Total balance for playing games (deposit + bonus + winnings)"""
+        return self.main_balance + self.bonus_balance + self.winnings_balance
+    
+    @property
+    def withdrawable_balance(self):
+        """Only winnings can be withdrawn"""
+        return self.winnings_balance
     
     def __str__(self):
         return f"Wallet of {self.user.first_name} - Total: {self.total_balance}"

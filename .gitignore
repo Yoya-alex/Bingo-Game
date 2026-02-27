@@ -1,12 +1,26 @@
+# Deployment files (exclude from git)
+render.yaml
+build.sh
+deploy.sh
+DEPLOYMENT_GUIDE.md
+RENDER_DEPLOYMENT.md
+RENDER_QUICK_START.md
+FREE_HOSTING_OPTIONS.md
+bingo_project/render_settings.py
+
+# Voice recording files
+HOW_TO_ADD_YOUR_VOICE.md
+CUSTOM_VOICE_GUIDE.md
+generate_audio_list.py
+audio_files_list.txt
+frontend/public/audio/README.md
+
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-env/
-venv/
-ENV/
 build/
 develop-eggs/
 dist/
@@ -22,6 +36,7 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
 
 # Django
 *.log
@@ -31,8 +46,25 @@ db.sqlite3-journal
 media/
 staticfiles/
 
-# Environment
+# Environment variables
 .env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Frontend build
+frontend/dist/
+frontend/build/
 
 # IDE
 .vscode/
@@ -43,5 +75,9 @@ staticfiles/
 
 # OS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
-frontend/node_modules/

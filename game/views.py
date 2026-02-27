@@ -23,6 +23,8 @@ def get_winner_card_payload(game):
     return {
         'card_number': winner_card.card_number,
         'grid': winner_card.get_grid(),
+        'winner_name': game.winner.first_name,
+        'winner_username': game.winner.username if game.winner.username else None,
     }
 
 
@@ -333,7 +335,7 @@ def play_state_api(request, telegram_id, game_id):
 
 @csrf_exempt
 def mark_number_api(request):
-    """Mark the current called number on the player's bingo card."""
+    """Mark any called number on the player's bingo card."""
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
 
@@ -352,16 +354,21 @@ def mark_number_api(request):
 
         called_number_entries = game.get_called_number_entries()
         if not called_number_entries:
-            return JsonResponse({'error': 'No called number is available yet.'}, status=400)
+            return JsonResponse({'error': 'No numbers have been called yet.'}, status=400)
 
-        current_called = called_number_entries[-1]['number']
-        if number != current_called:
-            return JsonResponse({'error': 'Only the current called number can be marked.'}, status=400)
+        # Get all called numbers (not just the current one)
+        called_numbers = [entry['number'] for entry in called_number_entries]
+        
+        # Check if the number has been called
+        if number not in called_numbers:
+            return JsonResponse({'error': 'This number has not been called yet.'}, status=400)
 
+        # Check if the number is on the player's card
         grid_values = {value for row in card.get_grid() for value in row if value is not None}
         if number not in grid_values:
-            return JsonResponse({'error': 'Current called number is not on your card.'}, status=400)
+            return JsonResponse({'error': 'This number is not on your card.'}, status=400)
 
+        # Mark the number
         marked_numbers = card.get_marked_positions()
         if number not in marked_numbers:
             marked_numbers.append(number)
@@ -371,7 +378,7 @@ def mark_number_api(request):
         return JsonResponse({
             'success': True,
             'marked_numbers': marked_numbers,
-            'current_called': current_called,
+            'marked_number': number,
         })
     except ValueError:
         return JsonResponse({'error': 'Invalid number'}, status=400)
@@ -418,31 +425,52 @@ def claim_bingo_api(request):
         is_winner, pattern = check_bingo_win(grid, marked_numbers)
         
         if is_winner:
-            # Calculate prize
+            # Calculate prize based on total players for display, but credit based on real players
             total_players = game.cards.count()
-            prize = Decimal(total_players) * Decimal(settings.CARD_PRICE) * Decimal("0.8")
+            
+            # Total prize for display (includes fake players)
+            total_pool = Decimal(total_players) * Decimal(settings.CARD_PRICE)
+            display_prize = total_pool * Decimal("0.8")  # 80% of total pool
+            
+            if game.has_bots:
+                # Game has bots: winner gets only real players' contribution
+                real_players = game.real_players_count
+                
+                # Real players' pool
+                real_pool = Decimal(real_players) * Decimal(settings.CARD_PRICE)
+                actual_prize = real_pool * Decimal("0.8")  # 80% to winner (actual amount)
+                real_commission = real_pool * Decimal("0.2")  # 20% commission
+                
+                # System revenue: only commission from real players (no fake pool)
+                system_revenue = real_commission
+                game.system_revenue = system_revenue
+            else:
+                # No bots: normal calculation with 20% commission
+                actual_prize = display_prize  # Same as display prize
+                system_revenue = Decimal(total_players) * Decimal(settings.CARD_PRICE) * Decimal("0.2")
+                game.system_revenue = system_revenue
             
             # Update game state
             game.state = 'finished'
             game.finished_at = timezone.now()
             game.winner = user
-            game.prize_amount = prize
+            game.prize_amount = display_prize  # Display total prize
             game.save()
             
             # Mark card as winner
             card.is_winner = True
             card.save()
             
-            # Credit winner's wallet
+            # Credit winner's wallet with actual prize to WINNINGS balance
             wallet = user.wallet
-            wallet.main_balance += prize
+            wallet.winnings_balance += actual_prize
             wallet.save()
             
-            # Log transaction
+            # Log transaction with actual prize
             Transaction.objects.create(
                 user=user,
                 transaction_type='game_win',
-                amount=prize,
+                amount=actual_prize,
                 status='approved',
                 description=f'Won Game #{game.id} - {pattern}'
             )
@@ -451,12 +479,12 @@ def claim_bingo_api(request):
                 'success': True,
                 'winner': True,
                 'pattern': pattern,
-                'prize': float(prize),
+                'prize': float(display_prize),  # Return display prize for UI
                 'winner_card': {
                     'card_number': card.card_number,
                     'grid': grid,
                 },
-                'message': f'🎉 BINGO! You won {prize} Birr!'
+                'message': f'🎉 BINGO! You won {display_prize} Birr!'
             })
         else:
             return JsonResponse({

@@ -20,6 +20,10 @@ class Game(models.Model):
     winner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='won_games')
     prize_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     called_numbers = models.TextField(default='[]')
+    has_bots = models.BooleanField(default=False)
+    real_players_count = models.IntegerField(default=0)
+    real_prize_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    system_revenue = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     
     class Meta:
         db_table = 'games'
@@ -87,16 +91,23 @@ class BingoCard(models.Model):
     marked_positions = models.TextField(default='[]')
     is_winner = models.BooleanField(default=False)
     created_at = models.DateTimeField(default=timezone.now)
+    custom_grid = models.TextField(null=True, blank=True)  # For bot-generated winning grids
     
     class Meta:
         db_table = 'bingo_cards'
         unique_together = ['game', 'card_number']
     
     def get_grid(self):
+        # If custom grid exists (for bot winners), use it
+        if self.custom_grid:
+            try:
+                return json.loads(self.custom_grid)
+            except:
+                pass
         return generate_bingo_card(self.card_number)
     
     def set_grid(self, grid_data):
-        return None
+        self.custom_grid = json.dumps(grid_data)
     
     def get_marked_positions(self):
         return json.loads(self.marked_positions)

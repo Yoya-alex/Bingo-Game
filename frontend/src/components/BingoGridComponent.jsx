@@ -37,11 +37,13 @@ export default function BingoGridComponent({
         {flatGrid.map((cell, index) => {
           const isFree = cell === null;
           const isMarked = isFree || (markSource === "marked" ? markedSet.has(cell) : calledSet.has(cell));
+          
+          // Allow clicking any called number that hasn't been marked yet
           const canSelect =
             interactive &&
             markSource === "marked" &&
             !isFree &&
-            cell === clickableNumber &&
+            calledSet.has(cell) &&  // Changed: any called number, not just clickableNumber
             !markedSet.has(cell);
 
           return (
@@ -50,7 +52,9 @@ export default function BingoGridComponent({
               className={`bingo-cell${isFree ? " free" : ""}${isMarked && !isFree ? " marked" : ""}${canSelect ? " clickable" : ""}`}
               clickable={canSelect ? "true" : "false"}
               data-clickable={canSelect ? "true" : "false"}
-              onClick={canSelect ? () => handleSelect(cell, canSelect) : undefined}>
+              onClick={canSelect ? () => handleSelect(cell, canSelect) : undefined}
+              style={{ cursor: canSelect ? 'pointer' : 'default' }}
+              title={canSelect ? `Click to mark ${cell}` : ''}>
               {isFree ? "FREE" : cell}
             </div>
           );

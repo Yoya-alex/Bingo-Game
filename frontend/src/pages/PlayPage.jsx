@@ -284,6 +284,7 @@ export default function PlayPage() {
           {hasCard && (
             <BingoGridComponent
               grid={state.card.grid}
+              calledNumbers={calledNumbers}
               markedNumbers={markedNumbers}
               markSource="marked"
               interactive={state.game?.state === "playing"}
@@ -296,7 +297,12 @@ export default function PlayPage() {
             
           )
           }
-          <CalledNumbersComponent calledNumbers={calledNumbers} maxNumber={state.bingo_number_max || 400} />
+          <CalledNumbersComponent 
+            calledNumbers={calledNumbers} 
+            maxNumber={state.bingo_number_max || 400}
+            onNumberClick={markCurrentNumber}
+            interactive={hasCard && state.game?.state === "playing"}
+          />
           {!hasCard && state.game?.state === "playing" && <SpectatorViewComponent />}
         </div>
       </div>

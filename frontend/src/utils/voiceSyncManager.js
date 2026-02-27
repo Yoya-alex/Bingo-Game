@@ -89,10 +89,81 @@ export default class VoiceSyncManager {
     this.selectedVoice = null;
     this.selectedVoiceURI = null;
     this.onVoicesChanged = null;
+    this.useCustomAudio = false; // Flag for custom audio files
+    this.audioCache = {}; // Cache for loaded audio files
 
     if (this.supported) {
       this.initializeVoiceSelection();
     }
+    
+    // Check if custom audio files are available
+    this.checkCustomAudio();
+  }
+
+  async checkCustomAudio() {
+    try {
+      // Try to load a test audio file to see if custom audio is available
+      const response = await fetch('/audio/calls/B-1.mp3', { method: 'HEAD' });
+      if (response.ok) {
+        this.useCustomAudio = true;
+        console.log('✅ Custom audio files detected - using your voice!');
+      }
+    } catch (error) {
+      console.log('ℹ️ Custom audio not found - using text-to-speech');
+      this.useCustomAudio = false;
+    }
+  }
+
+  playCustomAudio(letter, number) {
+    const audioKey = `${letter}-${number}`;
+    const audioPath = `/audio/calls/${audioKey}.mp3`;
+    
+    // Check if audio is already cached
+    if (this.audioCache[audioKey]) {
+      const audio = this.audioCache[audioKey];
+      audio.currentTime = 0; // Reset to start
+      audio.play().catch(err => {
+        console.error('Error playing cached audio:', err);
+        this.fallbackToTTS(letter, number);
+      });
+      return;
+    }
+    
+    // Load and play new audio
+    const audio = new Audio(audioPath);
+    audio.addEventListener('canplaythrough', () => {
+      this.audioCache[audioKey] = audio; // Cache for future use
+      audio.play().catch(err => {
+        console.error('Error playing audio:', err);
+        this.fallbackToTTS(letter, number);
+      });
+    }, { once: true });
+    
+    audio.addEventListener('error', () => {
+      console.warn(`Audio file not found: ${audioPath}, falling back to TTS`);
+      this.fallbackToTTS(letter, number);
+    }, { once: true });
+    
+    audio.load();
+  }
+
+  fallbackToTTS(letter, number) {
+    // Fallback to text-to-speech if audio file fails
+    const selectedVoice = this.getSelectedVoice();
+    const announcementText = buildAnnouncementText({
+      letter,
+      number,
+      voiceLang: selectedVoice?.lang,
+    });
+    const utterance = new SpeechSynthesisUtterance(announcementText);
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
+      utterance.lang = selectedVoice.lang || "en-US";
+    } else {
+      utterance.lang = "en-US";
+    }
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
   }
 
   initializeVoiceSelection() {
@@ -266,21 +337,14 @@ export default class VoiceSyncManager {
         return;
       }
       const letter = getCallLetter(latestNumber, maxNumber);
-      const selectedVoice = this.getSelectedVoice();
-      const announcementText = buildAnnouncementText({
-        letter,
-        number: latestNumber,
-        voiceLang: selectedVoice?.lang,
-      });
-      const utterance = new SpeechSynthesisUtterance(announcementText);
-      if (selectedVoice) {
-        utterance.voice = selectedVoice;
-        utterance.lang = selectedVoice.lang || "en-US";
+      
+      // Use custom audio if available, otherwise fallback to TTS
+      if (this.useCustomAudio) {
+        this.playCustomAudio(letter, latestNumber);
       } else {
-        utterance.lang = "en-US";
+        this.fallbackToTTS(letter, latestNumber);
       }
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(utterance);
+      
       this.lastSpokenNumber = latestNumber;
       this.pendingNumber = null;
       this.pendingTimeout = null;

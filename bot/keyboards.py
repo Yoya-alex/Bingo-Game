@@ -101,6 +101,16 @@ def withdrawal_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
+def payment_method_keyboard():
+    """Payment method selection keyboard for withdrawal"""
+    keyboard = [
+        [InlineKeyboardButton(text="🏦 CBE (Commercial Bank of Ethiopia)", callback_data="payment_method:cbe")],
+        [InlineKeyboardButton(text="📱 Telebirr", callback_data="payment_method:telebirr")],
+        [InlineKeyboardButton(text="🔙 Cancel", callback_data="back_to_menu")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
 def wallet_balance_type_keyboard():
     """Inline options for wallet balance type selection."""
     keyboard = [

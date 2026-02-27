@@ -401,6 +401,7 @@ body::after {
   color: var(--ink-1);
   font-weight: 700;
   font-size: 0.82rem;
+  transition: all 0.2s ease;
 }
 
 .called-cell.called {
@@ -413,6 +414,21 @@ body::after {
   background: var(--called-cell-current-bg);
   border-color: var(--called-cell-current-border);
   color: var(--called-cell-current-ink);
+}
+
+.called-cell.clickable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.called-cell.clickable:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(0, 168, 76, 0.4);
+  z-index: 10;
+}
+
+.called-cell.clickable:active {
+  transform: scale(1.05);
 }
 
 .call-badge {
@@ -780,5 +796,123 @@ body::after {
     font-size: 1.7rem;
     min-width: 40px;
     padding: 8px 10px;
+  }
+}
+
+
+/* Spectator View Styles */
+.spectator-info {
+  min-height: 400px;
+  display: flex;
+  flex-direction: column;
+}
+
+.spectator-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  text-align: center;
+}
+
+.spectator-message {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--accent-1);
+  margin-bottom: 1rem;
+}
+
+.spectator-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1.5rem;
+  width: 100%;
+  max-width: 600px;
+  margin-top: 2rem;
+}
+
+.stat-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
+  background: var(--surface-2);
+  border-radius: 12px;
+  border: 2px solid var(--border-soft);
+  transition: all 0.3s ease;
+}
+
+.stat-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  border-color: var(--accent-2);
+}
+
+.stat-icon {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.stat-info {
+  flex: 1;
+  text-align: left;
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--ink-2);
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--ink-1);
+}
+
+/* Dark mode spectator styles */
+body.night-mode .stat-item {
+  background: var(--bg-2);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+body.night-mode .stat-item:hover {
+  border-color: var(--accent-2);
+}
+
+body.night-mode .stat-label {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+body.night-mode .stat-value {
+  color: #ffffff;
+}
+
+/* Responsive spectator view */
+@media (max-width: 768px) {
+  .spectator-message {
+    font-size: 1.2rem;
+  }
+  
+  .spectator-stats {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  
+  .stat-item {
+    padding: 0.75rem;
+  }
+  
+  .stat-icon {
+    font-size: 1.5rem;
+  }
+  
+  .stat-value {
+    font-size: 1.25rem;
   }
 }

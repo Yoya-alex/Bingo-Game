@@ -41,6 +41,8 @@ class DepositApprovalStates(StatesGroup):
 @sync_to_async
 def _get_dashboard_stats():
     """Collect high-level stats for the admin dashboard."""
+    from django.db.models import Sum
+    
     users_count = User.objects.count()
     pending_deposits = Transaction.objects.filter(
         transaction_type="deposit", status="pending"
@@ -48,9 +50,14 @@ def _get_dashboard_stats():
     pending_withdrawals = Transaction.objects.filter(
         transaction_type="withdrawal", status="pending"
     ).count()
-    active_game = Game.objects.filter(state__in=["waiting", "playing"]).first()
+    active_game = Game.objects.filter(state__in=["waiting", "playing"]).select_related('winner').first()
     active_game_player_count = active_game.cards.count() if active_game else 0
-    last_game = Game.objects.order_by("-created_at").first()
+    last_game = Game.objects.select_related('winner').order_by("-created_at").first()
+    
+    # Calculate total system revenue from all finished games
+    total_system_revenue = Game.objects.filter(state='finished').aggregate(
+        total=Sum('system_revenue')
+    )['total'] or 0
 
     return {
         "users_count": users_count,
@@ -59,6 +66,7 @@ def _get_dashboard_stats():
         "active_game": active_game,
         "active_game_player_count": active_game_player_count,
         "last_game": last_game,
+        "total_system_revenue": total_system_revenue,
     }
 
 
@@ -405,7 +413,7 @@ async def admin_entry(message: Message):
 
 @router.message(F.text == "📊 Dashboard")
 async def admin_dashboard(message: Message):
-    """Show dashboard summary."""
+    """Show dashboard summary with bot game information."""
     if not await _ensure_admin(message):
         return
 
@@ -415,27 +423,50 @@ async def admin_dashboard(message: Message):
 
     active_text = "None"
     if active_game:
-        active_text = (
-            f"#{active_game.id} ({active_game.state.upper()}) "
-            f"Players: {stats['active_game_player_count']}"
-        )
+        total_players = stats['active_game_player_count']
+        if active_game.has_bots:
+            real_players = active_game.real_players_count
+            fake_players = total_players - real_players
+            active_text = (
+                f"#{active_game.id} ({active_game.state.upper()})\n"
+                f"   👤 Real: {real_players} | 🤖 Fake: {fake_players} | Total: {total_players}"
+            )
+        else:
+            active_text = (
+                f"#{active_game.id} ({active_game.state.upper()}) "
+                f"Players: {total_players}"
+            )
 
     last_text = "None"
     if last_game:
-        last_text = (
-            f"#{last_game.id} ({last_game.state.upper()}) "
-            f"Prize: {last_game.prize_amount}"
-        )
+        winner_type = "🤖 Bot" if last_game.winner and last_game.winner.telegram_id >= 9000000000 else "👤 Real User"
+        winner_name = last_game.winner.first_name if last_game.winner else "No winner"
+        
+        if last_game.has_bots:
+            last_text = (
+                f"#{last_game.id} ({last_game.state.upper()})\n"
+                f"   Winner: {winner_name} ({winner_type})\n"
+                f"   Total Prize: {last_game.prize_amount} Birr\n"
+                f"   Real Prize: {last_game.real_prize_amount} Birr (from {last_game.real_players_count} real players)\n"
+                f"   🤖 Had Fake Users: Yes"
+            )
+        else:
+            last_text = (
+                f"#{last_game.id} ({last_game.state.upper()})\n"
+                f"   Winner: {winner_name}\n"
+                f"   Prize: {last_game.prize_amount} Birr"
+            )
 
     text = (
         "<b>📊 ADMIN DASHBOARD</b>\n\n"
         f"👥 Total Users: {stats['users_count']}\n"
         f"💰 Pending Deposits: {stats['pending_deposits']}\n"
-        f"🏧 Pending Withdrawals: {stats['pending_withdrawals']}\n\n"
-        f"🎮 Active Game: {active_text}\n"
-        f"🕹 Last Game: {last_text}"
+        f"🏧 Pending Withdrawals: {stats['pending_withdrawals']}\n"
+        f"💵 System Revenue: {stats['total_system_revenue']} Birr\n\n"
+        f"🎮 Active Game:\n{active_text}\n\n"
+        f"🕹 Last Game:\n{last_text}"
     )
-    await message.answer(text, reply_markup=admin_main_menu_keyboard())
+    await message.answer(text, reply_markup=admin_main_menu_keyboard(), parse_mode="HTML")
 
 
 @router.message(F.text == "💰 Deposits")
