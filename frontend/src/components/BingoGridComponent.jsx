@@ -37,13 +37,12 @@ export default function BingoGridComponent({
         {flatGrid.map((cell, index) => {
           const isFree = cell === null;
           const isMarked = isFree || (markSource === "marked" ? markedSet.has(cell) : calledSet.has(cell));
-          
-          // Allow clicking any called number that hasn't been marked yet
+
           const canSelect =
             interactive &&
             markSource === "marked" &&
             !isFree &&
-            calledSet.has(cell) &&  // Changed: any called number, not just clickableNumber
+            Number(cell) === Number(clickableNumber) &&
             !markedSet.has(cell);
 
           return (

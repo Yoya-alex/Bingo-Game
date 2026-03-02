@@ -17,7 +17,7 @@ export default function CalledNumbersComponent({ calledNumbers, maxNumber = 400,
   }, [maxNumber]);
 
   const handleNumberClick = (num) => {
-    if (interactive && calledSet.has(num) && onNumberClick) {
+    if (interactive && num === currentNumber && onNumberClick) {
       onNumberClick(num);
     }
   };
@@ -33,7 +33,7 @@ export default function CalledNumbersComponent({ calledNumbers, maxNumber = 400,
               {column.numbers.map((num) => {
                 const isCalled = calledSet.has(num);
                 const isCurrent = num === currentNumber;
-                const isClickable = interactive && isCalled;
+                const isClickable = interactive && isCurrent;
                 
                 return (
                   <div

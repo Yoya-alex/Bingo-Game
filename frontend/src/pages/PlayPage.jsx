@@ -158,6 +158,9 @@ export default function PlayPage() {
     if (!hasCard || state.game?.state !== "playing") {
       return;
     }
+    if (Number(number) !== Number(currentCall)) {
+      return;
+    }
     postJson("/game/api/mark-number/", {
       telegram_id: Number(telegramId),
       game_id: Number(gameId),
