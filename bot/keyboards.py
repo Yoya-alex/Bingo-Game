@@ -17,6 +17,7 @@ def admin_main_menu_keyboard():
     keyboard = [
         [KeyboardButton(text="📊 Dashboard")],
         [KeyboardButton(text="💰 Deposits"), KeyboardButton(text="🏧 Withdrawals")],
+        [KeyboardButton(text="💼 System Balance")],
         [KeyboardButton(text="👛 Wallet Management"), KeyboardButton(text="🎮 Game Management")],
         [KeyboardButton(text="👤 User Management"), KeyboardButton(text="📜 Transaction Logs")],
         [KeyboardButton(text="📢 Announcement")],
@@ -132,5 +133,17 @@ def wallet_direction_keyboard():
                 text="Subtract", callback_data="wallet_direction:subtract"
             ),
         ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def system_balance_action_keyboard():
+    """Inline actions for system balance management."""
+    keyboard = [
+        [
+            InlineKeyboardButton(text="💸 Cash In", callback_data="sysbal:cash_in"),
+            InlineKeyboardButton(text="💵 Cash Out", callback_data="sysbal:cash_out"),
+        ],
+        [InlineKeyboardButton(text="🔄 Refresh", callback_data="sysbal:refresh")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)

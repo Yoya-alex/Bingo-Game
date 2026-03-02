@@ -11,11 +11,12 @@ from django.db.models import Sum
 from django.conf import settings
 from users.models import User
 from wallet.models import Wallet, Transaction
-from game.models import Game
+from game.models import Game, SystemBalance, SystemBalanceLedger
 from notifications.models import Notification, NotificationDelivery
 from bot.keyboards import (
     admin_main_menu_keyboard,
     main_menu_keyboard,
+    system_balance_action_keyboard,
     wallet_balance_type_keyboard,
     wallet_direction_keyboard,
 )
@@ -42,6 +43,11 @@ class DepositApprovalStates(StatesGroup):
 class AnnouncementStates(StatesGroup):
     waiting_for_message = State()
     waiting_for_confirm = State()
+
+
+class SystemBalanceAdjustStates(StatesGroup):
+    waiting_for_amount = State()
+    waiting_for_reason = State()
 
 
 @sync_to_async
@@ -369,6 +375,101 @@ def _get_wallet_stats():
         "pending_deposits": pending_deposits,
         "pending_withdrawals": pending_withdrawals,
     }
+
+
+@sync_to_async
+def _get_system_balance_overview(limit: int = 5):
+    snapshot = SystemBalance.objects.first()
+    current_balance = snapshot.balance if snapshot else Decimal("0.00")
+
+    total_credits = (
+        SystemBalanceLedger.objects.filter(direction='credit').aggregate(total=Sum('amount'))['total']
+        or Decimal("0.00")
+    )
+    total_debits = (
+        SystemBalanceLedger.objects.filter(direction='debit').aggregate(total=Sum('amount'))['total']
+        or Decimal("0.00")
+    )
+
+    recent_entries = list(
+        SystemBalanceLedger.objects.select_related('game').order_by('-created_at')[:limit]
+    )
+
+    return {
+        "current_balance": current_balance,
+        "total_credits": total_credits,
+        "total_debits": total_debits,
+        "entries_count": SystemBalanceLedger.objects.count(),
+        "recent_entries": recent_entries,
+    }
+
+
+@sync_to_async
+def _adjust_system_balance_atomic(action: str, amount: Decimal, reason: str, admin_telegram_id: int):
+    amount = Decimal(amount)
+
+    admin_user = None
+    try:
+        admin_user = User.objects.get(telegram_id=admin_telegram_id)
+    except User.DoesNotExist:
+        admin_user = None
+
+    if action == "cash_in":
+        direction = "debit"
+        human_action = "Cash In"
+    elif action == "cash_out":
+        direction = "credit"
+        human_action = "Cash Out"
+    else:
+        return False, "Invalid action.", None
+
+    metadata = {
+        "action": action,
+        "admin_telegram_id": admin_telegram_id,
+        "admin_user_id": admin_user.id if admin_user else None,
+    }
+
+    entry = SystemBalanceLedger.append_entry(
+        event_type='admin_adjustment',
+        direction=direction,
+        amount=amount,
+        description=f"{human_action} by admin: {reason}",
+        metadata=metadata,
+    )
+
+    return True, "System balance updated.", entry
+
+
+def _format_system_balance_text(data):
+    lines = [
+        "<b>💼 System Balance</b>",
+        "",
+        f"💰 Current Balance: {data['current_balance']} Birr",
+        f"📥 Total Credits: {data['total_credits']} Birr",
+        f"📤 Total Debits: {data['total_debits']} Birr",
+        f"📜 Ledger Entries: {data['entries_count']}",
+        "",
+        "<b>Recent Ledger Activity:</b>",
+    ]
+
+    recent_entries = data.get("recent_entries") or []
+    if not recent_entries:
+        lines.append("No ledger entries yet.")
+    else:
+        for entry in recent_entries:
+            game_ref = f"Game #{entry.game_id}" if entry.game_id else "Manual"
+            lines.append(
+                f"• #{entry.id} {entry.event_type} | {entry.direction} {entry.amount} Birr | "
+                f"Bal: {entry.balance_before} → {entry.balance_after} | {game_ref} | "
+                f"{entry.created_at:%Y-%m-%d %H:%M}"
+            )
+
+    lines.extend([
+        "",
+        "Cash In will subtract from system balance.",
+        "Cash Out will add to system balance.",
+    ])
+    return "\n".join(lines)
 
 
 @sync_to_async
@@ -1562,6 +1663,136 @@ async def admin_game_management(message: Message):
         "can be added here and integrated with the game engine."
     )
     await message.answer(text, reply_markup=admin_main_menu_keyboard())
+
+
+@router.message(F.text == "💼 System Balance")
+async def admin_system_balance(message: Message):
+    """Show system balance overview with inline cash in/out actions."""
+    if not await _ensure_admin(message):
+        return
+
+    data = await _get_system_balance_overview()
+    await message.answer(
+        _format_system_balance_text(data),
+        reply_markup=system_balance_action_keyboard(),
+    )
+
+
+@router.callback_query(F.data == "sysbal:refresh")
+async def admin_system_balance_refresh(callback: CallbackQuery):
+    """Refresh the system balance overview from inline action."""
+    if not await _ensure_admin(callback):
+        await callback.answer()
+        return
+
+    data = await _get_system_balance_overview()
+    await callback.message.answer(
+        _format_system_balance_text(data),
+        reply_markup=system_balance_action_keyboard(),
+    )
+    await callback.answer("Updated")
+
+
+@router.callback_query(F.data.in_({"sysbal:cash_in", "sysbal:cash_out"}))
+async def admin_system_balance_action_start(callback: CallbackQuery, state: FSMContext):
+    """Start cash in/out flow by asking for amount."""
+    if not await _ensure_admin(callback):
+        await state.clear()
+        await callback.answer()
+        return
+
+    action = callback.data.split(":", 1)[-1]
+    await state.update_data(system_balance_action=action)
+
+    action_text = "Cash In (subtract from balance)" if action == "cash_in" else "Cash Out (add to balance)"
+    await callback.message.answer(
+        f"<b>{action_text}</b>\n\nEnter amount in Birr:"
+    )
+    await state.set_state(SystemBalanceAdjustStates.waiting_for_amount)
+    await callback.answer()
+
+
+@router.message(SystemBalanceAdjustStates.waiting_for_amount)
+async def admin_system_balance_amount(message: Message, state: FSMContext):
+    """Capture amount for system balance cash in/out."""
+    if not await _ensure_admin(message):
+        await state.clear()
+        return
+
+    try:
+        amount = Decimal((message.text or "").strip())
+    except (InvalidOperation, AttributeError):
+        await message.answer("❌ Please enter a valid numeric amount.")
+        return
+
+    if amount <= Decimal("0"):
+        await message.answer("❌ Amount must be greater than 0.")
+        return
+
+    await state.update_data(system_balance_amount=amount)
+    await message.answer("Please enter reason/description for this action:")
+    await state.set_state(SystemBalanceAdjustStates.waiting_for_reason)
+
+
+@router.message(SystemBalanceAdjustStates.waiting_for_reason)
+async def admin_system_balance_reason(message: Message, state: FSMContext):
+    """Apply cash in/out to system balance and log to ledger."""
+    if not await _ensure_admin(message):
+        await state.clear()
+        return
+
+    data = await state.get_data()
+    action = data.get("system_balance_action")
+    amount = data.get("system_balance_amount")
+    reason = (message.text or "").strip()
+
+    if not action or not amount:
+        await message.answer("❌ Missing action data. Please start again from System Balance menu.")
+        await state.clear()
+        return
+
+    if not reason:
+        await message.answer("❌ Reason is required.")
+        return
+
+    success, info, entry = await _adjust_system_balance_atomic(
+        action,
+        amount,
+        reason,
+        message.from_user.id,
+    )
+
+    if not success:
+        await message.answer(f"❌ {info}", reply_markup=admin_main_menu_keyboard())
+        await state.clear()
+        return
+
+    action_label = "Cash In" if action == "cash_in" else "Cash Out"
+    await message.answer(
+        f"✅ {action_label} completed.\n"
+        f"Entry ID: #{entry.id}\n"
+        f"Direction: {entry.direction}\n"
+        f"Amount: {entry.amount} Birr\n"
+        f"Balance: {entry.balance_before} → {entry.balance_after} Birr\n"
+        f"Reason: {reason}",
+        reply_markup=admin_main_menu_keyboard(),
+    )
+
+    await send_admin_notification(
+        message.bot,
+        text=(
+            "👮 <b>System Balance Adjustment</b>\n\n"
+            f"Admin: @{message.from_user.username or message.from_user.id}\n"
+            f"Action: {action_label}\n"
+            f"Amount: {entry.amount} Birr\n"
+            f"Direction: {entry.direction}\n"
+            f"Balance: {entry.balance_before} → {entry.balance_after} Birr\n"
+            f"Reason: {reason}\n"
+            f"Time: {timezone.now():%Y-%m-%d %H:%M}"
+        ),
+    )
+
+    await state.clear()
 
 
 @router.message(F.text == "📜 Transaction Logs")
