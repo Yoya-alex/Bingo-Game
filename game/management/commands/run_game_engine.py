@@ -5,7 +5,7 @@ Automatically starts games and calls numbers
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from django.conf import settings
-from game.models import Game, BingoCard
+from game.models import Game, BingoCard, SystemBalanceLedger
 from users.models import User
 from wallet.models import Wallet
 from bot.utils.game_logic import get_next_number, check_bingo_win, generate_winning_grid_from_called_numbers
@@ -179,6 +179,23 @@ class Command(BaseCommand):
         game.prize_amount = total_prize  # Display total prize (real + fake)
         game.system_revenue = system_revenue
         game.save()
+
+        if system_revenue > 0:
+            SystemBalanceLedger.append_entry(
+                event_type='game_commission',
+                direction='credit',
+                amount=system_revenue,
+                game=game,
+                description=f'Game #{game.id} bot win settlement credited to system.',
+                metadata={
+                    'has_bots': True,
+                    'real_players': int(real_players),
+                    'fake_players': int(fake_players),
+                    'real_prize': str(real_prize),
+                    'display_prize': str(total_prize),
+                },
+                idempotency_key=f'game:{game.id}:winner_commission',
+            )
         
         winning_card.is_winner = True
         winning_card.save()
@@ -298,6 +315,21 @@ class Command(BaseCommand):
                         game.finished_at = timezone.now()
                         game.system_revenue = system_revenue
                         game.save()
+
+                        if system_revenue > 0:
+                            SystemBalanceLedger.append_entry(
+                                event_type='game_no_winner',
+                                direction='credit',
+                                amount=system_revenue,
+                                game=game,
+                                description=f'Game #{game.id} ended with no winner; full settlement credited to system.',
+                                metadata={
+                                    'has_bots': bool(game.has_bots),
+                                    'total_players': int(total_players),
+                                    'real_players': int(game.real_players_count) if game.has_bots else int(total_players),
+                                },
+                                idempotency_key=f'game:{game.id}:no_winner',
+                            )
                         
                         self.stdout.write(
                             self.style.WARNING(

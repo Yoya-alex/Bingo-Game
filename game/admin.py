@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import Game, BingoCard
+from .models import Game, BingoCard, SystemBalance, SystemBalanceLedger
 
 
 @admin.register(Game)
@@ -96,3 +96,37 @@ class BingoCardAdmin(admin.ModelAdmin):
             obj.user.first_name
         )
     get_user_info.short_description = 'User'
+
+
+@admin.register(SystemBalance)
+class SystemBalanceAdmin(admin.ModelAdmin):
+    list_display = ['id', 'balance', 'updated_at']
+    readonly_fields = ['created_at', 'updated_at']
+
+
+@admin.register(SystemBalanceLedger)
+class SystemBalanceLedgerAdmin(admin.ModelAdmin):
+    list_display = [
+        'id',
+        'event_type',
+        'direction',
+        'amount',
+        'balance_before',
+        'balance_after',
+        'game',
+        'created_at',
+    ]
+    list_filter = ['event_type', 'direction', 'created_at']
+    search_fields = ['description', 'idempotency_key', 'game__id']
+    readonly_fields = [
+        'event_type',
+        'direction',
+        'amount',
+        'balance_before',
+        'balance_after',
+        'game',
+        'description',
+        'metadata',
+        'idempotency_key',
+        'created_at',
+    ]

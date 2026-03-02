@@ -1,7 +1,9 @@
 from django.db import models
+from django.db import transaction
 from django.utils import timezone
 from users.models import User
 import json
+from decimal import Decimal
 from bot.utils.game_logic import generate_bingo_card
 
 
@@ -82,6 +84,112 @@ class Game(models.Model):
     
     def __str__(self):
         return f"Game {self.id} - {self.state}"
+
+
+class SystemBalance(models.Model):
+    balance = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'system_balance'
+
+    @classmethod
+    def get_singleton_for_update(cls):
+        snapshot, _ = cls.objects.select_for_update().get_or_create(
+            pk=1,
+            defaults={'balance': Decimal('0.00')}
+        )
+        return snapshot
+
+    def __str__(self):
+        return f"System Balance: {self.balance}"
+
+
+class SystemBalanceLedger(models.Model):
+    EVENT_TYPES = [
+        ('game_commission', 'Game Commission'),
+        ('game_no_winner', 'Game No Winner'),
+        ('admin_adjustment', 'Admin Adjustment'),
+    ]
+
+    DIRECTIONS = [
+        ('credit', 'Credit'),
+        ('debit', 'Debit'),
+    ]
+
+    event_type = models.CharField(max_length=30, choices=EVENT_TYPES)
+    direction = models.CharField(max_length=10, choices=DIRECTIONS)
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    balance_before = models.DecimalField(max_digits=14, decimal_places=2)
+    balance_after = models.DecimalField(max_digits=14, decimal_places=2)
+    game = models.ForeignKey(Game, on_delete=models.SET_NULL, null=True, blank=True, related_name='system_balance_entries')
+    description = models.TextField(blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    idempotency_key = models.CharField(max_length=120, null=True, blank=True, unique=True)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = 'system_balance_ledger'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['event_type']),
+            models.Index(fields=['created_at']),
+        ]
+
+    @classmethod
+    def append_entry(
+        cls,
+        *,
+        event_type,
+        direction,
+        amount,
+        game=None,
+        description='',
+        metadata=None,
+        idempotency_key=None,
+    ):
+        amount = Decimal(str(amount))
+        if amount <= 0:
+            raise ValueError('Amount must be greater than zero.')
+
+        with transaction.atomic():
+            if idempotency_key:
+                existing = cls.objects.filter(idempotency_key=idempotency_key).first()
+                if existing:
+                    return existing
+
+            snapshot = SystemBalance.get_singleton_for_update()
+            balance_before = Decimal(str(snapshot.balance))
+
+            if direction == 'credit':
+                balance_after = balance_before + amount
+            elif direction == 'debit':
+                balance_after = balance_before - amount
+            else:
+                raise ValueError('Invalid direction for system balance ledger entry.')
+
+            if balance_after < 0:
+                raise ValueError('System balance cannot be negative.')
+
+            entry = cls.objects.create(
+                event_type=event_type,
+                direction=direction,
+                amount=amount,
+                balance_before=balance_before,
+                balance_after=balance_after,
+                game=game,
+                description=description,
+                metadata=metadata or {},
+                idempotency_key=idempotency_key,
+            )
+
+            snapshot.balance = balance_after
+            snapshot.save(update_fields=['balance', 'updated_at'])
+            return entry
+
+    def __str__(self):
+        return f"{self.event_type} {self.direction} {self.amount}"
 
 
 class BingoCard(models.Model):

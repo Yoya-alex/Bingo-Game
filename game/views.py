@@ -7,7 +7,7 @@ from django.utils import timezone
 from django.db import transaction
 from decimal import Decimal
 from users.models import User
-from game.models import Game, BingoCard
+from game.models import Game, BingoCard, SystemBalanceLedger
 from wallet.models import Transaction
 import json
 
@@ -41,10 +41,33 @@ def ensure_game_started(game_id):
             return game
 
         if game.state == 'playing' and len(called_numbers) >= settings.BINGO_NUMBER_MAX:
+            total_players = game.cards.count()
+            if game.has_bots:
+                settlement_players = game.real_players_count
+            else:
+                settlement_players = total_players
+
+            settlement_pool = Decimal(settlement_players) * Decimal(settings.CARD_PRICE)
+            game.prize_amount = Decimal('0.00')
+            game.system_revenue = settlement_pool
             game.state = 'finished'
             if not game.finished_at:
                 game.finished_at = timezone.now()
             game.save()
+
+            if settlement_pool > 0:
+                SystemBalanceLedger.append_entry(
+                    event_type='game_no_winner',
+                    direction='credit',
+                    amount=settlement_pool,
+                    game=game,
+                    description=f'Game #{game.id} finished with no winner; system keeps full pool.',
+                    metadata={
+                        'settlement_players': int(settlement_players),
+                        'pool_amount': str(settlement_pool),
+                    },
+                    idempotency_key=f'game:{game.id}:no_winner',
+                )
             return game
 
         if game.state != 'waiting':
@@ -476,6 +499,22 @@ def claim_bingo_api(request):
                 status='approved',
                 description=f'Won Game #{game.id} - {pattern}'
             )
+
+            if system_revenue > 0:
+                SystemBalanceLedger.append_entry(
+                    event_type='game_commission',
+                    direction='credit',
+                    amount=system_revenue,
+                    game=game,
+                    description=f'Game #{game.id} winner commission (20%).',
+                    metadata={
+                        'total_players': int(total_players),
+                        'has_bots': bool(game.has_bots),
+                        'actual_prize': str(actual_prize),
+                        'display_prize': str(display_prize),
+                    },
+                    idempotency_key=f'game:{game.id}:winner_commission',
+                )
             
             return JsonResponse({
                 'success': True,
