@@ -340,7 +340,7 @@ def play_state_api(request, telegram_id, game_id):
 
 @csrf_exempt
 def mark_number_api(request):
-    """Mark any called number on the player's bingo card."""
+    """Mark only the current called number on the player's bingo card."""
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
 
@@ -361,12 +361,9 @@ def mark_number_api(request):
         if not called_number_entries:
             return JsonResponse({'error': 'No numbers have been called yet.'}, status=400)
 
-        # Get all called numbers (not just the current one)
-        called_numbers = [entry['number'] for entry in called_number_entries]
-        
-        # Check if the number has been called
-        if number not in called_numbers:
-            return JsonResponse({'error': 'This number has not been called yet.'}, status=400)
+        current_called_number = called_number_entries[-1]['number']
+        if number != current_called_number:
+            return JsonResponse({'error': 'You can only mark the current called number.'}, status=400)
 
         # Check if the number is on the player's card
         grid_values = {value for row in card.get_grid() for value in row if value is not None}
