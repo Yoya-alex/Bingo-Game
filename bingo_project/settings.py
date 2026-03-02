@@ -45,7 +45,7 @@ INSTALLED_APPS = [
     # Custom apps
     "users",
     "wallet",
-    "game",
+    "game.apps.GameConfig",
     "notifications",
 ]
 

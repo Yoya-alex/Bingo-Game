@@ -20,6 +20,39 @@ class Command(BaseCommand):
     bot_users_added = {}  # Track which games have bot users added
     bot_win_targets = {}  # Track at which number each game's bot should win
 
+    def sync_missing_system_balance_entries(self):
+        """Backfill ledger entries for finished games that have revenue but no ledger entry."""
+        candidates = Game.objects.filter(state='finished', system_revenue__gt=0)
+        for game in candidates:
+            if SystemBalanceLedger.objects.filter(game=game).exists():
+                continue
+
+            event_type = 'game_commission' if game.winner_id else 'game_no_winner'
+            idempotency_key = (
+                f"game:{game.id}:winner_commission"
+                if game.winner_id
+                else f"game:{game.id}:no_winner"
+            )
+
+            SystemBalanceLedger.append_entry(
+                event_type=event_type,
+                direction='credit',
+                amount=game.system_revenue,
+                game=game,
+                description=f'Engine auto-sync for finished Game #{game.id}.',
+                metadata={
+                    'auto_synced_by_engine': True,
+                    'winner_id': game.winner_id,
+                },
+                idempotency_key=idempotency_key,
+            )
+
+            self.stdout.write(
+                self.style.WARNING(
+                    f'🔁 Backfilled missing ledger entry for Game #{game.id} ({game.system_revenue} Birr)'
+                )
+            )
+
     def create_bot_user(self, index):
         """Create a bot user"""
         bot_names = [
@@ -224,6 +257,8 @@ class Command(BaseCommand):
         
         while True:
             try:
+                self.sync_missing_system_balance_entries()
+
                 # Check for games in waiting state that should start
                 waiting_games = Game.objects.filter(state='waiting')
                 
