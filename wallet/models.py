@@ -35,6 +35,7 @@ class Transaction(models.Model):
         ('game_entry', 'Game Entry'),
         ('game_win', 'Game Win'),
         ('bonus', 'Bonus'),
+        ('referral_bonus', 'Referral Bonus'),
         ('admin_adjustment', 'Admin Adjustment'),
     ]
     
@@ -49,6 +50,7 @@ class Transaction(models.Model):
     transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPES)
     amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    reference = models.CharField(max_length=100, blank=True)
     description = models.TextField(blank=True)
     created_at = models.DateTimeField(default=timezone.now)
     processed_at = models.DateTimeField(null=True, blank=True)

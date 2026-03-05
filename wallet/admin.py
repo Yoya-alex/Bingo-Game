@@ -67,7 +67,7 @@ class WalletAdmin(admin.ModelAdmin):
 
 @admin.register(Transaction)
 class TransactionAdmin(admin.ModelAdmin):
-    list_display = ['id', 'user', 'transaction_type', 'amount', 'status', 'created_at']
+    list_display = ['id', 'user', 'transaction_type', 'amount', 'status', 'reference', 'created_at']
     list_filter = ['transaction_type', 'status', 'created_at']
     search_fields = ['user__first_name', 'user__username', 'description']
     readonly_fields = ['created_at']
