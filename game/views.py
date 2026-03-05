@@ -151,12 +151,27 @@ def select_card_api(request):
                 return JsonResponse({'error': 'Insufficient balance'}, status=400)
 
             # Deduct balance
-            if wallet.main_balance >= settings.CARD_PRICE:
-                wallet.main_balance -= settings.CARD_PRICE
-            else:
-                remaining = settings.CARD_PRICE - wallet.main_balance
-                wallet.main_balance = 0
-                wallet.bonus_balance -= remaining
+            remaining = Decimal(str(settings.CARD_PRICE))
+
+            main_to_use = min(wallet.main_balance, remaining)
+            wallet.main_balance -= main_to_use
+            remaining -= main_to_use
+
+            if remaining > 0:
+                bonus_to_use = min(wallet.bonus_balance, remaining)
+                wallet.bonus_balance -= bonus_to_use
+                remaining -= bonus_to_use
+
+            if remaining > 0:
+                winnings_to_use = min(wallet.winnings_balance, remaining)
+                wallet.winnings_balance -= winnings_to_use
+                remaining -= winnings_to_use
+
+            if remaining > 0:
+                return JsonResponse({'error': 'Insufficient balance'}, status=400)
+
+            if wallet.main_balance < 0 or wallet.bonus_balance < 0 or wallet.winnings_balance < 0:
+                return JsonResponse({'error': 'Balance underflow detected'}, status=400)
             wallet.save()
 
             # Log transaction

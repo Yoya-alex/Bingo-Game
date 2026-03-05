@@ -112,7 +112,7 @@ class SystemBalanceLedger(models.Model):
         ('game_no_winner', 'Game No Winner'),
         ('admin_adjustment', 'Admin Adjustment'),
     ]
-
+    
     DIRECTIONS = [
         ('credit', 'Credit'),
         ('debit', 'Debit'),
