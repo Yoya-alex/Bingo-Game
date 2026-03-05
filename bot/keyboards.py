@@ -7,6 +7,7 @@ def main_menu_keyboard():
         [KeyboardButton(text="🎮 Play Bingo")],
         [KeyboardButton(text="💰 Balance"), KeyboardButton(text="📜 Rules")],
         [KeyboardButton(text="➕ Deposit"), KeyboardButton(text="➖ Withdraw")],
+        [KeyboardButton(text="👥 My Invites")],
         [KeyboardButton(text="🆘 Support")]
     ]
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)

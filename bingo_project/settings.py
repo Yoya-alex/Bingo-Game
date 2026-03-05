@@ -108,6 +108,10 @@ WELCOME_BONUS = int(os.getenv('WELCOME_BONUS', 10))
 CARD_PRICE = int(os.getenv('CARD_PRICE', 10))
 CARD_COUNT = int(os.getenv('CARD_COUNT', 400))
 MIN_DEPOSIT = int(os.getenv('MIN_DEPOSIT', 10))
+REFERRAL_REWARD = int(os.getenv('REFERRAL_REWARD', 10))
+MIN_DEPOSIT_FOR_REWARD = int(os.getenv('MIN_DEPOSIT_FOR_REWARD', 20))
+MAX_REWARDED_REFERRALS_PER_DAY = int(os.getenv('MAX_REWARDED_REFERRALS_PER_DAY', 20))
+MAX_TOTAL_REFERRAL_REWARDS_PER_USER = int(os.getenv('MAX_TOTAL_REFERRAL_REWARDS_PER_USER', 0))
 MIN_WITHDRAWAL = int(os.getenv('MIN_WITHDRAWAL', 100))
 WAITING_TIME = int(os.getenv('WAITING_TIME', 25))
 NUMBER_CALL_INTERVAL = int(os.getenv('NUMBER_CALL_INTERVAL', 5))
@@ -116,6 +120,7 @@ GAME_MIN_PLAYERS = int(os.getenv('GAME_MIN_PLAYERS', 2))
 
 # Bot Configuration
 BOT_TOKEN = os.getenv('BOT_TOKEN', '')
+BOT_USERNAME = os.getenv('BOT_USERNAME', 'bingo_bot')
 ADMIN_IDS = [int(id.strip()) for id in os.getenv('ADMIN_IDS', '').split(',') if id.strip()]
 
 # React UI Configuration

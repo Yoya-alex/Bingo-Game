@@ -3,6 +3,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from django.conf import settings
 from django.utils import timezone
 from asgiref.sync import sync_to_async
+from decimal import Decimal
 
 from users.models import User
 from game.models import Game, BingoCard
@@ -65,12 +66,27 @@ def create_bingo_card(game, user, card_number):
 @sync_to_async
 def update_wallet_balance(wallet, amount):
     """Deduct amount from wallet"""
-    if wallet.main_balance >= amount:
-        wallet.main_balance -= amount
-    else:
-        remaining = amount - wallet.main_balance
-        wallet.main_balance = 0
-        wallet.bonus_balance -= remaining
+    remaining = Decimal(str(amount))
+
+    main_to_use = min(wallet.main_balance, remaining)
+    wallet.main_balance -= main_to_use
+    remaining -= main_to_use
+
+    if remaining > 0:
+        bonus_to_use = min(wallet.bonus_balance, remaining)
+        wallet.bonus_balance -= bonus_to_use
+        remaining -= bonus_to_use
+
+    if remaining > 0:
+        winnings_to_use = min(wallet.winnings_balance, remaining)
+        wallet.winnings_balance -= winnings_to_use
+        remaining -= winnings_to_use
+
+    if remaining > 0:
+        raise ValueError("Insufficient balance to deduct card price")
+
+    if wallet.main_balance < 0 or wallet.bonus_balance < 0 or wallet.winnings_balance < 0:
+        raise ValueError("Wallet balance underflow detected")
     wallet.save()
     return wallet
 

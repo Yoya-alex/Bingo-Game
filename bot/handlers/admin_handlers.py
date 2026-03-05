@@ -22,6 +22,7 @@ from bot.keyboards import (
 )
 from bot.utils.admin_helpers import is_admin, get_admin_user
 from bot.utils.notification_service import send_admin_notification
+from bot.utils.referral_service import try_process_referral_reward_for_deposit, get_referral_overview
 
 
 router = Router()
@@ -1043,6 +1044,10 @@ async def admin_deposit_amount_confirm(callback: CallbackQuery, state: FSMContex
     tx = await _get_transaction_or_none(tx_id)
     user = tx.user if tx else None
 
+    reward_result = None
+    if tx:
+        reward_result = await sync_to_async(try_process_referral_reward_for_deposit)(tx)
+
     await callback.message.answer(
         f"✅ Deposit #{tx_id} completed.\n"
         f"User: {user.first_name if user else 'Unknown'}\n"
@@ -1061,6 +1066,20 @@ async def admin_deposit_amount_confirm(callback: CallbackQuery, state: FSMContex
         except Exception:
             pass
 
+    if reward_result and reward_result.get("rewarded"):
+        inviter = reward_result["inviter"]
+        reward_amount = reward_result["reward_amount"]
+        try:
+            await callback.message.bot.send_message(
+                inviter.telegram_id,
+                "🎉 <b>Referral Reward Earned!</b>\n\n"
+                "Your invited friend has completed their first qualifying deposit.\n\n"
+                f"Reward: +{reward_amount} bonus credits\n\n"
+                "Added to your bonus balance.",
+            )
+        except Exception:
+            pass
+
     await send_admin_notification(
         callback.message.bot,
         text=(
@@ -1075,6 +1094,137 @@ async def admin_deposit_amount_confirm(callback: CallbackQuery, state: FSMContex
 
     await state.clear()
     await callback.answer()
+
+
+@sync_to_async
+def _admin_invalidate_referral(referral_id: int, reason: str):
+    from users.models import Referral, ReferralEvent
+
+    try:
+        referral = Referral.objects.select_related("inviter", "referred_user").get(id=referral_id)
+    except Referral.DoesNotExist:
+        return False, "Referral not found", None
+
+    if referral.status == Referral.STATUS_REWARDED:
+        return False, "Cannot invalidate rewarded referral", referral
+
+    referral.status = Referral.STATUS_INVALID
+    referral.invalid_reason = reason or "MANUAL_INVALIDATION"
+    referral.save(update_fields=["status", "invalid_reason", "updated_at"])
+    ReferralEvent.objects.create(
+        referral=referral,
+        event_type=ReferralEvent.EVENT_INVALIDATED,
+        metadata={"reason": referral.invalid_reason, "source": "admin"},
+    )
+    return True, "Referral invalidated", referral
+
+
+@sync_to_async
+def _admin_manual_referral_reward(referral_id: int, amount: Decimal):
+    from users.models import Referral, ReferralEvent
+    from django.db import transaction as db_transaction
+
+    with db_transaction.atomic():
+        try:
+            referral = Referral.objects.select_for_update().select_related("inviter").get(id=referral_id)
+        except Referral.DoesNotExist:
+            return False, "Referral not found", None
+
+        if referral.status == Referral.STATUS_REWARDED:
+            return False, "Referral already rewarded", referral
+
+        inviter_wallet = Wallet.objects.select_for_update().get(user=referral.inviter)
+        inviter_wallet.bonus_balance += amount
+        inviter_wallet.save(update_fields=["bonus_balance", "updated_at"])
+
+        referral.status = referral.STATUS_REWARDED
+        referral.reward_amount = amount
+        referral.rewarded_at = timezone.now()
+        if not referral.qualified_at:
+            referral.qualified_at = timezone.now()
+        referral.save(update_fields=["status", "reward_amount", "rewarded_at", "qualified_at", "updated_at"])
+
+        tx = Transaction.objects.create(
+            user=referral.inviter,
+            transaction_type="referral_bonus",
+            amount=amount,
+            status="approved",
+            reference=f"referral:{referral.id}",
+            description=f"Manual referral bonus for referral #{referral.id}",
+        )
+        ReferralEvent.objects.create(
+            referral=referral,
+            event_type=ReferralEvent.EVENT_REWARDED,
+            metadata={"source": "admin", "reward_tx_id": tx.id, "reward_amount": str(amount)},
+        )
+
+        return True, "Referral rewarded manually", referral
+
+
+@router.message(Command("referral_stats"))
+async def admin_referral_stats(message: Message):
+    if not await _ensure_admin(message):
+        return
+
+    overview = await sync_to_async(get_referral_overview)()
+    top = overview["top_inviters"]
+    if top:
+        top_text = "\n".join(
+            [f"{idx + 1}. {u.first_name} (@{u.username or '—'}) — {u.rewarded_count}" for idx, u in enumerate(top)]
+        )
+    else:
+        top_text = "No rewarded inviters yet"
+
+    text = (
+        "<b>📊 Referral Analytics</b>\n\n"
+        f"Total referrals: {overview['total']}\n"
+        f"Pending referrals: {overview['pending']}\n"
+        f"Qualified referrals: {overview['qualified']}\n"
+        f"Rewarded referrals: {overview['rewarded']}\n"
+        f"Invalid referrals: {overview['invalid']}\n"
+        f"Rewards distributed: {overview['rewards_distributed']} credits\n\n"
+        f"<b>🏆 Top Inviters</b>\n{top_text}"
+    )
+    await message.answer(text, reply_markup=admin_main_menu_keyboard())
+
+
+@router.message(F.text.regexp(r"^/referral_invalidate_(\d+)$"))
+async def admin_referral_invalidate(message: Message):
+    if not await _ensure_admin(message):
+        return
+
+    try:
+        referral_id = int(message.text.split("_")[-1])
+    except (TypeError, ValueError):
+        await message.answer("❌ Invalid referral reference")
+        return
+
+    success, info, _ = await _admin_invalidate_referral(referral_id, "MANUAL_INVALIDATION")
+    if not success:
+        await message.answer(f"❌ {info}")
+        return
+    await message.answer(f"✅ {info} (#{referral_id})", reply_markup=admin_main_menu_keyboard())
+
+
+@router.message(F.text.regexp(r"^/referral_reward_(\d+)_(\d+(?:\.\d{1,2})?)$"))
+async def admin_referral_manual_reward(message: Message):
+    if not await _ensure_admin(message):
+        return
+
+    import re
+
+    match = re.match(r"^/referral_reward_(\d+)_(\d+(?:\.\d{1,2})?)$", message.text or "")
+    if not match:
+        await message.answer("❌ Invalid command format")
+        return
+
+    referral_id = int(match.group(1))
+    amount = Decimal(match.group(2))
+    success, info, _ = await _admin_manual_referral_reward(referral_id, amount)
+    if not success:
+        await message.answer(f"❌ {info}")
+        return
+    await message.answer(f"✅ {info} (#{referral_id}, +{amount})", reply_markup=admin_main_menu_keyboard())
 
 
 @router.message(F.text.regexp(r"^/adm_dep_reject_(\d+)$"))
