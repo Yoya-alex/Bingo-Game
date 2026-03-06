@@ -16,6 +16,7 @@ class Game(models.Model):
     ]
     
     state = models.CharField(max_length=20, choices=GAME_STATES, default='no_game')
+    stake_amount = models.IntegerField(default=10, db_index=True)
     created_at = models.DateTimeField(default=timezone.now)
     started_at = models.DateTimeField(null=True, blank=True)
     finished_at = models.DateTimeField(null=True, blank=True)
@@ -83,7 +84,20 @@ class Game(models.Model):
         self.called_numbers = json.dumps(normalized)
     
     def __str__(self):
-        return f"Game {self.id} - {self.state}"
+        return f"Game {self.id} - {self.state} - {self.stake_amount} Br"
+
+
+class StakeLobbyLock(models.Model):
+    """DB-backed lock row used to serialize lobby game creation per stake."""
+
+    stake_amount = models.IntegerField(unique=True)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = 'stake_lobby_lock'
+
+    def __str__(self):
+        return f"Stake lock {self.stake_amount} Br"
 
 
 class SystemBalance(models.Model):

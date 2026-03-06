@@ -175,7 +175,7 @@ async def play_bingo(message: Message):
         return
     
     # Generate web app URL
-    web_url = f"{settings.REACT_APP_URL}/lobby/{user.telegram_id}/"
+    web_url = f"{settings.REACT_APP_URL}/home/{user.telegram_id}/"
     
     game_text = (
         f"<b>🎮 BINGO GAME</b>\n\n"

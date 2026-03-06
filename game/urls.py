@@ -5,6 +5,7 @@ urlpatterns = [
     path('lobby/<int:telegram_id>/', views.game_lobby, name='game_lobby'),
     path('play/<int:telegram_id>/<int:game_id>/', views.game_play, name='game_play'),
     path('api/lobby-state/<int:telegram_id>/', views.lobby_state_api, name='lobby_state_api'),
+    path('api/profile-state/<int:telegram_id>/', views.profile_state_api, name='profile_state_api'),
     path('api/play-state/<int:telegram_id>/<int:game_id>/', views.play_state_api, name='play_state_api'),
     path('api/select-card/', views.select_card_api, name='select_card_api'),
     path('api/mark-number/', views.mark_number_api, name='mark_number_api'),

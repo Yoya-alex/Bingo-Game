@@ -16,9 +16,15 @@ import random
 
 class Command(BaseCommand):
     help = 'Run the game engine to auto-start games and call numbers'
+    BOT_TELEGRAM_ID_THRESHOLD = 9000000000
+    MIN_REAL_USERS_TO_START = 2
     
     bot_users_added = {}  # Track which games have bot users added
     bot_win_targets = {}  # Track at which number each game's bot should win
+
+    @staticmethod
+    def game_stake(game):
+        return int(getattr(game, 'stake_amount', settings.CARD_PRICE))
 
     def sync_missing_system_balance_entries(self):
         """Backfill ledger entries for finished games that have revenue but no ledger entry."""
@@ -139,7 +145,7 @@ class Command(BaseCommand):
         # Update game with bot tracking info
         game.has_bots = True
         game.real_players_count = real_players
-        game.real_prize_amount = Decimal(real_players) * Decimal(settings.CARD_PRICE) * Decimal("0.8")
+        game.real_prize_amount = Decimal(real_players) * Decimal(self.game_stake(game)) * Decimal("0.8")
         game.save()
         
         self.stdout.write(
@@ -195,11 +201,12 @@ class Command(BaseCommand):
         fake_players = total_players - real_players
         
         # Total pool (real + fake)
-        total_pool = Decimal(total_players) * Decimal(settings.CARD_PRICE)
+        stake_amount = self.game_stake(game)
+        total_pool = Decimal(total_players) * Decimal(stake_amount)
         total_prize = total_pool * Decimal("0.8")  # 80% of total pool for display
         
         # Real players' pool
-        real_pool = Decimal(real_players) * Decimal(settings.CARD_PRICE)
+        real_pool = Decimal(real_players) * Decimal(stake_amount)
         real_prize = real_pool * Decimal("0.8")  # 80% to winner (actual amount)
         
         # When bot wins: system keeps entire real pool (100%)
@@ -266,10 +273,27 @@ class Command(BaseCommand):
                     # Check if waiting period has passed since creation
                     time_elapsed = (timezone.now() - game.created_at).total_seconds()
                     player_count = game.cards.count()
+                    real_player_count = game.cards.filter(user__telegram_id__lt=self.BOT_TELEGRAM_ID_THRESHOLD).count()
+
+                    # Safety cleanup: if a waiting game has only bots, remove them and reset bot flags.
+                    if player_count > 0 and real_player_count == 0 and game.has_bots:
+                        game.cards.filter(user__telegram_id__gte=self.BOT_TELEGRAM_ID_THRESHOLD).delete()
+                        game.has_bots = False
+                        game.real_players_count = 0
+                        game.real_prize_amount = Decimal("0")
+                        game.save(update_fields=['has_bots', 'real_players_count', 'real_prize_amount'])
+                        self.bot_users_added.pop(game.id, None)
+                        self.bot_win_targets.pop(game.id, None)
+                        self.stdout.write(
+                            self.style.WARNING(
+                                f'🧹 Cleared bot-only waiting game #{game.id} before start checks.'
+                            )
+                        )
+                        player_count = game.cards.count()
                     
                     # Start immediately if all 400 cards are selected
                     if player_count >= 400:
-                        if player_count >= settings.GAME_MIN_PLAYERS:
+                        if player_count >= settings.GAME_MIN_PLAYERS and real_player_count >= self.MIN_REAL_USERS_TO_START:
                             game.state = 'playing'
                             game.started_at = timezone.now()
                             game.save()
@@ -284,7 +308,12 @@ class Command(BaseCommand):
                     # Add bot users when countdown reaches 10 seconds and less than 5 players
                     remaining_time = settings.WAITING_TIME - time_elapsed
                     
-                    if remaining_time <= 10 and player_count < 5 and game.id not in self.bot_users_added:
+                    if (
+                        remaining_time <= 10
+                        and player_count < 5
+                        and real_player_count >= self.MIN_REAL_USERS_TO_START
+                        and game.id not in self.bot_users_added
+                    ):
                         bots_to_add = 10
                         self.stdout.write(
                             self.style.WARNING(
@@ -306,7 +335,7 @@ class Command(BaseCommand):
                         player_count = game.cards.count()  # Update count
                     
                     if time_elapsed >= settings.WAITING_TIME:
-                        if player_count >= settings.GAME_MIN_PLAYERS:
+                        if player_count >= settings.GAME_MIN_PLAYERS and real_player_count >= self.MIN_REAL_USERS_TO_START:
                             # Start the game
                             game.state = 'playing'
                             game.started_at = timezone.now()
@@ -322,6 +351,18 @@ class Command(BaseCommand):
                 playing_games = Game.objects.filter(state='playing')
                 
                 for game in playing_games:
+                    real_player_count = game.cards.filter(user__telegram_id__lt=self.BOT_TELEGRAM_ID_THRESHOLD).count()
+                    if real_player_count < self.MIN_REAL_USERS_TO_START:
+                        game.state = 'waiting'
+                        game.started_at = None
+                        game.save(update_fields=['state', 'started_at'])
+                        self.stdout.write(
+                            self.style.WARNING(
+                                f'⏸️ Reverted Game #{game.id} to waiting: real users below {self.MIN_REAL_USERS_TO_START}.'
+                            )
+                        )
+                        continue
+
                     called_number_entries = game.get_called_number_entries()
                     called_numbers = [entry['number'] for entry in called_number_entries]
                     
@@ -339,11 +380,11 @@ class Command(BaseCommand):
                         
                         if game.has_bots:
                             # Game has bots: system keeps only real pool
-                            real_pool = Decimal(game.real_players_count) * Decimal(settings.CARD_PRICE)
+                            real_pool = Decimal(game.real_players_count) * Decimal(self.game_stake(game))
                             system_revenue = real_pool
                         else:
                             # No bots: system keeps entire pool
-                            total_pool = Decimal(total_players) * Decimal(settings.CARD_PRICE)
+                            total_pool = Decimal(total_players) * Decimal(self.game_stake(game))
                             system_revenue = total_pool
                         
                         game.state = 'finished'

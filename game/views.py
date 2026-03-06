@@ -5,11 +5,185 @@ from django.views.decorators.cache import never_cache
 from django.conf import settings
 from django.utils import timezone
 from django.db import transaction
+from django.db.models import Max, Sum
 from decimal import Decimal
 from users.models import User
-from game.models import Game, BingoCard, SystemBalanceLedger
-from wallet.models import Transaction
+from game.models import Game, BingoCard, StakeLobbyLock, SystemBalanceLedger
+from wallet.models import Wallet, Transaction
 import json
+
+
+BOT_TELEGRAM_ID_THRESHOLD = 9000000000
+MIN_REAL_USERS_TO_START = 2
+
+
+def get_supported_stakes():
+    tiers = list(getattr(settings, 'GAME_STAKE_TIERS', [10, 20, 50, 100]))
+    normalized = sorted({int(value) for value in tiers if int(value) > 0})
+    return normalized or [10, 20, 50, 100]
+
+
+def get_game_stake(game):
+    return int(getattr(game, 'stake_amount', settings.CARD_PRICE))
+
+
+def get_game_countdown(game):
+    if game.state != 'waiting':
+        return 0
+    time_elapsed = (timezone.now() - game.created_at).total_seconds()
+    return max(0, int(settings.WAITING_TIME - time_elapsed))
+
+
+def cleanup_bot_only_waiting_game(game):
+    """Remove stale bot cards from waiting games until minimum real users threshold is met."""
+    if game.state != 'waiting' or not game.has_bots:
+        return game
+
+    real_players = game.cards.filter(user__telegram_id__lt=BOT_TELEGRAM_ID_THRESHOLD).count()
+    if real_players >= MIN_REAL_USERS_TO_START:
+        return game
+
+    bot_cards_qs = game.cards.filter(user__telegram_id__gte=BOT_TELEGRAM_ID_THRESHOLD)
+    if not bot_cards_qs.exists():
+        if game.has_bots or game.real_players_count or game.real_prize_amount:
+            game.has_bots = False
+            game.real_players_count = 0
+            game.real_prize_amount = Decimal('0')
+            game.save(update_fields=['has_bots', 'real_players_count', 'real_prize_amount'])
+        return game
+
+    bot_cards_qs.delete()
+    game.has_bots = False
+    game.real_players_count = 0
+    game.real_prize_amount = Decimal('0')
+    game.save(update_fields=['has_bots', 'real_players_count', 'real_prize_amount'])
+    return game
+
+
+def consolidate_waiting_games_for_stake(stake_amount):
+    """Merge duplicate waiting games for a stake into one canonical waiting game."""
+    waiting_games = list(
+        Game.objects.select_for_update()
+        .filter(stake_amount=stake_amount, state='waiting')
+        .order_by('created_at', 'id')
+    )
+    if not waiting_games:
+        return None
+    if len(waiting_games) == 1:
+        return waiting_games[0]
+
+    game_sizes = [(game, game.cards.count()) for game in waiting_games]
+    primary_game, _ = max(game_sizes, key=lambda entry: (entry[1], -entry[0].id))
+
+    used_numbers = set(primary_game.cards.values_list('card_number', flat=True))
+    users_in_primary = set(primary_game.cards.values_list('user_id', flat=True))
+
+    for duplicate in waiting_games:
+        if duplicate.id == primary_game.id:
+            continue
+
+        duplicate_cards = list(duplicate.cards.order_by('created_at', 'id'))
+        for card in duplicate_cards:
+            if card.user_id in users_in_primary:
+                continue
+
+            target_card_number = card.card_number
+            if target_card_number in used_numbers:
+                target_card_number = None
+                for candidate in range(1, settings.CARD_COUNT + 1):
+                    if candidate not in used_numbers:
+                        target_card_number = candidate
+                        break
+
+                if target_card_number is None:
+                    continue
+
+            card.game = primary_game
+            if card.card_number != target_card_number:
+                card.card_number = target_card_number
+                card.save(update_fields=['game', 'card_number'])
+            else:
+                card.save(update_fields=['game'])
+
+            used_numbers.add(target_card_number)
+            users_in_primary.add(card.user_id)
+
+        if not duplicate.cards.exists():
+            duplicate.delete()
+
+    return primary_game
+
+
+def get_or_create_lobby_game_for_stake(stake_amount):
+    with transaction.atomic():
+        lock_row, _ = StakeLobbyLock.objects.get_or_create(stake_amount=stake_amount)
+        StakeLobbyLock.objects.select_for_update().get(pk=lock_row.pk)
+
+        playing_game = (
+            Game.objects.select_for_update()
+            .filter(stake_amount=stake_amount, state='playing')
+            .order_by('-created_at')
+            .first()
+        )
+        if playing_game:
+            return ensure_game_started(playing_game.id)
+
+        waiting_game = consolidate_waiting_games_for_stake(stake_amount)
+        if waiting_game:
+            waiting_game = cleanup_bot_only_waiting_game(waiting_game)
+            waiting_game = ensure_game_started(waiting_game.id)
+            if waiting_game.state in ['waiting', 'playing']:
+                return waiting_game
+
+        return Game.objects.create(state='waiting', stake_amount=stake_amount)
+
+
+def build_lobby_game_row(game, user):
+    stake_amount = get_game_stake(game)
+    total_players = game.cards.count()
+    real_players = game.cards.filter(user__telegram_id__lt=BOT_TELEGRAM_ID_THRESHOLD).count()
+    derash = Decimal(real_players) * Decimal(stake_amount) * Decimal('0.8')
+    countdown = get_game_countdown(game)
+    user_card = game.cards.filter(user=user).first()
+    user_has_card = bool(user_card)
+    taken_cards = list(game.cards.values_list('card_number', flat=True))
+
+    if game.state == 'playing':
+        status_key = 'PLAYING'
+        status_label = 'Active'
+    else:
+        status_key = 'WAITING'
+        if total_players >= settings.GAME_MIN_PLAYERS and real_players >= MIN_REAL_USERS_TO_START and countdown > 0:
+            status_label = f'Starting in {countdown}s'
+        else:
+            status_label = 'Waiting for players'
+
+    action = 'none'
+    action_label = 'In Progress' if game.state == 'playing' else 'Unavailable'
+    if user_has_card:
+        action = 'play'
+        action_label = 'Play'
+    elif game.state == 'waiting':
+        action = 'join'
+        action_label = 'Join Now'
+
+    return {
+        'game_id': game.id,
+        'stake_amount': stake_amount,
+        'medb': stake_amount,
+        'derash': float(derash),
+        'players': real_players,
+        'status_key': status_key,
+        'status_label': status_label,
+        'state': game.state,
+        'countdown': countdown,
+        'user_has_card': user_has_card,
+        'user_card_number': user_card.card_number if user_card else None,
+        'taken_cards': taken_cards,
+        'available_cards': settings.CARD_COUNT - len(taken_cards),
+        'action': action,
+        'action_label': action_label,
+    }
 
 
 def get_winner_card_payload(game):
@@ -34,7 +208,16 @@ def ensure_game_started(game_id):
         game = Game.objects.select_for_update().get(id=game_id)
         called_numbers = game.get_called_numbers()
 
-        if game.state == 'playing' and game.cards.count() < settings.GAME_MIN_PLAYERS:
+        total_players = game.cards.count()
+        real_players = game.cards.filter(user__telegram_id__lt=BOT_TELEGRAM_ID_THRESHOLD).count()
+
+        if (
+            game.state == 'playing'
+            and (
+                total_players < settings.GAME_MIN_PLAYERS
+                or real_players < MIN_REAL_USERS_TO_START
+            )
+        ):
             game.state = 'waiting'
             game.started_at = None
             game.save()
@@ -47,7 +230,7 @@ def ensure_game_started(game_id):
             else:
                 settlement_players = total_players
 
-            settlement_pool = Decimal(settlement_players) * Decimal(settings.CARD_PRICE)
+            settlement_pool = Decimal(settlement_players) * Decimal(get_game_stake(game))
             game.prize_amount = Decimal('0.00')
             game.system_revenue = settlement_pool
             game.state = 'finished'
@@ -74,7 +257,11 @@ def ensure_game_started(game_id):
             return game
 
         time_elapsed = (timezone.now() - game.created_at).total_seconds()
-        if time_elapsed >= settings.WAITING_TIME and game.cards.count() >= settings.GAME_MIN_PLAYERS:
+        if (
+            time_elapsed >= settings.WAITING_TIME
+            and total_players >= settings.GAME_MIN_PLAYERS
+            and real_players >= MIN_REAL_USERS_TO_START
+        ):
             game.state = 'playing'
             game.started_at = timezone.now()
             game.save()
@@ -90,7 +277,7 @@ def game_lobby(request, telegram_id):
             'error': 'User not found. Please start the bot first.'
         })
 
-    return redirect(f"{settings.REACT_APP_URL}/lobby/{telegram_id}")
+    return redirect(f"{settings.REACT_APP_URL}/home/{telegram_id}")
 
 
 def game_play(request, telegram_id, game_id):
@@ -115,89 +302,105 @@ def select_card_api(request):
         data = json.loads(request.body)
         telegram_id = data.get('telegram_id')
         card_number = int(data.get('card_number'))
-        
-        user = User.objects.select_related('wallet').get(telegram_id=telegram_id)
-        wallet = user.wallet
+        stake_amount = data.get('stake_amount')
+        supported_stakes = get_supported_stakes()
+        if stake_amount is not None:
+            stake_amount = int(stake_amount)
+            if stake_amount not in supported_stakes:
+                return JsonResponse({'error': 'Invalid game tier'}, status=400)
         
         if card_number < 1 or card_number > settings.CARD_COUNT:
             return JsonResponse({'error': 'Invalid card number'}, status=400)
 
-        user_card = (
-            BingoCard.objects.select_related('game')
-            .filter(user=user, game__state='waiting')
-            .order_by('-game__created_at')
-            .first()
-        )
+        with transaction.atomic():
+            user = User.objects.select_for_update().get(telegram_id=telegram_id)
+            wallet, _ = Wallet.objects.select_for_update().get_or_create(user=user)
 
-        if user_card:
-            game = user_card.game
-        else:
-            # Use a waiting game that already has participants, otherwise create a fresh one.
-            game = Game.objects.filter(state='waiting', cards__isnull=False).order_by('-created_at').first()
-            if not game:
-                game = Game.objects.create(state='waiting')
-            previous_player_count = game.cards.count()
-        # Check if card is available for this user
-        if game.cards.filter(card_number=card_number).exclude(user=user).exists():
-            return JsonResponse({'error': 'Card already taken'}, status=400)
-        
-        if user_card:
-            user_card.card_number = card_number
-            user_card.save()
-            card = user_card
-        else:
-            # Check balance
-            if wallet.total_balance < settings.CARD_PRICE:
-                return JsonResponse({'error': 'Insufficient balance'}, status=400)
+            user_cards_qs = BingoCard.objects.select_related('game').filter(user=user, game__state='waiting')
+            if stake_amount is not None:
+                user_cards_qs = user_cards_qs.filter(game__stake_amount=stake_amount)
+            user_card = user_cards_qs.order_by('-game__created_at').first()
 
-            # Deduct balance
-            remaining = Decimal(str(settings.CARD_PRICE))
+            if user_card:
+                game = Game.objects.select_for_update().get(pk=user_card.game_id)
+                previous_player_count = game.cards.count()
+            else:
+                if stake_amount is None:
+                    return JsonResponse({'error': 'Game tier is required for new join.'}, status=400)
 
-            main_to_use = min(wallet.main_balance, remaining)
-            wallet.main_balance -= main_to_use
-            remaining -= main_to_use
+                lock_row, _ = StakeLobbyLock.objects.get_or_create(stake_amount=stake_amount)
+                StakeLobbyLock.objects.select_for_update().get(pk=lock_row.pk)
 
-            if remaining > 0:
-                bonus_to_use = min(wallet.bonus_balance, remaining)
-                wallet.bonus_balance -= bonus_to_use
-                remaining -= bonus_to_use
+                game = consolidate_waiting_games_for_stake(stake_amount)
+                if not game:
+                    if Game.objects.filter(state='playing', stake_amount=stake_amount).exists():
+                        return JsonResponse({'error': 'This game is currently active. Please wait for next round.'}, status=400)
+                    game = Game.objects.create(state='waiting', stake_amount=stake_amount)
+                previous_player_count = game.cards.count()
 
-            if remaining > 0:
-                winnings_to_use = min(wallet.winnings_balance, remaining)
-                wallet.winnings_balance -= winnings_to_use
-                remaining -= winnings_to_use
+            # Check if card is available for this user
+            if game.cards.filter(card_number=card_number).exclude(user=user).exists():
+                return JsonResponse({'error': 'Card already taken'}, status=400)
 
-            if remaining > 0:
-                return JsonResponse({'error': 'Insufficient balance'}, status=400)
+            if user_card:
+                user_card.card_number = card_number
+                user_card.save(update_fields=['card_number'])
+                card = user_card
+            else:
+                # Check balance
+                entry_fee = Decimal(str(get_game_stake(game)))
+                if wallet.total_balance < entry_fee:
+                    return JsonResponse({'error': 'Insufficient balance'}, status=400)
 
-            if wallet.main_balance < 0 or wallet.bonus_balance < 0 or wallet.winnings_balance < 0:
-                return JsonResponse({'error': 'Balance underflow detected'}, status=400)
-            wallet.save()
+                # Deduct balance
+                remaining = entry_fee
 
-            # Log transaction
-            Transaction.objects.create(
-                user=user,
-                transaction_type='game_entry',
-                amount=settings.CARD_PRICE,
-                status='approved',
-                description=f'Game #{game.id} - Card #{card_number}'
-            )
+                main_to_use = min(wallet.main_balance, remaining)
+                wallet.main_balance -= main_to_use
+                remaining -= main_to_use
 
-            # Create card
-            card = BingoCard.objects.create(
-                game=game,
-                user=user,
-                card_number=card_number
-            )
+                if remaining > 0:
+                    bonus_to_use = min(wallet.bonus_balance, remaining)
+                    wallet.bonus_balance -= bonus_to_use
+                    remaining -= bonus_to_use
 
-            current_player_count = previous_player_count + 1
-            if previous_player_count < settings.GAME_MIN_PLAYERS <= current_player_count:
-                game.created_at = timezone.now()
-                game.save(update_fields=['created_at'])
+                if remaining > 0:
+                    winnings_to_use = min(wallet.winnings_balance, remaining)
+                    wallet.winnings_balance -= winnings_to_use
+                    remaining -= winnings_to_use
+
+                if remaining > 0:
+                    return JsonResponse({'error': 'Insufficient balance'}, status=400)
+
+                if wallet.main_balance < 0 or wallet.bonus_balance < 0 or wallet.winnings_balance < 0:
+                    return JsonResponse({'error': 'Balance underflow detected'}, status=400)
+                wallet.save()
+
+                # Log transaction
+                Transaction.objects.create(
+                    user=user,
+                    transaction_type='game_entry',
+                    amount=entry_fee,
+                    status='approved',
+                    description=f'Game #{game.id} ({get_game_stake(game)} Br) - Card #{card_number}'
+                )
+
+                # Create card
+                card = BingoCard.objects.create(
+                    game=game,
+                    user=user,
+                    card_number=card_number
+                )
+
+                current_player_count = previous_player_count + 1
+                if previous_player_count < settings.GAME_MIN_PLAYERS <= current_player_count:
+                    game.created_at = timezone.now()
+                    game.save(update_fields=['created_at'])
         
         return JsonResponse({
             'success': True,
             'game_id': game.id,
+            'stake_amount': get_game_stake(game),
             'card_number': card_number,
             'card': {
                 'card_number': card.card_number,
@@ -217,20 +420,23 @@ def game_status_api(request, game_id):
         game = ensure_game_started(game_id)
         
         # Calculate countdown
-        time_elapsed = (timezone.now() - game.created_at).total_seconds()
-        countdown = max(0, int(settings.WAITING_TIME - time_elapsed))
+        countdown = get_game_countdown(game)
+        stake_amount = get_game_stake(game)
+        total_players = game.cards.count()
+        derash = Decimal(total_players) * Decimal(stake_amount) * Decimal('0.8')
         winner_card = get_winner_card_payload(game)
 
         return JsonResponse({
             'game_id': game.id,
+            'stake_amount': stake_amount,
             'state': game.state,
             'server_time': timezone.now().isoformat(),
             'number_call_interval': settings.NUMBER_CALL_INTERVAL,
             'countdown': countdown,
-            'total_players': game.cards.count(),
+            'total_players': total_players,
             'called_numbers': game.get_called_number_entries(),
             'winner': game.winner.first_name if game.winner else None,
-            'prize_amount': float(game.prize_amount) if game.prize_amount else 0,
+            'prize_amount': float(game.prize_amount) if game.prize_amount else float(derash),
             'winner_card': winner_card,
         })
     except Exception as e:
@@ -245,86 +451,57 @@ def lobby_state_api(request, telegram_id):
     except User.DoesNotExist:
         return JsonResponse({'error': 'User not found. Please start the bot first.'}, status=404)
 
-    def get_active_game():
-        user_waiting_game = (
-            Game.objects.filter(state='waiting', cards__user=user)
-            .order_by('-created_at')
-            .first()
-        )
-        if user_waiting_game:
-            return user_waiting_game
+    stakes = get_supported_stakes()
+    games = [get_or_create_lobby_game_for_stake(stake) for stake in stakes]
+    rows = [build_lobby_game_row(game, user) for game in games]
 
-        waiting_game = Game.objects.filter(state='waiting', cards__isnull=False).order_by('-created_at').first()
-        playing_game = Game.objects.filter(state='playing').order_by('-created_at').first()
-        return waiting_game or playing_game
+    user_card = (
+        BingoCard.objects.select_related('game')
+        .filter(user=user, game__state__in=['waiting', 'playing'])
+        .order_by('-game__created_at')
+        .first()
+    )
+    selected_game = user_card.game if user_card else None
+    selected_game_payload = None
 
-    game = get_active_game()
-    if game:
-        game = ensure_game_started(game.id)
-        if game.state == 'finished':
-            game = get_active_game()
-            if game:
-                game = ensure_game_started(game.id)
-
-    if not game:
-        return JsonResponse({
-            'user': {
-                'first_name': user.first_name,
-                'telegram_id': user.telegram_id,
-            },
-            'game': {
-                'id': None,
-                'state': 'waiting',
-            },
-            'server_time': timezone.now().isoformat(),
-            'number_call_interval': settings.NUMBER_CALL_INTERVAL,
-            'wallet_balance': float(user.wallet.total_balance),
-            'taken_cards': [],
+    if selected_game:
+        selected_game = ensure_game_started(selected_game.id)
+        taken_cards = list(selected_game.cards.values_list('card_number', flat=True))
+        total_players = selected_game.cards.count()
+        stake_amount = get_game_stake(selected_game)
+        derash = Decimal(total_players) * Decimal(stake_amount) * Decimal('0.8')
+        selected_game_payload = {
+            'id': selected_game.id,
+            'state': selected_game.state,
+            'stake_amount': stake_amount,
+            'medb': stake_amount,
+            'countdown': get_game_countdown(selected_game),
+            'total_players': total_players,
+            'derash': float(derash),
+            'taken_cards': taken_cards,
             'all_numbers': list(range(1, settings.CARD_COUNT + 1)),
-            'total_players': 0,
-            'available_cards': settings.CARD_COUNT,
-            'stake': settings.CARD_PRICE,
-            'countdown': 0,
-            'called_numbers': [],
-            'winner': None,
-            'prize_amount': 0,
-            'winner_card': None,
-            'user_card': None,
-        })
-
-    taken_cards = list(game.cards.values_list('card_number', flat=True))
-    time_elapsed = (timezone.now() - game.created_at).total_seconds()
-    countdown = max(0, int(settings.WAITING_TIME - time_elapsed))
-    total_players = game.cards.count()
-    winner_card = get_winner_card_payload(game)
-    user_card = game.cards.filter(user=user).first()
+            'available_cards': settings.CARD_COUNT - len(taken_cards),
+            'called_numbers': selected_game.get_called_number_entries(),
+            'winner': selected_game.winner.first_name if selected_game.winner else None,
+            'winner_card': get_winner_card_payload(selected_game),
+            'user_card': {
+                'card_number': user_card.card_number,
+                'grid': user_card.get_grid(),
+            },
+        }
 
     return JsonResponse({
         'user': {
             'first_name': user.first_name,
             'telegram_id': user.telegram_id,
         },
-        'game': {
-            'id': game.id,
-            'state': game.state,
-        },
+        'games': rows,
+        'stakes': stakes,
+        'selected_game': selected_game_payload,
         'server_time': timezone.now().isoformat(),
         'number_call_interval': settings.NUMBER_CALL_INTERVAL,
         'wallet_balance': float(user.wallet.total_balance),
-        'taken_cards': taken_cards,
         'all_numbers': list(range(1, settings.CARD_COUNT + 1)),
-        'total_players': total_players,
-        'available_cards': settings.CARD_COUNT - len(taken_cards),
-        'stake': settings.CARD_PRICE,
-        'countdown': countdown,
-        'called_numbers': game.get_called_number_entries(),
-        'winner': game.winner.first_name if game.winner else None,
-        'prize_amount': float(game.prize_amount) if game.prize_amount else 0,
-        'winner_card': winner_card,
-        'user_card': {
-            'card_number': user_card.card_number,
-            'grid': user_card.get_grid(),
-        } if user_card else None,
     })
 
 
@@ -341,13 +518,13 @@ def play_state_api(request, telegram_id, game_id):
     grid = user_card.get_grid()
     called_numbers = game.get_called_numbers()
     total_players = game.cards.count()
+    stake_amount = get_game_stake(game)
     if game.prize_amount == 0:
-        prize_amount = Decimal(total_players) * Decimal(settings.CARD_PRICE) * Decimal("0.8")
+        prize_amount = Decimal(total_players) * Decimal(stake_amount) * Decimal("0.8")
     else:
         prize_amount = game.prize_amount
 
-    time_elapsed = (timezone.now() - game.created_at).total_seconds()
-    countdown = max(0, int(settings.WAITING_TIME - time_elapsed))
+    countdown = get_game_countdown(game)
     winner_card = get_winner_card_payload(game)
 
     return JsonResponse({
@@ -358,6 +535,7 @@ def play_state_api(request, telegram_id, game_id):
         'game': {
             'id': game.id,
             'state': game.state,
+            'stake_amount': stake_amount,
         },
         'server_time': timezone.now().isoformat(),
         'number_call_interval': settings.NUMBER_CALL_INTERVAL,
@@ -373,6 +551,112 @@ def play_state_api(request, telegram_id, game_id):
         'winner': game.winner.first_name if game.winner else None,
         'countdown': countdown,
         'winner_card': winner_card,
+    })
+
+
+@never_cache
+def profile_state_api(request, telegram_id):
+    """Return profile data for React UI."""
+    try:
+        user = User.objects.select_related('wallet').get(telegram_id=telegram_id)
+    except User.DoesNotExist:
+        return JsonResponse({'error': 'User not found. Please start the bot first.'}, status=404)
+
+    wallet, _ = Wallet.objects.get_or_create(user=user)
+
+    user_cards_qs = BingoCard.objects.filter(user=user)
+    games_joined = user_cards_qs.count()
+    wins = Game.objects.filter(winner=user).count()
+    win_rate = round((wins / games_joined) * 100, 2) if games_joined else 0
+
+    entry_spent = (
+        Transaction.objects.filter(user=user, transaction_type='game_entry', status__in=['approved', 'completed'])
+        .aggregate(total=Sum('amount'))
+        .get('total')
+        or Decimal('0')
+    )
+    total_won = (
+        Transaction.objects.filter(user=user, transaction_type='game_win', status__in=['approved', 'completed'])
+        .aggregate(total=Sum('amount'))
+        .get('total')
+        or Decimal('0')
+    )
+    biggest_win = (
+        Transaction.objects.filter(user=user, transaction_type='game_win', status__in=['approved', 'completed'])
+        .aggregate(max_value=Max('amount'))
+        .get('max_value')
+        or Decimal('0')
+    )
+    referral_bonus_earned = (
+        Transaction.objects.filter(user=user, transaction_type='referral_bonus', status__in=['approved', 'completed'])
+        .aggregate(total=Sum('amount'))
+        .get('total')
+        or Decimal('0')
+    )
+
+    recent_transactions = []
+    for txn in Transaction.objects.filter(user=user).order_by('-created_at')[:15]:
+        recent_transactions.append({
+            'id': txn.id,
+            'type': txn.transaction_type,
+            'status': txn.status,
+            'amount': float(txn.amount) if txn.amount is not None else None,
+            'description': txn.description,
+            'created_at': txn.created_at.isoformat(),
+        })
+
+    game_history = []
+    for card in (
+        BingoCard.objects.select_related('game', 'game__winner')
+        .filter(user=user, game__state='finished')
+        .order_by('-game__finished_at', '-created_at')[:20]
+    ):
+        game = card.game
+        is_win = game.winner_id == user.id
+        game_history.append({
+            'game_id': game.id,
+            'stake_amount': get_game_stake(game),
+            'card_number': card.card_number,
+            'result': 'won' if is_win else 'lost',
+            'prize': float(game.prize_amount) if is_win else 0,
+            'finished_at': game.finished_at.isoformat() if game.finished_at else game.created_at.isoformat(),
+        })
+
+    # Fall back to tracked referral_count if detailed referral rows are absent.
+    rewarded_referrals = user.referral_count
+
+    return JsonResponse({
+        'user': {
+            'first_name': user.first_name,
+            'username': user.username,
+            'telegram_id': user.telegram_id,
+            'invite_code': user.invite_code,
+            'referral_count': user.referral_count,
+            'registration_date': user.registration_date.isoformat(),
+        },
+        'wallet': {
+            'total_balance': float(wallet.total_balance),
+            'main_balance': float(wallet.main_balance),
+            'bonus_balance': float(wallet.bonus_balance),
+            'winnings_balance': float(wallet.winnings_balance),
+            'withdrawable_balance': float(wallet.withdrawable_balance),
+        },
+        'stats': {
+            'games_joined': games_joined,
+            'wins': wins,
+            'win_rate': win_rate,
+            'total_entry_spent': float(entry_spent),
+            'total_won': float(total_won),
+            'biggest_win': float(biggest_win),
+        },
+        'referrals': {
+            'invite_code': user.invite_code,
+            'referred_count': user.referral_count,
+            'rewarded_referrals': rewarded_referrals,
+            'referral_bonus_earned': float(referral_bonus_earned),
+        },
+        'recent_activity': recent_transactions,
+        'game_history': game_history,
     })
 
 
@@ -446,7 +730,12 @@ def claim_bingo_api(request):
             return JsonResponse({'error': 'Game already finished'}, status=400)
         
         # Auto-transition to playing if still waiting and enough players joined
-        if game.state == 'waiting' and game.cards.count() >= settings.GAME_MIN_PLAYERS:
+        real_players = game.cards.filter(user__telegram_id__lt=BOT_TELEGRAM_ID_THRESHOLD).count()
+        if (
+            game.state == 'waiting'
+            and game.cards.count() >= settings.GAME_MIN_PLAYERS
+            and real_players >= MIN_REAL_USERS_TO_START
+        ):
             game.state = 'playing'
             game.started_at = timezone.now()
             game.save()
@@ -467,9 +756,10 @@ def claim_bingo_api(request):
         if is_winner:
             # Calculate prize based on total players for display, but credit based on real players
             total_players = game.cards.count()
+            stake_amount = get_game_stake(game)
             
             # Total prize for display (includes fake players)
-            total_pool = Decimal(total_players) * Decimal(settings.CARD_PRICE)
+            total_pool = Decimal(total_players) * Decimal(stake_amount)
             display_prize = total_pool * Decimal("0.8")  # 80% of total pool
             
             if game.has_bots:
@@ -477,7 +767,7 @@ def claim_bingo_api(request):
                 real_players = game.real_players_count
                 
                 # Real players' pool
-                real_pool = Decimal(real_players) * Decimal(settings.CARD_PRICE)
+                real_pool = Decimal(real_players) * Decimal(stake_amount)
                 actual_prize = real_pool * Decimal("0.8")  # 80% to winner (actual amount)
                 real_commission = real_pool * Decimal("0.2")  # 20% commission
                 
@@ -487,7 +777,7 @@ def claim_bingo_api(request):
             else:
                 # No bots: normal calculation with 20% commission
                 actual_prize = display_prize  # Same as display prize
-                system_revenue = Decimal(total_players) * Decimal(settings.CARD_PRICE) * Decimal("0.2")
+                system_revenue = Decimal(total_players) * Decimal(stake_amount) * Decimal("0.2")
                 game.system_revenue = system_revenue
             
             # Update game state

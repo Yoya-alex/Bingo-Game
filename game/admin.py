@@ -7,6 +7,7 @@ from .models import Game, BingoCard, SystemBalance, SystemBalanceLedger
 class GameAdmin(admin.ModelAdmin):
     list_display = [
         'id', 
+        'stake_amount',
         'state', 
         'get_player_info', 
         'get_winner_info',
@@ -64,7 +65,7 @@ class GameAdmin(admin.ModelAdmin):
     
     fieldsets = (
         ('Game Info', {
-            'fields': ('state', 'winner', 'prize_amount')
+            'fields': ('state', 'stake_amount', 'winner', 'prize_amount')
         }),
         ('Bot Tracking', {
             'fields': ('has_bots', 'real_players_count', 'real_prize_amount'),

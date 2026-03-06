@@ -105,7 +105,15 @@ DATABASES = {
 
 # Game Configuration
 WELCOME_BONUS = int(os.getenv('WELCOME_BONUS', 10))
+# Legacy single-price fallback (used when a specific game stake is not available)
 CARD_PRICE = int(os.getenv('CARD_PRICE', 10))
+GAME_STAKE_TIERS = [
+    int(value.strip())
+    for value in os.getenv('GAME_STAKE_TIERS', '10,20,50,100').split(',')
+    if value.strip()
+]
+if not GAME_STAKE_TIERS:
+    GAME_STAKE_TIERS = [10, 20, 50, 100]
 CARD_COUNT = int(os.getenv('CARD_COUNT', 400))
 MIN_DEPOSIT = int(os.getenv('MIN_DEPOSIT', 10))
 REFERRAL_REWARD = int(os.getenv('REFERRAL_REWARD', 10))
