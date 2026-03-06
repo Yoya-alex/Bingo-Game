@@ -295,11 +295,11 @@ export default function ProfilePage() {
             <span className="bottom-nav-icon">Profile</span>
             <span className="bottom-nav-label">Profile</span>
           </button>
-          <button type="button" className="bottom-nav-item" onClick={() => notify("error", "Top winners page coming soon.")}>
+          <button type="button" className="bottom-nav-item" onClick={() => navigate(`/trophy/${telegramId}`)}>
             <span className="bottom-nav-icon">Trophy</span>
             <span className="bottom-nav-label">Top Winners</span>
           </button>
-          <button type="button" className="bottom-nav-item" onClick={() => notify("error", "Wallet page coming soon.")}>
+          <button type="button" className="bottom-nav-item" onClick={() => navigate(`/wallet/${telegramId}`)}>
             <span className="bottom-nav-icon">Wallet</span>
             <span className="bottom-nav-label">Wallet</span>
           </button>

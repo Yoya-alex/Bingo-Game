@@ -5,8 +5,9 @@ from django.views.decorators.cache import never_cache
 from django.conf import settings
 from django.utils import timezone
 from django.db import transaction
-from django.db.models import Max, Sum
+from django.db.models import Count, Max, Sum
 from decimal import Decimal
+from datetime import timedelta
 from users.models import User
 from game.models import Game, BingoCard, StakeLobbyLock, SystemBalanceLedger
 from wallet.models import Wallet, Transaction
@@ -657,6 +658,327 @@ def profile_state_api(request, telegram_id):
         },
         'recent_activity': recent_transactions,
         'game_history': game_history,
+    })
+
+
+@never_cache
+def wallet_state_api(request, telegram_id):
+    """Return read-only wallet information for React UI."""
+    try:
+        user = User.objects.select_related('wallet').get(telegram_id=telegram_id)
+    except User.DoesNotExist:
+        return JsonResponse({'error': 'User not found. Please start the bot first.'}, status=404)
+
+    wallet, _ = Wallet.objects.get_or_create(user=user)
+
+    type_filter = (request.GET.get('type') or 'all').lower()
+    status_filter = (request.GET.get('status') or 'all').lower()
+
+    valid_types = {choice[0] for choice in Transaction.TRANSACTION_TYPES}
+    valid_statuses = {choice[0] for choice in Transaction.STATUS_CHOICES}
+
+    if type_filter != 'all' and type_filter not in valid_types:
+        return JsonResponse({'error': 'Invalid transaction type filter.'}, status=400)
+    if status_filter != 'all' and status_filter not in valid_statuses:
+        return JsonResponse({'error': 'Invalid transaction status filter.'}, status=400)
+
+    completed_statuses = ['approved', 'completed']
+    now = timezone.now()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    month_start = now - timedelta(days=30)
+
+    base_txn_qs = Transaction.objects.filter(user=user)
+    filtered_qs = base_txn_qs
+    if type_filter != 'all':
+        filtered_qs = filtered_qs.filter(transaction_type=type_filter)
+    if status_filter != 'all':
+        filtered_qs = filtered_qs.filter(status=status_filter)
+
+    recent_transactions = []
+    recent_qs = (
+        filtered_qs
+        .select_related('deposit_detail', 'withdrawal_detail')
+        .order_by('-created_at')[:30]
+    )
+    for txn in recent_qs:
+        payment_method = ''
+        if hasattr(txn, 'deposit_detail') and txn.deposit_detail:
+            payment_method = txn.deposit_detail.payment_method
+        elif hasattr(txn, 'withdrawal_detail') and txn.withdrawal_detail:
+            payment_method = txn.withdrawal_detail.payment_method
+
+        recent_transactions.append({
+            'id': txn.id,
+            'type': txn.transaction_type,
+            'status': txn.status,
+            'amount': float(txn.amount) if txn.amount is not None else None,
+            'reference': txn.reference,
+            'description': txn.description,
+            'payment_method': payment_method,
+            'created_at': txn.created_at.isoformat(),
+            'processed_at': txn.processed_at.isoformat() if txn.processed_at else None,
+        })
+
+    total_entry_spent = (
+        base_txn_qs
+        .filter(transaction_type='game_entry', status__in=completed_statuses)
+        .aggregate(total=Sum('amount'))
+        .get('total')
+        or Decimal('0')
+    )
+    total_game_won = (
+        base_txn_qs
+        .filter(transaction_type='game_win', status__in=completed_statuses)
+        .aggregate(total=Sum('amount'))
+        .get('total')
+        or Decimal('0')
+    )
+    total_referral_bonus = (
+        base_txn_qs
+        .filter(transaction_type='referral_bonus', status__in=completed_statuses)
+        .aggregate(total=Sum('amount'))
+        .get('total')
+        or Decimal('0')
+    )
+    biggest_win = (
+        base_txn_qs
+        .filter(transaction_type='game_win', status__in=completed_statuses)
+        .aggregate(max_value=Max('amount'))
+        .get('max_value')
+        or Decimal('0')
+    )
+
+    today_spent = (
+        base_txn_qs
+        .filter(transaction_type='game_entry', status__in=completed_statuses, created_at__gte=today_start)
+        .aggregate(total=Sum('amount'))
+        .get('total')
+        or Decimal('0')
+    )
+    today_won = (
+        base_txn_qs
+        .filter(transaction_type='game_win', status__in=completed_statuses, created_at__gte=today_start)
+        .aggregate(total=Sum('amount'))
+        .get('total')
+        or Decimal('0')
+    )
+    month_spent = (
+        base_txn_qs
+        .filter(transaction_type='game_entry', status__in=completed_statuses, created_at__gte=month_start)
+        .aggregate(total=Sum('amount'))
+        .get('total')
+        or Decimal('0')
+    )
+    month_won = (
+        base_txn_qs
+        .filter(transaction_type='game_win', status__in=completed_statuses, created_at__gte=month_start)
+        .aggregate(total=Sum('amount'))
+        .get('total')
+        or Decimal('0')
+    )
+
+    latest_txn = base_txn_qs.order_by('-created_at').first()
+
+    return JsonResponse({
+        'user': {
+            'first_name': user.first_name,
+            'telegram_id': user.telegram_id,
+            'registration_date': user.registration_date.isoformat(),
+        },
+        'wallet': {
+            'total_balance': float(wallet.total_balance),
+            'main_balance': float(wallet.main_balance),
+            'bonus_balance': float(wallet.bonus_balance),
+            'winnings_balance': float(wallet.winnings_balance),
+            'withdrawable_balance': float(wallet.withdrawable_balance),
+            'updated_at': wallet.updated_at.isoformat(),
+        },
+        'overview': {
+            'total_transactions': base_txn_qs.count(),
+            'pending_transactions': base_txn_qs.filter(status='pending').count(),
+            'completed_transactions': base_txn_qs.filter(status__in=completed_statuses).count(),
+            'rejected_transactions': base_txn_qs.filter(status='rejected').count(),
+            'last_transaction_at': latest_txn.created_at.isoformat() if latest_txn else None,
+        },
+        'finance_summary': {
+            'total_entry_spent': float(total_entry_spent),
+            'total_game_won': float(total_game_won),
+            'total_referral_bonus': float(total_referral_bonus),
+            'net_profit_loss': float((total_game_won + total_referral_bonus) - total_entry_spent),
+            'biggest_win': float(biggest_win),
+            'today_spent': float(today_spent),
+            'today_won': float(today_won),
+            'today_net': float(today_won - today_spent),
+            'month_spent': float(month_spent),
+            'month_won': float(month_won),
+            'month_net': float(month_won - month_spent),
+        },
+        'filters': {
+            'current_type': type_filter,
+            'current_status': status_filter,
+            'types': ['all'] + [choice[0] for choice in Transaction.TRANSACTION_TYPES],
+            'statuses': ['all'] + [choice[0] for choice in Transaction.STATUS_CHOICES],
+        },
+        'recent_transactions': recent_transactions,
+        'informational_notes': [
+            'Total balance includes main, bonus, and winnings balances.',
+            'Only winnings balance is withdrawable.',
+            'Net values compare wins against game entry spending.',
+            'Pending transactions are informational and may still change status.',
+        ],
+    })
+
+
+@never_cache
+def trophy_state_api(request, telegram_id):
+    """Return trophy/leaderboard data for React UI."""
+    try:
+        user = User.objects.get(telegram_id=telegram_id)
+    except User.DoesNotExist:
+        return JsonResponse({'error': 'User not found. Please start the bot first.'}, status=404)
+
+    period = (request.GET.get('period') or 'all').lower()
+    stake_param = request.GET.get('stake')
+
+    stakes = get_supported_stakes()
+    stake_value = None
+    if stake_param and stake_param.lower() != 'all':
+        try:
+            stake_value = int(stake_param)
+        except ValueError:
+            return JsonResponse({'error': 'Invalid stake filter.'}, status=400)
+        if stake_value not in stakes:
+            return JsonResponse({'error': 'Unsupported stake filter.'}, status=400)
+
+    now = timezone.now()
+    start_at = None
+    if period == 'today':
+        start_at = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif period == 'week':
+        start_at = now - timedelta(days=7)
+    elif period == 'month':
+        start_at = now - timedelta(days=30)
+    elif period != 'all':
+        return JsonResponse({'error': 'Invalid period filter.'}, status=400)
+
+    finished_games = Game.objects.filter(state='finished')
+    if start_at is not None:
+        finished_games = finished_games.filter(finished_at__gte=start_at)
+    if stake_value is not None:
+        finished_games = finished_games.filter(stake_amount=stake_value)
+
+    joined_counts = {
+        row['user_id']: row['joined_games']
+        for row in (
+            BingoCard.objects.filter(game__in=finished_games)
+            .values('user_id')
+            .annotate(joined_games=Count('id'))
+        )
+    }
+
+    leaderboard_rows = []
+    win_aggregates = (
+        finished_games.filter(winner__isnull=False)
+        .values('winner_id', 'winner__first_name', 'winner__username')
+        .annotate(
+            total_winnings=Sum('prize_amount'),
+            wins=Count('id'),
+            biggest_win=Max('prize_amount'),
+        )
+        .order_by('-total_winnings', '-wins', 'winner_id')
+    )
+
+    for rank, row in enumerate(win_aggregates, start=1):
+        joined = int(joined_counts.get(row['winner_id'], 0))
+        wins = int(row['wins'] or 0)
+        win_rate = round((wins / joined) * 100, 2) if joined else 0
+        leaderboard_rows.append({
+            'rank': rank,
+            'user_id': row['winner_id'],
+            'first_name': row['winner__first_name'],
+            'username': row['winner__username'],
+            'total_winnings': float(row['total_winnings'] or 0),
+            'wins': wins,
+            'games_joined': joined,
+            'win_rate': win_rate,
+            'biggest_win': float(row['biggest_win'] or 0),
+        })
+
+    top_rows = leaderboard_rows[:20]
+    podium = top_rows[:3]
+
+    user_position = {
+        'user_id': user.id,
+        'rank': None,
+        'total_winnings': 0.0,
+        'wins': 0,
+        'games_joined': int(joined_counts.get(user.id, 0)),
+        'win_rate': 0.0,
+        'biggest_win': 0.0,
+        'gap_to_next_rank': None,
+    }
+
+    for row in leaderboard_rows:
+        if row['user_id'] != user.id:
+            continue
+        user_position.update({
+            'rank': row['rank'],
+            'total_winnings': row['total_winnings'],
+            'wins': row['wins'],
+            'games_joined': row['games_joined'],
+            'win_rate': row['win_rate'],
+            'biggest_win': row['biggest_win'],
+        })
+        if row['rank'] > 1:
+            previous_row = leaderboard_rows[row['rank'] - 2]
+            gap = max(0, previous_row['total_winnings'] - row['total_winnings'])
+            user_position['gap_to_next_rank'] = round(gap, 2)
+        break
+
+    recent_big_wins = []
+    for game in finished_games.filter(winner__isnull=False).select_related('winner').order_by('-prize_amount', '-finished_at')[:10]:
+        recent_big_wins.append({
+            'game_id': game.id,
+            'winner_name': game.winner.first_name,
+            'winner_username': game.winner.username,
+            'stake_amount': get_game_stake(game),
+            'prize_amount': float(game.prize_amount or 0),
+            'finished_at': (game.finished_at or game.created_at).isoformat(),
+        })
+
+    most_active = []
+    active_rows = (
+        BingoCard.objects.filter(game__in=finished_games)
+        .values('user_id', 'user__first_name', 'user__username')
+        .annotate(games_joined=Count('id'))
+        .order_by('-games_joined', 'user_id')[:10]
+    )
+    for row in active_rows:
+        most_active.append({
+            'user_id': row['user_id'],
+            'first_name': row['user__first_name'],
+            'username': row['user__username'],
+            'games_joined': int(row['games_joined'] or 0),
+        })
+
+    return JsonResponse({
+        'filters': {
+            'period': period,
+            'stake': stake_value,
+            'available_stakes': stakes,
+            'available_periods': ['today', 'week', 'month', 'all'],
+        },
+        'leaderboard': top_rows,
+        'podium': podium,
+        'your_position': user_position,
+        'recent_big_wins': recent_big_wins,
+        'most_active_players': most_active,
+        'refresh_time': timezone.now().isoformat(),
+        'tie_break_rules': [
+            'Higher total winnings ranks first.',
+            'If tied, higher wins ranks first.',
+            'If still tied, earlier achiever ranks first.',
+        ],
     })
 
 

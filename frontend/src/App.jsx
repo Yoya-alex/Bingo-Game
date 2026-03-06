@@ -4,6 +4,8 @@ import HomePage from "./pages/HomePage.jsx";
 import LobbyPage from "./pages/LobbyPage.jsx";
 import PlayPage from "./pages/PlayPage.jsx";
 import ProfilePage from "./pages/ProfilePage.jsx";
+import TrophyPage from "./pages/TrophyPage.jsx";
+import WalletPage from "./pages/WalletPage.jsx";
 
 const THEME_KEY = "bingo-theme";
 
@@ -40,6 +42,8 @@ export default function App() {
       <Routes>
         <Route path="/home/:telegramId" element={<HomePage />} />
         <Route path="/profile/:telegramId" element={<ProfilePage />} />
+        <Route path="/trophy/:telegramId" element={<TrophyPage />} />
+        <Route path="/wallet/:telegramId" element={<WalletPage />} />
         <Route path="/lobby/:telegramId" element={<LobbyPage />} />
         <Route path="/play/:telegramId/:gameId" element={<PlayPage />} />
         <Route path="*" element={<Navigate to="/home/0" replace />} />

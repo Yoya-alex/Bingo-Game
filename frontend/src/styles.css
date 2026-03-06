@@ -942,6 +942,520 @@ body.night-mode .stat-value {
   padding-bottom: 118px;
 }
 
+.trophy-shell {
+  padding-bottom: 118px;
+}
+
+.trophy-card {
+  display: grid;
+  gap: 14px;
+  width: min(100%, 100%);
+  margin: 0 auto;
+  overflow-x: hidden;
+}
+
+.trophy-header {
+  background: linear-gradient(140deg, color-mix(in srgb, var(--surface-1) 90%, transparent), color-mix(in srgb, var(--surface-2) 92%, transparent));
+  border-color: color-mix(in srgb, var(--accent-3) 32%, var(--border-soft));
+  box-shadow: 0 12px 26px color-mix(in srgb, var(--accent-3) 18%, transparent);
+}
+
+.trophy-title {
+  background: linear-gradient(115deg, color-mix(in srgb, var(--accent-3) 78%, var(--ink-1)), color-mix(in srgb, var(--accent-1) 68%, var(--ink-1)));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.trophy-filters,
+.trophy-podium,
+.trophy-your-position,
+.trophy-leaderboard,
+.trophy-recent-wins,
+.trophy-most-active,
+.trophy-rules {
+  background: linear-gradient(145deg, color-mix(in srgb, var(--surface-1) 92%, transparent), color-mix(in srgb, var(--surface-2) 95%, transparent));
+  border: 1px solid color-mix(in srgb, var(--accent-2) 22%, var(--border-soft));
+}
+
+.trophy-filters {
+  --section-accent: #0ea5e9;
+  --section-tint: rgba(14, 165, 233, 0.09);
+  border-color: color-mix(in srgb, var(--section-accent) 35%, var(--border-soft));
+}
+
+.trophy-podium {
+  --section-accent: #f59e0b;
+  --section-tint: rgba(245, 158, 11, 0.1);
+  border-color: color-mix(in srgb, var(--section-accent) 40%, var(--border-soft));
+  overflow: hidden;
+  background:
+    radial-gradient(340px 180px at 50% -20%, color-mix(in srgb, #f59e0b 16%, transparent), transparent 72%),
+    linear-gradient(145deg, color-mix(in srgb, var(--surface-1) 90%, transparent), color-mix(in srgb, var(--surface-2) 95%, transparent));
+}
+
+.trophy-your-position {
+  --section-accent: #22c55e;
+  --section-tint: rgba(34, 197, 94, 0.09);
+  border-color: color-mix(in srgb, var(--section-accent) 35%, var(--border-soft));
+}
+
+.trophy-leaderboard {
+  --section-accent: #06b6d4;
+  --section-tint: rgba(6, 182, 212, 0.08);
+  border-color: color-mix(in srgb, var(--section-accent) 34%, var(--border-soft));
+}
+
+.trophy-recent-wins {
+  --section-accent: #f97316;
+  --section-tint: rgba(249, 115, 22, 0.08);
+  border-color: color-mix(in srgb, var(--section-accent) 36%, var(--border-soft));
+}
+
+.trophy-most-active {
+  --section-accent: #a855f7;
+  --section-tint: rgba(168, 85, 247, 0.08);
+  border-color: color-mix(in srgb, var(--section-accent) 34%, var(--border-soft));
+}
+
+.trophy-rules {
+  --section-accent: #14b8a6;
+  --section-tint: rgba(20, 184, 166, 0.08);
+  border-color: color-mix(in srgb, var(--section-accent) 36%, var(--border-soft));
+}
+
+.trophy-card .component-title {
+  color: color-mix(in srgb, var(--section-accent, var(--accent-2)) 74%, var(--ink-1));
+}
+
+.trophy-card .subtitle {
+  color: color-mix(in srgb, var(--section-accent, var(--ink-2)) 54%, var(--ink-2));
+}
+
+.trophy-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.trophy-filter-chip {
+  border: 1px solid color-mix(in srgb, var(--accent-2) 44%, transparent);
+  background: color-mix(in srgb, var(--surface-1) 88%, var(--accent-2) 10%);
+  color: color-mix(in srgb, #0ea5e9 72%, var(--ink-1));
+  border-radius: 999px;
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.trophy-filter-chip.stake {
+  border-color: color-mix(in srgb, var(--accent-3) 42%, transparent);
+  background: color-mix(in srgb, var(--surface-1) 90%, var(--accent-3) 12%);
+  color: color-mix(in srgb, #f97316 72%, var(--ink-1));
+}
+
+.trophy-filter-chip.active {
+  border-color: color-mix(in srgb, var(--accent-1) 56%, transparent);
+  background: linear-gradient(130deg, color-mix(in srgb, var(--accent-1) 62%, #f97316), color-mix(in srgb, var(--accent-2) 56%, #0ea5e9));
+  color: #f8fafc;
+  box-shadow: 0 8px 16px color-mix(in srgb, var(--accent-2) 24%, transparent);
+}
+
+.trophy-filter-chip:hover {
+  transform: translateY(-1px);
+}
+
+.trophy-podium-stage {
+  margin: 10px auto 4px;
+  width: min(100%, 520px);
+  max-width: 100%;
+  height: 330px;
+  position: relative;
+}
+
+.trophy-podium-slot {
+  position: absolute;
+  display: grid;
+  place-items: center;
+}
+
+.podium-slot-1 {
+  top: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.podium-slot-2 {
+  top: 150px;
+  left: 8%;
+}
+
+.podium-slot-3 {
+  top: 150px;
+  right: 8%;
+}
+
+.trophy-podium-card {
+  width: 116px;
+  height: 116px;
+  border-radius: 999px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--accent-2) 26%, var(--border-soft));
+  background: linear-gradient(140deg, color-mix(in srgb, var(--surface-1) 92%, transparent), color-mix(in srgb, var(--surface-2) 96%, transparent));
+  display: grid;
+  gap: 4px;
+  align-content: center;
+  justify-items: center;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.trophy-podium-card::before {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border-radius: 999px;
+  border: 1px dashed color-mix(in srgb, white 34%, transparent);
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+.trophy-cup {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  margin-bottom: 2px;
+}
+
+.trophy-cup-bowl {
+  width: 34px;
+  height: 18px;
+  border-radius: 0 0 12px 12px;
+  background: linear-gradient(180deg, #fef3c7 0%, #f59e0b 100%);
+  position: relative;
+  box-shadow: 0 3px 8px color-mix(in srgb, #f59e0b 34%, transparent);
+}
+
+.trophy-cup-bowl::before,
+.trophy-cup-bowl::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  width: 8px;
+  height: 10px;
+  border: 2px solid color-mix(in srgb, #fbbf24 76%, #92400e);
+  border-radius: 999px;
+}
+
+.trophy-cup-bowl::before {
+  left: -9px;
+}
+
+.trophy-cup-bowl::after {
+  right: -9px;
+}
+
+.trophy-cup-stem {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: color-mix(in srgb, #f59e0b 84%, #92400e);
+}
+
+.trophy-cup-base {
+  width: 22px;
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #fcd34d 0%, #d97706 100%);
+}
+
+.trophy-podium-card.rank-1 {
+  width: 146px;
+  height: 146px;
+  padding: 10px;
+  transform: translateY(3px);
+  background:
+    radial-gradient(circle at 32% 24%, color-mix(in srgb, #fef3c7 56%, transparent), transparent 46%),
+    linear-gradient(150deg, color-mix(in srgb, #f59e0b 26%, var(--surface-1)), color-mix(in srgb, #facc15 22%, var(--surface-2)));
+  border-color: color-mix(in srgb, #f59e0b 52%, transparent);
+  box-shadow: 0 16px 30px color-mix(in srgb, #f59e0b 28%, transparent);
+}
+
+.trophy-podium-card.rank-2 {
+  width: 116px;
+  height: 116px;
+  padding: 8px;
+  background:
+    radial-gradient(circle at 32% 24%, color-mix(in srgb, #f1f5f9 46%, transparent), transparent 45%),
+    linear-gradient(150deg, color-mix(in srgb, #94a3b8 22%, var(--surface-1)), color-mix(in srgb, #cbd5e1 14%, var(--surface-2)));
+  border-color: color-mix(in srgb, #94a3b8 56%, transparent);
+  box-shadow: 0 10px 20px color-mix(in srgb, #94a3b8 22%, transparent);
+}
+
+.trophy-podium-card.rank-3 {
+  width: 116px;
+  height: 116px;
+  padding: 8px;
+  background:
+    radial-gradient(circle at 32% 24%, color-mix(in srgb, #fed7aa 44%, transparent), transparent 45%),
+    linear-gradient(150deg, color-mix(in srgb, #f97316 22%, var(--surface-1)), color-mix(in srgb, #fdba74 12%, var(--surface-2)));
+  border-color: color-mix(in srgb, #f97316 52%, transparent);
+  box-shadow: 0 10px 20px color-mix(in srgb, #f97316 22%, transparent);
+}
+
+.trophy-rank {
+  font-weight: 900;
+  font-size: 1rem;
+  color: color-mix(in srgb, #0ea5e9 84%, var(--ink-1));
+}
+
+.trophy-name {
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: color-mix(in srgb, #a1aabd 90%, var(--ink-1));
+}
+
+.trophy-value {
+  font-weight: 900;
+  font-size: 1.03rem;
+  color: color-mix(in srgb, var(--success) 76%, var(--ink-1));
+}
+
+.trophy-podium-card.rank-1 .trophy-rank {
+  font-size: 1.2rem;
+  color: color-mix(in srgb, #f59e0b 78%, #78350f);
+}
+
+.trophy-podium-card.rank-1 .trophy-name {
+  font-size: 1rem;
+}
+
+.trophy-podium-card.rank-1 .trophy-value {
+  font-size: 1.22rem;
+  color: color-mix(in srgb, #16a34a 85%, var(--ink-1));
+}
+
+.trophy-podium-card small {
+  font-size: 0.74rem;
+  color: color-mix(in srgb, #334155 80%, var(--ink-2));
+}
+
+.trophy-podium-card.rank-1 small {
+  font-size: 0.78rem;
+}
+
+.trophy-self-row td {
+  background: color-mix(in srgb, var(--accent-1) 14%, transparent);
+}
+
+.trophy-cell-rank {
+  color: color-mix(in srgb, #0ea5e9 82%, var(--ink-1));
+  font-weight: 800;
+}
+
+.trophy-cell-money {
+  color: color-mix(in srgb, #22c55e 84%, var(--ink-1));
+  font-weight: 800;
+}
+
+.trophy-cell-success {
+  color: color-mix(in srgb, #10b981 85%, var(--ink-1));
+  font-weight: 700;
+}
+
+.trophy-cell-active {
+  color: color-mix(in srgb, #a855f7 80%, var(--ink-1));
+  font-weight: 700;
+}
+
+.trophy-cell-rate {
+  color: color-mix(in srgb, #06b6d4 84%, var(--ink-1));
+  font-weight: 700;
+}
+
+.trophy-cell-jackpot {
+  color: color-mix(in srgb, #f97316 84%, var(--ink-1));
+  font-weight: 800;
+}
+
+.trophy-cell-stake {
+  color: color-mix(in srgb, #f59e0b 82%, var(--ink-1));
+  font-weight: 700;
+}
+
+.trophy-cell-player {
+  color: color-mix(in srgb, #1d4ed8 72%, var(--ink-1));
+  font-weight: 700;
+}
+
+.trophy-your-position .profile-metric span {
+  color: color-mix(in srgb, #16a34a 58%, var(--ink-2));
+}
+
+.trophy-pos-rank strong {
+  color: color-mix(in srgb, #0ea5e9 84%, var(--ink-1));
+}
+
+.trophy-pos-total strong {
+  color: color-mix(in srgb, #22c55e 86%, var(--ink-1));
+}
+
+.trophy-pos-wins strong {
+  color: color-mix(in srgb, #10b981 86%, var(--ink-1));
+}
+
+.trophy-pos-games strong {
+  color: color-mix(in srgb, #a855f7 82%, var(--ink-1));
+}
+
+.trophy-pos-rate strong {
+  color: color-mix(in srgb, #06b6d4 84%, var(--ink-1));
+}
+
+.trophy-pos-gap strong {
+  color: color-mix(in srgb, #f97316 84%, var(--ink-1));
+}
+
+.trophy-leaderboard .profile-table th {
+  color: color-mix(in srgb, #06b6d4 78%, var(--ink-1));
+}
+
+.trophy-recent-wins .profile-table th {
+  color: color-mix(in srgb, #f97316 76%, var(--ink-1));
+}
+
+.trophy-most-active .profile-table th {
+  color: color-mix(in srgb, #a855f7 74%, var(--ink-1));
+}
+
+.trophy-rules .rules-content p {
+  color: color-mix(in srgb, #0f766e 74%, var(--ink-1));
+}
+
+@media (max-width: 640px) {
+  .app-card.trophy-card {
+    padding: 16px 12px 24px;
+  }
+
+  .trophy-card .component {
+    padding: 14px 10px;
+  }
+
+  .trophy-podium-stage {
+    width: min(100%, 248px);
+    max-width: 100%;
+    height: auto;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      "one one"
+      "two three";
+    justify-items: center;
+    align-items: start;
+    row-gap: 8px;
+    column-gap: 6px;
+  }
+
+  .trophy-podium-slot {
+    position: static;
+    top: auto;
+    left: auto;
+    right: auto;
+    transform: none;
+  }
+
+  .podium-slot-1 {
+    grid-area: one;
+  }
+
+  .podium-slot-2 {
+    grid-area: two;
+  }
+
+  .podium-slot-3 {
+    grid-area: three;
+  }
+
+  .trophy-podium-card {
+    width: 82px;
+    height: 82px;
+    padding: 6px;
+    gap: 2px;
+  }
+
+  .trophy-podium-card.rank-1 {
+    width: 108px;
+    height: 108px;
+    padding: 8px;
+  }
+
+  .trophy-cup-bowl {
+    width: 14px;
+    height: 8px;
+  }
+
+  .trophy-cup-base {
+    width: 10px;
+  }
+
+  .trophy-cup-stem {
+    width: 5px;
+    height: 5px;
+  }
+
+  .trophy-rank {
+    font-size: 0.74rem;
+    line-height: 1;
+  }
+
+  .trophy-podium-card.rank-1 .trophy-rank {
+    font-size: 0.9rem;
+  }
+
+  .trophy-name {
+    font-size: 0.58rem;
+    line-height: 1.05;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .trophy-podium-card.rank-1 .trophy-name {
+    font-size: 0.66rem;
+  }
+
+  .trophy-value {
+    font-size: 0.62rem;
+    line-height: 1;
+  }
+
+  .trophy-podium-card.rank-1 .trophy-value {
+    font-size: 0.72rem;
+  }
+
+  .trophy-podium-card small {
+    font-size: 0.5rem;
+    line-height: 1;
+  }
+
+  .trophy-filter-chip {
+    min-height: 30px;
+    padding: 0 10px;
+    font-size: 0.66rem;
+  }
+
+  .trophy-card .profile-grid-6 {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
 .profile-card {
   position: relative;
   overflow: hidden;
