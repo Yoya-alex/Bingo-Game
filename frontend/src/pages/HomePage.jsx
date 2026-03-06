@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { fetchJson } from "../api/client.js";
 import NotificationComponent from "../components/NotificationComponent.jsx";
+import BottomNavIcon from "../components/BottomNavIcon.jsx";
 
 const EMPTY_NOTIFICATION = { type: "", message: "" };
 const POLL_MS = 2000;
@@ -192,19 +193,19 @@ export default function HomePage() {
 
         <nav className="bottom-nav" aria-label="Bottom navigation">
           <button type="button" className="bottom-nav-item active">
-            <span className="bottom-nav-icon">Home</span>
+            <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="home" /></span>
             <span className="bottom-nav-label">Home</span>
           </button>
           <button type="button" className="bottom-nav-item" onClick={() => navigate(`/profile/${telegramId}`)}>
-            <span className="bottom-nav-icon">Profile</span>
+            <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="profile" /></span>
             <span className="bottom-nav-label">Profile</span>
           </button>
           <button type="button" className="bottom-nav-item" onClick={() => navigate(`/trophy/${telegramId}`)}>
-            <span className="bottom-nav-icon">Trophy</span>
+            <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="trophy" /></span>
             <span className="bottom-nav-label">Top Winners</span>
           </button>
           <button type="button" className="bottom-nav-item" onClick={() => navigate(`/wallet/${telegramId}`)}>
-            <span className="bottom-nav-icon">Wallet</span>
+            <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="wallet" /></span>
             <span className="bottom-nav-label">Wallet</span>
           </button>
         </nav>
