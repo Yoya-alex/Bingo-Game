@@ -130,54 +130,54 @@ export default function ProfilePage() {
       <div className="app-card profile-card">
         <header className="profile-header component">
           <h1 className="title profile-title">Profile</h1>
-          <p className="subtitle">
+          <p className="subtitle profile-subtitle">
             {data.user?.first_name || "Player"} ({data.user?.username ? `@${data.user.username}` : "no username"})
           </p>
           <div className="profile-meta-row">
-            <span>Telegram: {maskTelegramId(data.user?.telegram_id)}</span>
-            <span>Joined: {formatDate(data.user?.registration_date)}</span>
+            <span className="profile-meta-chip">Telegram: {maskTelegramId(data.user?.telegram_id)}</span>
+            <span className="profile-meta-chip">Joined: {formatDate(data.user?.registration_date)}</span>
           </div>
         </header>
 
         <NotificationComponent notification={notification} />
 
-        <section className="component profile-section">
+        <section className="component profile-section section-wallet">
           <h2 className="component-title">Wallet Summary</h2>
           <div className="profile-grid profile-grid-5">
-            <div className="profile-metric"><span>Total</span><strong>{formatBirr(data.wallet?.total_balance)}</strong></div>
-            <div className="profile-metric"><span>Main</span><strong>{formatBirr(data.wallet?.main_balance)}</strong></div>
-            <div className="profile-metric"><span>Bonus</span><strong>{formatBirr(data.wallet?.bonus_balance)}</strong></div>
-            <div className="profile-metric"><span>Winnings</span><strong>{formatBirr(data.wallet?.winnings_balance)}</strong></div>
-            <div className="profile-metric"><span>Withdrawable</span><strong>{formatBirr(data.wallet?.withdrawable_balance)}</strong></div>
+            <div className="profile-metric metric-wallet-total"><span>Total</span><strong>{formatBirr(data.wallet?.total_balance)}</strong></div>
+            <div className="profile-metric metric-wallet-main"><span>Main</span><strong>{formatBirr(data.wallet?.main_balance)}</strong></div>
+            <div className="profile-metric metric-wallet-bonus"><span>Bonus</span><strong>{formatBirr(data.wallet?.bonus_balance)}</strong></div>
+            <div className="profile-metric metric-wallet-winnings"><span>Winnings</span><strong>{formatBirr(data.wallet?.winnings_balance)}</strong></div>
+            <div className="profile-metric metric-wallet-withdrawable"><span>Withdrawable</span><strong>{formatBirr(data.wallet?.withdrawable_balance)}</strong></div>
           </div>
         </section>
 
-        <section className="component profile-section">
+        <section className="component profile-section section-stats">
           <h2 className="component-title">Game Stats</h2>
           <div className="profile-grid profile-grid-6">
-            <div className="profile-metric"><span>Games Joined</span><strong>{data.stats?.games_joined || 0}</strong></div>
-            <div className="profile-metric"><span>Wins</span><strong>{data.stats?.wins || 0}</strong></div>
-            <div className="profile-metric"><span>Win Rate</span><strong>{Number(data.stats?.win_rate || 0).toFixed(2)}%</strong></div>
-            <div className="profile-metric"><span>Total Spent</span><strong>{formatBirr(data.stats?.total_entry_spent)}</strong></div>
-            <div className="profile-metric"><span>Total Won</span><strong>{formatBirr(data.stats?.total_won)}</strong></div>
-            <div className="profile-metric"><span>Biggest Win</span><strong>{formatBirr(data.stats?.biggest_win)}</strong></div>
+            <div className="profile-metric metric-stat-joined"><span>Games Joined</span><strong>{data.stats?.games_joined || 0}</strong></div>
+            <div className="profile-metric metric-stat-wins"><span>Wins</span><strong>{data.stats?.wins || 0}</strong></div>
+            <div className="profile-metric metric-stat-rate"><span>Win Rate</span><strong>{Number(data.stats?.win_rate || 0).toFixed(2)}%</strong></div>
+            <div className="profile-metric metric-stat-spent"><span>Total Spent</span><strong>{formatBirr(data.stats?.total_entry_spent)}</strong></div>
+            <div className="profile-metric metric-stat-won"><span>Total Won</span><strong>{formatBirr(data.stats?.total_won)}</strong></div>
+            <div className="profile-metric metric-stat-biggest"><span>Biggest Win</span><strong>{formatBirr(data.stats?.biggest_win)}</strong></div>
           </div>
         </section>
 
-        <section className="component profile-section">
+        <section className="component profile-section section-referrals">
           <h2 className="component-title">Referrals</h2>
           <div className="profile-grid profile-grid-4">
-            <div className="profile-metric"><span>Invite Code</span><strong>{data.referrals?.invite_code || "-"}</strong></div>
-            <div className="profile-metric"><span>Total Referred</span><strong>{data.referrals?.referred_count || 0}</strong></div>
-            <div className="profile-metric"><span>Rewarded Referrals</span><strong>{data.referrals?.rewarded_referrals || 0}</strong></div>
-            <div className="profile-metric"><span>Referral Earned</span><strong>{formatBirr(data.referrals?.referral_bonus_earned)}</strong></div>
+            <div className="profile-metric metric-ref-code"><span>Invite Code</span><strong>{data.referrals?.invite_code || "-"}</strong></div>
+            <div className="profile-metric metric-ref-total"><span>Total Referred</span><strong>{data.referrals?.referred_count || 0}</strong></div>
+            <div className="profile-metric metric-ref-rewarded"><span>Rewarded Referrals</span><strong>{data.referrals?.rewarded_referrals || 0}</strong></div>
+            <div className="profile-metric metric-ref-earned"><span>Referral Earned</span><strong>{formatBirr(data.referrals?.referral_bonus_earned)}</strong></div>
           </div>
           <div className="page-actions">
             <button type="button" className="btn btn-secondary" onClick={copyInviteCode}>Copy Invite Code</button>
           </div>
         </section>
 
-        <section className="component profile-section">
+        <section className="component profile-section section-activity">
           <h2 className="component-title">Recent Activity</h2>
           <div className="profile-table-wrap">
             {(data.recent_activity || []).length === 0 && <div className="subtitle">No transactions yet.</div>}
@@ -208,7 +208,7 @@ export default function ProfilePage() {
           </div>
         </section>
 
-        <section className="component profile-section">
+        <section className="component profile-section section-history">
           <h2 className="component-title">Game History</h2>
           <div className="profile-table-wrap">
             {historyRows.length === 0 && <div className="subtitle">No completed games yet.</div>}
@@ -243,7 +243,7 @@ export default function ProfilePage() {
           </div>
         </section>
 
-        <section className="component profile-section">
+        <section className="component profile-section section-achievements">
           <h2 className="component-title">Achievements</h2>
           <div className="badge-row">
             {achievements.map((item) => (
@@ -252,7 +252,7 @@ export default function ProfilePage() {
           </div>
         </section>
 
-        <section className="component profile-section">
+        <section className="component profile-section section-preferences">
           <h2 className="component-title">Preferences</h2>
           <div className="profile-toggle-row">
             <label className="profile-toggle-item">
@@ -266,7 +266,7 @@ export default function ProfilePage() {
           </div>
         </section>
 
-        <section className="component profile-section">
+        <section className="component profile-section section-support">
           <h2 className="component-title">Support</h2>
           <div className="page-actions">
             <button

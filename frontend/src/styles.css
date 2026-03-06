@@ -146,7 +146,7 @@ body::after {
 
 .subtitle {
   color: var(--ink-2);
-  font-size: 1rem;
+  font-size: 1.3rem;
 }
 
 .component {
@@ -977,10 +977,22 @@ body.night-mode .stat-value {
   gap: 8px;
   background: linear-gradient(140deg, color-mix(in srgb, var(--surface-1) 90%, transparent), color-mix(in srgb, var(--surface-2) 94%, transparent));
   border-color: color-mix(in srgb, var(--accent-2) 28%, var(--border-soft));
+  box-shadow:
+    0 12px 24px color-mix(in srgb, var(--accent-2) 18%, transparent),
+    inset 0 1px 0 color-mix(in srgb, white 18%, transparent);
 }
 
 .profile-title {
   font-size: clamp(1.5rem, 4vw, 2.2rem);
+  background: linear-gradient(110deg, color-mix(in srgb, var(--accent-1) 78%, var(--ink-1)), color-mix(in srgb, var(--accent-2) 74%, var(--ink-1)));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.profile-subtitle {
+  color: color-mix(in srgb, var(--accent-2) 66%, var(--ink-1));
+  font-weight: 600;
 }
 
 .profile-meta-row {
@@ -991,17 +1003,69 @@ body.night-mode .stat-value {
   color: var(--ink-2);
 }
 
+.profile-meta-chip {
+  display: inline-flex;
+  font-size: 0.9rem;
+  align-items: center;
+  min-height: 28px;
+  border-radius: 999px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--accent-2) 34%, var(--border-soft));
+  background: linear-gradient(130deg, color-mix(in srgb, var(--surface-1) 92%, var(--accent-2) 10%), color-mix(in srgb, var(--surface-2) 90%, var(--accent-1) 8%));
+  color: color-mix(in srgb, var(--accent-2) 70%, var(--ink-1));
+  box-shadow: 0 8px 14px color-mix(in srgb, var(--accent-2) 16%, transparent);
+}
+
 .profile-section {
+  --section-accent: var(--accent-2);
+  --section-tint: color-mix(in srgb, var(--section-accent) 12%, transparent);
+  --section-border: color-mix(in srgb, var(--section-accent) 28%, var(--border-soft));
   margin-top: 0;
-  background: linear-gradient(145deg, color-mix(in srgb, var(--surface-1) 92%, transparent), color-mix(in srgb, var(--surface-2) 97%, transparent));
-  border-color: color-mix(in srgb, var(--accent-2) 20%, var(--border-soft));
+  background: linear-gradient(145deg, color-mix(in srgb, var(--surface-1) 90%, var(--section-tint)), color-mix(in srgb, var(--surface-2) 94%, var(--section-tint)));
+  border-color: var(--section-border);
   transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
 }
 
 .profile-section:hover {
   transform: translateY(-1px);
-  box-shadow: 0 14px 28px color-mix(in srgb, var(--accent-2) 14%, transparent);
-  border-color: color-mix(in srgb, var(--accent-1) 28%, var(--accent-2) 30%);
+  box-shadow: 0 14px 28px color-mix(in srgb, var(--section-accent) 18%, transparent);
+  border-color: color-mix(in srgb, var(--section-accent) 46%, var(--border-soft));
+}
+
+.profile-section .component-title {
+  color: color-mix(in srgb, var(--section-accent) 72%, var(--ink-1));
+}
+
+.section-wallet {
+  --section-accent: #22c55e;
+}
+
+.section-stats {
+  --section-accent: #3b82f6;
+}
+
+.section-referrals {
+  --section-accent: #f59e0b;
+}
+
+.section-activity {
+  --section-accent: #06b6d4;
+}
+
+.section-history {
+  --section-accent: #8b5cf6;
+}
+
+.section-achievements {
+  --section-accent: #ec4899;
+}
+
+.section-preferences {
+  --section-accent: #14b8a6;
+}
+
+.section-support {
+  --section-accent: #f97316;
 }
 
 .profile-grid {
@@ -1022,8 +1086,8 @@ body.night-mode .stat-value {
 }
 
 .profile-metric {
-  background: linear-gradient(140deg, color-mix(in srgb, var(--panel-strong) 90%, var(--surface-1)), color-mix(in srgb, var(--surface-1) 92%, var(--surface-2)));
-  border: 1px solid color-mix(in srgb, var(--accent-2) 20%, var(--border-soft));
+  background: linear-gradient(140deg, color-mix(in srgb, var(--panel-strong) 90%, var(--section-tint)), color-mix(in srgb, var(--surface-1) 94%, var(--section-tint)));
+  border: 1px solid color-mix(in srgb, var(--section-accent) 30%, var(--border-soft));
   border-radius: 12px;
   padding: 10px 12px;
   display: grid;
@@ -1033,8 +1097,8 @@ body.night-mode .stat-value {
 
 .profile-metric:hover {
   transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--accent-1) 34%, var(--accent-2) 30%);
-  box-shadow: 0 10px 20px color-mix(in srgb, var(--accent-2) 16%, transparent);
+  border-color: color-mix(in srgb, var(--section-accent) 50%, var(--border-soft));
+  box-shadow: 0 10px 20px color-mix(in srgb, var(--section-accent) 22%, transparent);
 }
 
 .profile-metric span {
@@ -1049,6 +1113,69 @@ body.night-mode .stat-value {
   color: var(--ink-1);
 }
 
+/* Wallet semantic colors */
+.metric-wallet-total strong {
+  color: color-mix(in srgb, #22c55e 82%, var(--ink-1));
+}
+
+.metric-wallet-main strong {
+  color: color-mix(in srgb, #3b82f6 84%, var(--ink-1));
+}
+
+.metric-wallet-bonus strong {
+  color: color-mix(in srgb, #a855f7 82%, var(--ink-1));
+}
+
+.metric-wallet-winnings strong {
+  color: color-mix(in srgb, #f59e0b 82%, var(--ink-1));
+}
+
+.metric-wallet-withdrawable strong {
+  color: color-mix(in srgb, #14b8a6 82%, var(--ink-1));
+}
+
+/* Game stats semantic colors */
+.metric-stat-joined strong {
+  color: color-mix(in srgb, #06b6d4 84%, var(--ink-1));
+}
+
+.metric-stat-wins strong {
+  color: color-mix(in srgb, #10b981 85%, var(--ink-1));
+}
+
+.metric-stat-rate strong {
+  color: color-mix(in srgb, #8b5cf6 84%, var(--ink-1));
+}
+
+.metric-stat-spent strong {
+  color: color-mix(in srgb, #ef4444 82%, var(--ink-1));
+}
+
+.metric-stat-won strong {
+  color: color-mix(in srgb, #22c55e 85%, var(--ink-1));
+}
+
+.metric-stat-biggest strong {
+  color: color-mix(in srgb, #f97316 84%, var(--ink-1));
+}
+
+/* Referral semantic colors */
+.metric-ref-code strong {
+  color: color-mix(in srgb, #6366f1 84%, var(--ink-1));
+}
+
+.metric-ref-total strong {
+  color: color-mix(in srgb, #0ea5e9 84%, var(--ink-1));
+}
+
+.metric-ref-rewarded strong {
+  color: color-mix(in srgb, #ec4899 82%, var(--ink-1));
+}
+
+.metric-ref-earned strong {
+  color: color-mix(in srgb, #16a34a 85%, var(--ink-1));
+}
+
 .profile-list {
   display: grid;
   gap: 8px;
@@ -1058,8 +1185,8 @@ body.night-mode .stat-value {
   margin-top: 4px;
   overflow-x: auto;
   border-radius: 12px;
-  border: 1px solid color-mix(in srgb, var(--accent-2) 18%, var(--border-soft));
-  background: linear-gradient(130deg, color-mix(in srgb, var(--surface-1) 95%, transparent), color-mix(in srgb, var(--surface-2) 95%, transparent));
+  border: 1px solid color-mix(in srgb, var(--section-accent) 28%, var(--border-soft));
+  background: linear-gradient(130deg, color-mix(in srgb, var(--surface-1) 95%, var(--section-tint)), color-mix(in srgb, var(--surface-2) 95%, var(--section-tint)));
   padding: 8px;
 }
 
@@ -1070,6 +1197,14 @@ body.night-mode .stat-value {
 }
 
 .profile-table th,
+
+  .profile-meta-chip {
+    min-height: 24px;
+    font-size: 0.9rem;
+    font-weight: bold;
+    padding: 0 8px;
+    box-shadow: 0 6px 12px color-mix(in srgb, var(--accent-2) 18%, transparent);
+  }
 .profile-table td {
   padding: 10px 8px;
   border-bottom: 1px solid color-mix(in srgb, var(--border-soft) 82%, transparent);
@@ -1080,14 +1215,14 @@ body.night-mode .stat-value {
 }
 
 .profile-table th {
-  color: color-mix(in srgb, var(--accent-2) 62%, var(--ink-1));
+  color: color-mix(in srgb, var(--section-accent) 72%, var(--ink-1));
   text-transform: uppercase;
   letter-spacing: 0.6px;
   font-size: 0.72rem;
 }
 
 .profile-table tbody tr:hover td {
-  background: color-mix(in srgb, var(--accent-2) 10%, transparent);
+  background: color-mix(in srgb, var(--section-accent) 10%, transparent);
 }
 
 .profile-list-row {
@@ -1522,6 +1657,50 @@ body.night-mode .stat-value {
 }
 
 @media (max-width: 640px) {
+  .app-card {
+    box-shadow:
+      0 14px 28px color-mix(in srgb, var(--accent-2) 22%, transparent),
+      0 0 0 1px color-mix(in srgb, var(--accent-1) 18%, transparent);
+  }
+
+  .component,
+  .profile-section,
+  .profile-table-wrap,
+  .lobby-table-wrap {
+    box-shadow: 0 10px 20px color-mix(in srgb, var(--accent-2) 18%, transparent);
+  }
+
+  .profile-metric,
+  .profile-toggle-item {
+    box-shadow: 0 8px 16px color-mix(in srgb, var(--section-accent, var(--accent-2)) 20%, transparent);
+  }
+
+  .btn-secondary,
+  .lobby-action-btn,
+  .game-info-btn {
+    box-shadow: 0 10px 18px color-mix(in srgb, var(--accent-1) 24%, transparent);
+  }
+
+  .activity-type,
+  .status-chip,
+  .profile-badge {
+    box-shadow: 0 6px 12px color-mix(in srgb, var(--accent-2) 18%, transparent);
+  }
+
+  .bottom-nav {
+    box-shadow: 0 -10px 22px color-mix(in srgb, var(--accent-2) 20%, transparent);
+  }
+
+  .bottom-nav-item {
+    box-shadow: 0 6px 12px color-mix(in srgb, var(--accent-2) 12%, transparent);
+  }
+
+  .bottom-nav-item.active {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--accent-2) 30%, transparent),
+      0 10px 18px color-mix(in srgb, var(--accent-2) 26%, transparent);
+  }
+
   .lobby-table-wrap {
     overflow-x: hidden;
     padding: 10px 8px;
@@ -1614,12 +1793,13 @@ body.night-mode .stat-value {
   .profile-grid-4,
   .profile-grid-5,
   .profile-grid-6 {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 2fr;
   }
 
   .profile-meta-row {
     flex-direction: column;
     gap: 4px;
+    font-size: 0.88rem;
   }
 
   .profile-list-row {
@@ -1635,7 +1815,7 @@ body.night-mode .stat-value {
   }
 
   .profile-table {
-    min-width: 520px;
+    min-width: 50px;
   }
 
   .profile-table th,
@@ -1654,7 +1834,7 @@ body.night-mode .stat-value {
   }
 
   .profile-meta-row {
-    font-size: 0.74rem;
+    font-size: 0.9rem;
   }
 
   .profile-metric {
@@ -1697,7 +1877,7 @@ body.night-mode .stat-value {
 
 @media (max-width: 420px) {
   .profile-table {
-    min-width: 460px;
+    min-width: 80px;
   }
 
   .profile-table th,
