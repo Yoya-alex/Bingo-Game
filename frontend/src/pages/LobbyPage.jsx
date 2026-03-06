@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { fetchJson, postJson } from "../api/client.js";
 import HeaderComponent from "../components/HeaderComponent.jsx";
 import CardSelectionComponent from "../components/CardSelectionComponent.jsx";
@@ -12,10 +12,63 @@ import NotificationComponent from "../components/NotificationComponent.jsx";
 
 const EMPTY_NOTIFICATION = { type: "", message: "" };
 
+function normalizeLobbyPayload(payload, preferredStake) {
+  const games = Array.isArray(payload?.games) ? payload.games : [];
+  const selectedGame = payload?.selected_game || null;
+  const fallbackRow =
+    games.find((row) => Number(row.stake_amount) === Number(preferredStake)) || games[0] || null;
+
+  if (selectedGame) {
+    const takenCards = selectedGame.taken_cards || [];
+    return {
+      user: payload.user || null,
+      game: {
+        id: selectedGame.id,
+        state: selectedGame.state,
+      },
+      wallet_balance: payload.wallet_balance || 0,
+      taken_cards: takenCards,
+      all_numbers: payload.all_numbers || [],
+      total_players: selectedGame.total_players || 0,
+      available_cards: selectedGame.available_cards ?? Math.max((payload.all_numbers || []).length - takenCards.length, 0),
+      stake: selectedGame.stake_amount || preferredStake,
+      countdown: selectedGame.countdown || 0,
+      called_numbers: selectedGame.called_numbers || [],
+      winner: selectedGame.winner || null,
+      prize_amount: selectedGame.prize_amount ?? selectedGame.derash ?? 0,
+      winner_card: selectedGame.winner_card || null,
+      user_card: selectedGame.user_card || null,
+    };
+  }
+
+  const takenCards = fallbackRow?.taken_cards || [];
+  return {
+    user: payload?.user || null,
+    game: {
+      id: fallbackRow?.game_id || null,
+      state: fallbackRow?.state || "waiting",
+    },
+    wallet_balance: payload?.wallet_balance || 0,
+    taken_cards: takenCards,
+    all_numbers: payload?.all_numbers || [],
+    total_players: fallbackRow?.players || 0,
+    available_cards: fallbackRow?.available_cards ?? Math.max((payload?.all_numbers || []).length - takenCards.length, 0),
+    stake: fallbackRow?.stake_amount || preferredStake,
+    countdown: fallbackRow?.countdown || 0,
+    called_numbers: [],
+    winner: null,
+    prize_amount: fallbackRow?.derash || 0,
+    winner_card: null,
+    user_card: null,
+  };
+}
+
 export default function LobbyPage() {
   const { telegramId } = useParams();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const lobbyPollRef = useRef(null);
+  const preferredStake = Number(searchParams.get("stake")) || 10;
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState(EMPTY_NOTIFICATION);
   const [finishCountdown, setFinishCountdown] = useState(null);
@@ -49,26 +102,29 @@ export default function LobbyPage() {
     () => (data.called_numbers || []).map((entry) => Number(entry?.number)).filter((value) => Number.isFinite(value)),
     [data.called_numbers]
   );
+  const shouldConfirmQuit = data.game?.state === "playing" && hasCard;
+
+  function syncLobbyState() {
+    return fetchJson(`/game/api/lobby-state/${telegramId}/`).then((payload) => {
+      setData(normalizeLobbyPayload(payload, preferredStake));
+    });
+  }
 
   useEffect(() => {
     setLoading(true);
-    fetchJson(`/game/api/lobby-state/${telegramId}/`)
-      .then((payload) => {
-        setData(payload);
-      })
+    syncLobbyState()
       .catch((error) => notify("error", error.message))
       .finally(() => setLoading(false));
-  }, [telegramId]);
+  }, [telegramId, preferredStake]);
 
   useEffect(() => {
     lobbyPollRef.current = setInterval(() => {
-      fetchJson(`/game/api/lobby-state/${telegramId}/`)
-        .then((payload) => setData(payload))
+      syncLobbyState()
         .catch(() => notify("error", "Unable to sync lobby state."));
     }, 2500);
 
     return () => clearInterval(lobbyPollRef.current);
-  }, [telegramId]);
+  }, [telegramId, preferredStake]);
 
   function notify(type, message) {
     setNotification({ type, message });
@@ -87,11 +143,21 @@ export default function LobbyPage() {
     postJson("/game/api/select-card/", {
       telegram_id: Number(telegramId),
       card_number: cardNumber,
+      stake_amount: data.stake || preferredStake,
     })
-      .then(() => fetchJson(`/game/api/lobby-state/${telegramId}/`))
-      .then((statePayload) => setData(statePayload))
+      .then(() => syncLobbyState())
       .catch((error) => notify("error", error.message))
       .finally(() => setIsSelecting(false));
+  }
+
+  function handleBackToHome() {
+    if (shouldConfirmQuit) {
+      const confirmed = window.confirm("Are you sure you want to quit this game and go back to home?");
+      if (!confirmed) {
+        return;
+      }
+    }
+    navigate(`/home/${telegramId}`);
   }
 
   useEffect(() => {
@@ -112,11 +178,11 @@ export default function LobbyPage() {
       setFinishCountdown(remaining);
       if (remaining <= 0) {
         clearInterval(timer);
-        window.location.assign(`/lobby/${telegramId}`);
+        window.location.assign(`/home/${telegramId}`);
       }
     }, 1000);
     const fallback = setTimeout(() => {
-      window.location.assign(`/lobby/${telegramId}`);
+      window.location.assign(`/home/${telegramId}`);
     }, 3500);
     return () => {
       clearInterval(timer);
@@ -126,15 +192,16 @@ export default function LobbyPage() {
 
   const stats = [
     { label: "State", value: displayState.toUpperCase() },
-    { label: "Count", value: data.countdown || "—" },
+    { label: "Count", value: data.countdown || "-" },
     { label: "Players", value: data.total_players },
+    { label: "Medeb", value: `${data.stake || preferredStake} Birr` },
   ];
 
   if (loading) {
     return (
       <div className="app-shell">
         <div className="app-card">
-          <div className="subtitle">Loading lobby…</div>
+          <div className="subtitle">Loading lobby...</div>
         </div>
       </div>
     );
@@ -145,12 +212,17 @@ export default function LobbyPage() {
       <div className="app-card">
         <HeaderComponent
           title="Bingo Lobby"
-          subtitle={`Game #${data.game?.id ?? "—"} • ${data.user?.first_name ?? "Player"} • Balance ${data.wallet_balance} Birr`}
+          subtitle={`Game #${data.game?.id ?? "-"} - ${data.user?.first_name ?? "Player"} - Balance ${data.wallet_balance} Birr`}
           stats={stats}
-          
         />
-        
+
         <NotificationComponent notification={notification} />
+
+        <div className="page-actions">
+          <button type="button" className="btn btn-secondary" onClick={handleBackToHome}>
+            Back to Home
+          </button>
+        </div>
 
         <div className="grid-layout">
           {data.user_card?.grid && <BingoGridComponent grid={data.user_card.grid} interactive={false} />}

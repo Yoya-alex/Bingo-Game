@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
+import HomePage from "./pages/HomePage.jsx";
 import LobbyPage from "./pages/LobbyPage.jsx";
 import PlayPage from "./pages/PlayPage.jsx";
+import ProfilePage from "./pages/ProfilePage.jsx";
 
 const THEME_KEY = "bingo-theme";
 
@@ -36,9 +38,11 @@ export default function App() {
         {theme === "dark" ? "☀️ Light" : "🌙 Night"}
       </button>
       <Routes>
+        <Route path="/home/:telegramId" element={<HomePage />} />
+        <Route path="/profile/:telegramId" element={<ProfilePage />} />
         <Route path="/lobby/:telegramId" element={<LobbyPage />} />
         <Route path="/play/:telegramId/:gameId" element={<PlayPage />} />
-        <Route path="*" element={<Navigate to="/lobby/0" replace />} />
+        <Route path="*" element={<Navigate to="/home/0" replace />} />
       </Routes>
     </>
   );

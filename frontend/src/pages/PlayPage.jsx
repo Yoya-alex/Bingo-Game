@@ -47,6 +47,7 @@ export default function PlayPage() {
   const currentCall = calledNumbers.length ? calledNumbers[calledNumbers.length - 1] : null;
   const hasCard = Boolean(state.card?.card_number);
   const displayState = !hasCard && state.game?.state === "playing" ? "watching" : state.game?.state;
+  const shouldConfirmQuit = state.game?.state === "playing" && hasCard;
 
   const formatCalledNumber = useMemo(() => {
     const maxNumber = Math.max(5, Number(state.bingo_number_max) || 400);
@@ -64,12 +65,13 @@ export default function PlayPage() {
   }, [state.bingo_number_max]);
 
   const derashAmount = useMemo(() => {
-    const value = state.total_players * 10 * 0.8;
+    const stakeAmount = Number(state.game?.stake_amount || 10);
+    const value = state.total_players * stakeAmount * 0.8;
     return `${new Intl.NumberFormat("en-US", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(value)} Birr`;
-  }, [state.total_players]);
+  }, [state.total_players, state.game?.stake_amount]);
 
   function toCallParts(value) {
     const formatted = String(formatCalledNumber(value));
@@ -175,6 +177,16 @@ export default function PlayPage() {
       .catch((error) => notify("error", error.message));
   }
 
+  function handleBackToHome() {
+    if (shouldConfirmQuit) {
+      const confirmed = window.confirm("Are you sure you want to quit this game and go back to home?");
+      if (!confirmed) {
+        return;
+      }
+    }
+    navigate(`/home/${telegramId}`);
+  }
+
   useEffect(() => {
     voiceManagerRef.current = new VoiceSyncManager();
     setVoiceSupported(voiceManagerRef.current.supported);
@@ -221,11 +233,11 @@ export default function PlayPage() {
       setFinishCountdown(remaining);
       if (remaining <= 0) {
         clearInterval(timer);
-        window.location.assign(`/lobby/${telegramId}`);
+        window.location.assign(`/home/${telegramId}`);
       }
     }, 1000);
     const fallback = setTimeout(() => {
-      window.location.assign(`/lobby/${telegramId}`);
+      window.location.assign(`/home/${telegramId}`);
     }, 3500);
     return () => {
       clearInterval(timer);
@@ -233,11 +245,33 @@ export default function PlayPage() {
     };
   }, [state.game?.state, telegramId]);
 
+  useEffect(() => {
+    if (!shouldConfirmQuit) {
+      return undefined;
+    }
+
+    const handlePopState = () => {
+      const confirmed = window.confirm("Are you sure you want to quit this game and go back to home?");
+      if (confirmed) {
+        window.location.assign(`/home/${telegramId}`);
+        return;
+      }
+      window.history.pushState({ guard: "play-page" }, "", window.location.href);
+    };
+
+    window.history.pushState({ guard: "play-page" }, "", window.location.href);
+    window.addEventListener("popstate", handlePopState);
+
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [shouldConfirmQuit, telegramId]);
+
   const stats = useMemo(() => {
     return [
       { label: "State", value: displayState?.toUpperCase() || "—" },
       { label: "Players", value: state.total_players },
-      {label:"Medeb", value: "10 Birr"},
+      {label:"Medeb", value: `${state.game?.stake_amount || 10} Birr`},
       { label: "Derash", value: derashAmount },
       {label:"called", value: calledNumbers.length ? `${calledNumbers.length}/75` : "-"},
     ];
@@ -283,6 +317,11 @@ export default function PlayPage() {
           </div>
         )}
         <NotificationComponent notification={notification} />
+        <div className="page-actions">
+          <button type="button" className="btn btn-secondary" onClick={handleBackToHome}>
+            Back to Home
+          </button>
+        </div>
         <div className="grid-layout">
           {hasCard && (
             <BingoGridComponent
