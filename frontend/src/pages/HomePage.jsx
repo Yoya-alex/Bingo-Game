@@ -45,6 +45,16 @@ export default function HomePage() {
     }));
   }, [data.games, data.stakes]);
 
+  const liveStats = useMemo(() => {
+    const waiting = gameRows.filter((row) => row.state === "waiting").length;
+    const playing = gameRows.filter((row) => row.state === "playing").length;
+    return {
+      waiting,
+      playing,
+      tiers: gameRows.length,
+    };
+  }, [gameRows]);
+
   useEffect(() => {
     setLoading(true);
     fetchJson(`/game/api/lobby-state/${telegramId}/`)
@@ -103,12 +113,31 @@ export default function HomePage() {
   return (
     <div className="app-shell lobby-shell">
       <div className="app-card lobby-card">
-        <header className="lobby-header">
-          <h1 className="title lobby-title">Bingo Game Lobby</h1>
-          <p className="subtitle lobby-subtitle">
-            {data.user?.first_name || "Player"} - Wallet {formatBirr(data.wallet_balance)}
+        <section className="component home-hero-card" aria-label="Lobby overview">
+          <div className="home-hero-top">
+            <div className="home-brand-row">
+              <span className="home-brand-logo" role="img" aria-label="OK hand logo">👌</span>
+              <h1 className="title lobby-title home-brand-title">Ok Bingo</h1>
+            </div>
+            <span className="home-live-chip">LIVE • {POLL_MS / 1000}s sync</span>
+          </div>
+
+          <p className="subtitle lobby-subtitle home-hero-greeting">
+            Welcome back, {data.user?.first_name || "Player"}
           </p>
-        </header>
+
+          <div className="home-wallet-highlight">
+            <span className="home-wallet-label">Wallet Balance</span>
+            <strong className="home-wallet-value">{formatBirr(data.wallet_balance)}</strong>
+          </div>
+
+          <div className="home-hero-chips" role="list" aria-label="Lobby quick stats">
+            <span className="home-hero-chip" role="listitem">{liveStats.tiers} stake tiers</span>
+            <span className="home-hero-chip" role="listitem">{liveStats.waiting} waiting</span>
+            <span className="home-hero-chip" role="listitem">{liveStats.playing} in play</span>
+            <span className="home-hero-chip" role="listitem">Pick a MEDB tier below</span>
+          </div>
+        </section>
 
         <NotificationComponent notification={notification} />
 
