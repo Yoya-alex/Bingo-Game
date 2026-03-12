@@ -304,7 +304,7 @@ export default function PlayPage() {
       <div className="app-card">
         <HeaderComponent
           title="Bingo "
-          subtitle={`Game #${state.game.id} • Card #${state.card.card_number} • ${state.user.first_name}`}
+          subtitle={`Game #${state.game?.id ?? "-"} • ${hasCard ? `Card #${state.card.card_number} • ` : "Spectator • "}${state.user?.first_name ?? "Player"}`}
           stats={stats}
         />
 
@@ -339,13 +339,15 @@ export default function PlayPage() {
             
           )
           }
+          {!hasCard && state.game?.state === "playing" && (
+            <SpectatorViewComponent id="bingoGridComponent" title="Your Bingo Grid" />
+          )}
           <CalledNumbersComponent 
             calledNumbers={calledNumbers} 
             maxNumber={state.bingo_number_max || 400}
             onNumberClick={markCurrentNumber}
             interactive={hasCard && state.game?.state === "playing"}
           />
-          {!hasCard && state.game?.state === "playing" && <SpectatorViewComponent />}
         </div>
       </div>
       {state.game?.state === "finished" && (

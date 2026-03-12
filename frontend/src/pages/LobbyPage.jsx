@@ -161,10 +161,10 @@ export default function LobbyPage() {
   }
 
   useEffect(() => {
-    if (data.game?.state === "playing" && hasCard) {
+    if (data.game?.state === "playing" && data.game?.id) {
       navigate(`/play/${telegramId}/${data.game.id}`);
     }
-  }, [data.game?.state, data.game?.id, hasCard, navigate, telegramId]);
+  }, [data.game?.state, data.game?.id, navigate, telegramId]);
 
   useEffect(() => {
     if (data.game?.state !== "finished") {

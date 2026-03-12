@@ -93,7 +93,7 @@ export default function HomePage() {
       return;
     }
 
-    if (row.action === "play" && row.game_id && row.state === "playing") {
+    if ((row.action === "play" || row.action === "watch") && row.game_id && row.state === "playing") {
       navigate(`/play/${telegramId}/${row.game_id}`);
       return;
     }
