@@ -160,10 +160,13 @@ def build_lobby_game_row(game, user):
             status_label = 'Waiting for players'
 
     action = 'none'
-    action_label = 'In Progress' if game.state == 'playing' else 'Unavailable'
+    action_label = 'Watch' if game.state == 'playing' else 'Unavailable'
     if user_has_card:
         action = 'play'
         action_label = 'Play'
+    elif game.state == 'playing':
+        action = 'watch'
+        action_label = 'Watch'
     elif game.state == 'waiting':
         action = 'join'
         action_label = 'Join Now'
@@ -512,11 +515,11 @@ def play_state_api(request, telegram_id, game_id):
     try:
         user = User.objects.get(telegram_id=telegram_id)
         game = ensure_game_started(game_id)
-        user_card = get_object_or_404(BingoCard, game=game, user=user)
     except User.DoesNotExist:
         return JsonResponse({'error': 'User not found.'}, status=404)
 
-    grid = user_card.get_grid()
+    user_card = BingoCard.objects.filter(game=game, user=user).first()
+    grid = user_card.get_grid() if user_card else None
     called_numbers = game.get_called_numbers()
     total_players = game.cards.count()
     stake_amount = get_game_stake(game)
@@ -543,9 +546,9 @@ def play_state_api(request, telegram_id, game_id):
         'card': {
             'card_number': user_card.card_number,
             'grid': grid,
-        },
+        } if user_card else None,
         'bingo_number_max': settings.BINGO_NUMBER_MAX,
-        'marked_numbers': user_card.get_marked_positions(),
+        'marked_numbers': user_card.get_marked_positions() if user_card else [],
         'called_numbers': game.get_called_number_entries(),
         'total_players': total_players,
         'prize_amount': float(prize_amount),
