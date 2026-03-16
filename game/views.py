@@ -1,5 +1,6 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_POST
 from django.conf import settings
@@ -329,6 +330,7 @@ def game_play(request, telegram_id, game_id):
     return redirect(f"{settings.REACT_APP_URL}/play/{telegram_id}/{game_id}?token={token}")
 
 
+@csrf_exempt
 @require_POST
 @rate_limit(key_prefix='select-card', max_requests=25, window_seconds=60)
 @require_valid_web_token
@@ -1033,6 +1035,7 @@ def trophy_state_api(request, telegram_id):
     })
 
 
+@csrf_exempt
 @require_POST
 @rate_limit(key_prefix='mark-number', max_requests=30, window_seconds=60)
 @require_valid_web_token
@@ -1085,6 +1088,7 @@ def mark_number_api(request):
         return JsonResponse({'error': 'Unable to mark number right now.'}, status=500)
 
 
+@csrf_exempt
 @require_POST
 @rate_limit(key_prefix='claim-bingo', max_requests=15, window_seconds=60)
 @require_valid_web_token

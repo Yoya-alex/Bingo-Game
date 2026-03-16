@@ -2,19 +2,23 @@ import { getAuthToken } from "../utils/auth.js";
 
 export async function fetchJson(url, options = {}) {
   const token = getAuthToken();
-  const mergedHeaders = {
+  const baseHeaders = {
     ...(options.headers || {}),
   };
 
   if (token) {
-    mergedHeaders["X-User-Token"] = token;
-    mergedHeaders.Authorization = `Bearer ${token}`;
+    baseHeaders["X-User-Token"] = token;
+    baseHeaders.Authorization = `Bearer ${token}`;
   }
 
+  const mergedHeaders = {
+    ...baseHeaders,
+  };
+
   const response = await fetch(url, {
+    ...options,
     cache: "no-store",
     headers: mergedHeaders,
-    ...options,
   });
   let data = null;
   try {
