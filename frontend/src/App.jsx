@@ -6,6 +6,7 @@ import PlayPage from "./pages/PlayPage.jsx";
 import ProfilePage from "./pages/ProfilePage.jsx";
 import TrophyPage from "./pages/TrophyPage.jsx";
 import WalletPage from "./pages/WalletPage.jsx";
+import { bootstrapAuthToken } from "./utils/auth.js";
 
 const THEME_KEY = "bingo-theme";
 
@@ -24,6 +25,10 @@ function getInitialTheme() {
 
 export default function App() {
   const [theme, setTheme] = useState(getInitialTheme);
+
+  useEffect(() => {
+    bootstrapAuthToken();
+  }, []);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);

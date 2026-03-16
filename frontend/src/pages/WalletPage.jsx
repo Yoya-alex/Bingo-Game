@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { fetchJson } from "../api/client.js";
+import { withAuthPath } from "../utils/auth.js";
 import NotificationComponent from "../components/NotificationComponent.jsx";
 import BottomNavIcon from "../components/BottomNavIcon.jsx";
 
@@ -190,15 +191,15 @@ export default function WalletPage() {
         </section>
 
         <nav className="bottom-nav" aria-label="Bottom navigation">
-          <button type="button" className="bottom-nav-item" onClick={() => navigate(`/home/${telegramId}`)}>
+          <button type="button" className="bottom-nav-item" onClick={() => navigate(withAuthPath(`/home/${telegramId}`))}>
             <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="home" /></span>
             <span className="bottom-nav-label">Home</span>
           </button>
-          <button type="button" className="bottom-nav-item" onClick={() => navigate(`/profile/${telegramId}`)}>
+          <button type="button" className="bottom-nav-item" onClick={() => navigate(withAuthPath(`/profile/${telegramId}`))}>
             <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="profile" /></span>
             <span className="bottom-nav-label">Profile</span>
           </button>
-          <button type="button" className="bottom-nav-item" onClick={() => navigate(`/trophy/${telegramId}`)}>
+          <button type="button" className="bottom-nav-item" onClick={() => navigate(withAuthPath(`/trophy/${telegramId}`))}>
             <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="trophy" /></span>
             <span className="bottom-nav-label">Top Winners</span>
           </button>
