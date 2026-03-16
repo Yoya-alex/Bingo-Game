@@ -14,6 +14,10 @@ from pathlib import Path
 import os
 from dotenv import load_dotenv
 
+
+def env_bool(name: str, default: bool = False) -> bool:
+    return os.getenv(name, 'True' if default else 'False').lower() in {'1', 'true', 'yes', 'on'}
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -25,12 +29,24 @@ load_dotenv()
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure--a6xe@%*ct@50t+y_cuw!0vher&aiem$qstw(ks!y-$p69nktw')
+SECRET_KEY = os.getenv('SECRET_KEY', '')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DEBUG', 'True') == 'True'
+DEBUG = env_bool('DEBUG', False)
 
-ALLOWED_HOSTS = ['*']  # Allow all hosts for development
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = 'dev-insecure-change-me'
+    else:
+        raise RuntimeError('SECRET_KEY environment variable is required when DEBUG is False.')
+
+allowed_hosts_env = os.getenv('ALLOWED_HOSTS', '')
+if allowed_hosts_env.strip():
+    ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_env.split(',') if host.strip()]
+elif DEBUG:
+    ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
+else:
+    raise RuntimeError('ALLOWED_HOSTS must be set when DEBUG is False.')
 
 
 # Application definition
@@ -135,6 +151,22 @@ ADMIN_IDS = [int(id.strip()) for id in os.getenv('ADMIN_IDS', '').split(',') if 
 USE_REACT_UI = os.getenv('USE_REACT_UI', 'True') == 'True'
 REACT_APP_URL = os.getenv('REACT_APP_URL', 'http://localhost:5173')
 
+web_allowed_origins_env = os.getenv('WEB_ALLOWED_ORIGINS', '')
+if web_allowed_origins_env.strip():
+    WEB_ALLOWED_ORIGINS = [origin.strip().rstrip('/') for origin in web_allowed_origins_env.split(',') if origin.strip()]
+else:
+    WEB_ALLOWED_ORIGINS = [
+        REACT_APP_URL.rstrip('/'),
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+    ]
+
+csrf_trusted_origins_env = os.getenv('CSRF_TRUSTED_ORIGINS', '')
+if csrf_trusted_origins_env.strip():
+    CSRF_TRUSTED_ORIGINS = [origin.strip().rstrip('/') for origin in csrf_trusted_origins_env.split(',') if origin.strip()]
+else:
+    CSRF_TRUSTED_ORIGINS = [origin for origin in WEB_ALLOWED_ORIGINS if origin.startswith('http://') or origin.startswith('https://')]
+
 # Payment Configuration
 TELEBIRR_NUMBER = os.getenv('TELEBIRR_NUMBER', '0912345678')
 
@@ -179,3 +211,16 @@ STATIC_URL = "static/"
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Production security headers and cookie flags
+if not DEBUG:
+    SECURE_SSL_REDIRECT = env_bool('SECURE_SSL_REDIRECT', True)
+    SECURE_HSTS_SECONDS = int(os.getenv('SECURE_HSTS_SECONDS', '31536000'))
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool('SECURE_HSTS_INCLUDE_SUBDOMAINS', True)
+    SECURE_HSTS_PRELOAD = env_bool('SECURE_HSTS_PRELOAD', True)
+    SESSION_COOKIE_SECURE = env_bool('SESSION_COOKIE_SECURE', True)
+    CSRF_COOKIE_SECURE = env_bool('CSRF_COOKIE_SECURE', True)
+    SECURE_BROWSER_XSS_FILTER = env_bool('SECURE_BROWSER_XSS_FILTER', True)
+    SECURE_CONTENT_TYPE_NOSNIFF = env_bool('SECURE_CONTENT_TYPE_NOSNIFF', True)
+    X_FRAME_OPTIONS = 'DENY'
+    SECURE_REFERRER_POLICY = 'same-origin'

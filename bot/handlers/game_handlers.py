@@ -10,6 +10,7 @@ from game.models import Game, BingoCard
 from wallet.models import Transaction
 from bot.keyboards import main_menu_keyboard, card_selection_keyboard, bingo_button_keyboard
 from bot.utils.game_logic import check_bingo_win
+from game.security import create_user_access_token
 
 router = Router()
 
@@ -175,7 +176,8 @@ async def play_bingo(message: Message):
         return
     
     # Generate web app URL
-    web_url = f"{settings.REACT_APP_URL}/home/{user.telegram_id}/"
+    access_token = create_user_access_token(user.telegram_id)
+    web_url = f"{settings.REACT_APP_URL}/home/{user.telegram_id}/?token={access_token}"
     
     game_text = (
         f"<b>🎮 BINGO GAME</b>\n\n"
