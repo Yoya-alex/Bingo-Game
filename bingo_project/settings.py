@@ -46,7 +46,11 @@ if allowed_hosts_env.strip():
 elif DEBUG:
     ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
 else:
-    raise RuntimeError('ALLOWED_HOSTS must be set when DEBUG is False.')
+    render_host = os.getenv('RENDER_EXTERNAL_HOSTNAME', '').strip()
+    if render_host:
+        ALLOWED_HOSTS = [render_host]
+    else:
+        raise RuntimeError('ALLOWED_HOSTS must be set when DEBUG is False.')
 
 
 # Application definition
