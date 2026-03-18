@@ -1,5 +1,17 @@
 import { getAuthToken } from "../utils/auth.js";
 
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
+
+function withApiBase(url) {
+  if (!API_BASE_URL) {
+    return url;
+  }
+  if (url.startsWith("http://") || url.startsWith("https://")) {
+    return url;
+  }
+  return `${API_BASE_URL}${url.startsWith("/") ? url : `/${url}`}`;
+}
+
 export async function fetchJson(url, options = {}) {
   const token = getAuthToken();
   const baseHeaders = {
@@ -15,7 +27,7 @@ export async function fetchJson(url, options = {}) {
     ...baseHeaders,
   };
 
-  const response = await fetch(url, {
+  const response = await fetch(withApiBase(url), {
     ...options,
     cache: "no-store",
     headers: mergedHeaders,

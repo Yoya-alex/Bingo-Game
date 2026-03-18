@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 
 from pathlib import Path
 import os
+import importlib
 from dotenv import load_dotenv
 
 
@@ -62,6 +63,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "corsheaders",
     # Custom apps
     "users",
     "wallet",
@@ -71,6 +73,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -103,17 +106,24 @@ WSGI_APPLICATION = "bingo_project.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-DB_NAME = os.getenv("DB_NAME")
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": DB_NAME,
-        "USER": os.getenv("DB_USER", "postgres"),
-        "PASSWORD": os.getenv("DB_PASSWORD", ""),
-        "HOST": os.getenv("DB_HOST", "localhost"),
-        "PORT": int(os.getenv("DB_PORT", "5432")),
+database_url = os.getenv("DATABASE_URL", "").strip()
+if database_url:
+    dj_database_url = importlib.import_module("dj_database_url")
+    DATABASES = {
+        "default": dj_database_url.parse(database_url, conn_max_age=600)
     }
-}
+else:
+    DB_NAME = os.getenv("DB_NAME")
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": DB_NAME,
+            "USER": os.getenv("DB_USER", "postgres"),
+            "PASSWORD": os.getenv("DB_PASSWORD", ""),
+            "HOST": os.getenv("DB_HOST", "localhost"),
+            "PORT": int(os.getenv("DB_PORT", "5432")),
+        }
+    }
 
 # SQLite config (alternative for development)
 # DATABASES = {
@@ -170,6 +180,21 @@ if csrf_trusted_origins_env.strip():
     CSRF_TRUSTED_ORIGINS = [origin.strip().rstrip('/') for origin in csrf_trusted_origins_env.split(',') if origin.strip()]
 else:
     CSRF_TRUSTED_ORIGINS = [origin for origin in WEB_ALLOWED_ORIGINS if origin.startswith('http://') or origin.startswith('https://')]
+
+# Frontend is deployed on a separate Render domain, so API requests need CORS.
+CORS_ALLOWED_ORIGINS = [origin for origin in WEB_ALLOWED_ORIGINS if origin.startswith('http://') or origin.startswith('https://')]
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "dnt",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+    "x-user-token",
+]
 
 # Payment Configuration
 TELEBIRR_NUMBER = os.getenv('TELEBIRR_NUMBER', '0912345678')
