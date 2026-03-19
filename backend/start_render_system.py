@@ -4,7 +4,7 @@ import subprocess
 import sys
 import threading
 import time
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 
 def _stream_logs(name: str, process: subprocess.Popen) -> None:
@@ -51,23 +51,16 @@ def main() -> int:
     print("Ensuring Django superuser from environment...", flush=True)
     subprocess.run([sys.executable, "manage.py", "ensure_superuser"], check=False)
 
-    commands = [
-        (
-            "web",
-            [
-                sys.executable,
-                "-m",
-                "gunicorn",
-                "bingo_project.wsgi:application",
-                "--bind",
-                f"0.0.0.0:{port}",
-                "--workers",
-                workers,
-            ],
-        ),
-        ("engine", [sys.executable, "manage.py", "run_game_engine"]),
-        ("bot", [sys.executable, "start_bot.py"]),
+    # Critical: web server must stay alive
+    # Non-critical: engine and bot can crash and restart
+    web_command = [
+        sys.executable, "-m", "gunicorn",
+        "bingo_project.wsgi:application",
+        "--bind", f"0.0.0.0:{port}",
+        "--workers", workers,
     ]
+    engine_command = [sys.executable, "manage.py", "run_game_engine"]
+    bot_command = [sys.executable, "start_bot.py"]
 
     processes: List[Tuple[str, subprocess.Popen]] = []
     stopping = False
@@ -77,29 +70,74 @@ def main() -> int:
         if stopping:
             return
         stopping = True
-        print(f"Received signal {signum}, shutting down all services...", flush=True)
+        print(f"Received signal {signum}, shutting down...", flush=True)
         _stop_all(processes)
 
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
 
-    try:
-        for name, command in commands:
-            print(f"Starting {name}: {' '.join(command)}", flush=True)
-            processes.append(_start_process(name, command))
-            time.sleep(1)
+    # Start web server first (critical)
+    print(f"Starting web: {' '.join(web_command)}", flush=True)
+    web_name, web_proc = _start_process("web", web_command)
+    processes.append((web_name, web_proc))
+    time.sleep(2)
 
+    # Start engine (non-critical)
+    print(f"Starting engine: {' '.join(engine_command)}", flush=True)
+    engine_name, engine_proc = _start_process("engine", engine_command)
+    processes.append((engine_name, engine_proc))
+    time.sleep(1)
+
+    # Start bot (non-critical)
+    print(f"Starting bot: {' '.join(bot_command)}", flush=True)
+    bot_name, bot_proc = _start_process("bot", bot_command)
+    processes.append((bot_name, bot_proc))
+
+    # Track restart counts
+    restart_counts = {"engine": 0, "bot": 0}
+
+    try:
         while not stopping:
-            for name, process in processes:
-                code = process.poll()
-                if code is not None:
-                    print(f"{name} exited with code {code}. Stopping remaining services...", flush=True)
-                    _stop_all(processes)
-                    return code
-            time.sleep(1)
+            # Check web server - if it dies, exit with error
+            if web_proc.poll() is not None:
+                code = web_proc.returncode
+                print(f"[web] Web server exited with code {code}. Shutting down.", flush=True)
+                _stop_all(processes)
+                return code
+
+            # Check engine - restart if crashed (max 5 times)
+            if engine_proc.poll() is not None:
+                code = engine_proc.returncode
+                print(f"[engine] Game engine exited with code {code}.", flush=True)
+                if restart_counts["engine"] < 5:
+                    restart_counts["engine"] += 1
+                    print(f"[engine] Restarting engine (attempt {restart_counts['engine']})...", flush=True)
+                    time.sleep(3)
+                    engine_name, engine_proc = _start_process("engine", engine_command)
+                    # Update in processes list
+                    processes = [(n, p) for n, p in processes if n != "engine"]
+                    processes.append((engine_name, engine_proc))
+                else:
+                    print("[engine] Max restarts reached. Engine will not restart.", flush=True)
+
+            # Check bot - restart if crashed (max 5 times)
+            if bot_proc.poll() is not None:
+                code = bot_proc.returncode
+                print(f"[bot] Bot exited with code {code}.", flush=True)
+                if restart_counts["bot"] < 5:
+                    restart_counts["bot"] += 1
+                    print(f"[bot] Restarting bot (attempt {restart_counts['bot']})...", flush=True)
+                    time.sleep(5)
+                    bot_name, bot_proc = _start_process("bot", bot_command)
+                    processes = [(n, p) for n, p in processes if n != "bot"]
+                    processes.append((bot_name, bot_proc))
+                else:
+                    print("[bot] Max restarts reached. Bot will not restart.", flush=True)
+
+            time.sleep(2)
 
     except Exception as exc:
-        print(f"Fatal startup error: {exc}", flush=True)
+        print(f"Fatal error: {exc}", flush=True)
         _stop_all(processes)
         return 1
 
