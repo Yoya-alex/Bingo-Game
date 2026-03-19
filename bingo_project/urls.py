@@ -31,7 +31,17 @@ def favicon(_request):
     response["Cache-Control"] = "public, max-age=86400"
     return response
 
+
+def index(_request):
+    return HttpResponse("Bingo backend is running", content_type="text/plain")
+
+
+def healthz(_request):
+    return HttpResponse("ok", content_type="text/plain")
+
 urlpatterns = [
+    path("", index, name="index"),
+    path("healthz", healthz, name="healthz"),
     path("favicon.ico", favicon, name="favicon"),
     path("admin/", admin.site.urls),
     path("game/", include('game.urls')),
