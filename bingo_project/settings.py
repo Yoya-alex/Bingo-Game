@@ -69,13 +69,13 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
-    "django.contrib.staticfiles",
-    "corsheaders",
     # Custom apps
     "users",
     "wallet",
     "game.apps.GameConfig",
     "notifications",
+    "corsheaders",
+    "django.contrib.staticfiles",
 ]
 
 MIDDLEWARE = [

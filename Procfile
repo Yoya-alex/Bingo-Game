@@ -1,1 +1,1 @@
-web: gunicorn bingo_project.wsgi:application --bind 0.0.0.0:$PORT
+web: python start_render_system.py
