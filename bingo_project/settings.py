@@ -43,15 +43,22 @@ if not SECRET_KEY:
 
 allowed_hosts_env = os.getenv('ALLOWED_HOSTS', '')
 if allowed_hosts_env.strip():
-    ALLOWED_HOSTS = [host.strip() for host in allowed_hosts_env.split(',') if host.strip()]
+    ALLOWED_HOSTS = []
+    for host in allowed_hosts_env.split(','):
+        item = host.strip().replace('https://', '').replace('http://', '').rstrip('/')
+        if item:
+            ALLOWED_HOSTS.append(item)
 elif DEBUG:
     ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
 else:
-    render_host = os.getenv('RENDER_EXTERNAL_HOSTNAME', '').strip()
-    if render_host:
-        ALLOWED_HOSTS = [render_host]
-    else:
-        raise RuntimeError('ALLOWED_HOSTS must be set when DEBUG is False.')
+    ALLOWED_HOSTS = []
+
+render_host = os.getenv('RENDER_EXTERNAL_HOSTNAME', '').strip()
+if render_host and render_host not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(render_host)
+
+if not ALLOWED_HOSTS:
+    raise RuntimeError('ALLOWED_HOSTS must be set when DEBUG is False.')
 
 
 # Application definition
