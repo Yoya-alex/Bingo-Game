@@ -256,6 +256,8 @@ STORAGES = {
         "BACKEND": STATICFILES_BACKEND,
     },
 }
+# Fallback to app/static discovery (including Django admin assets) if collectstatic output is missing.
+WHITENOISE_USE_FINDERS = env_bool("WHITENOISE_USE_FINDERS", True)
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
