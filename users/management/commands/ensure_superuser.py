@@ -29,6 +29,9 @@ class Command(BaseCommand):
             if email and user.email != email:
                 user.email = email
                 changed = True
+            if password and not user.check_password(password):
+                user.set_password(password)
+                changed = True
             if not user.is_staff:
                 user.is_staff = True
                 changed = True
@@ -36,8 +39,10 @@ class Command(BaseCommand):
                 user.is_superuser = True
                 changed = True
             if changed:
-                user.save(update_fields=["email", "is_staff", "is_superuser"])
-            self.stdout.write(self.style.SUCCESS(f"Superuser '{username}' already exists."))
+                user.save()
+                self.stdout.write(self.style.SUCCESS(f"Superuser '{username}' updated from environment."))
+            else:
+                self.stdout.write(self.style.SUCCESS(f"Superuser '{username}' already exists."))
             return
 
         User.objects.create_superuser(username=username, email=email, password=password)
