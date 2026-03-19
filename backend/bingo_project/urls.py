@@ -17,6 +17,7 @@ Including another URLconf
 from django.contrib import admin
 from django.http import HttpResponse
 from django.urls import path, include
+from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 
 
 def favicon(_request):
@@ -31,8 +32,22 @@ def favicon(_request):
     response["Cache-Control"] = "public, max-age=86400"
     return response
 
+
+def index(_request):
+    return HttpResponse("Bingo backend is running", content_type="text/plain")
+
+
+def healthz(_request):
+    return HttpResponse("ok", content_type="text/plain")
+
 urlpatterns = [
+    path("", index, name="index"),
+    path("healthz", healthz, name="healthz"),
     path("favicon.ico", favicon, name="favicon"),
     path("admin/", admin.site.urls),
     path("game/", include('game.urls')),
 ]
+
+# Safety fallback: serve static assets through Django URL patterns if middleware-based
+# static serving is unavailable in the current deployment configuration.
+urlpatterns += staticfiles_urlpatterns()

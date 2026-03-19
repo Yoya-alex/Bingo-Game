@@ -2,6 +2,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.cache import never_cache
+from django.views.decorators.http import require_POST
 from django.conf import settings
 from django.utils import timezone
 from django.db import transaction
@@ -11,11 +12,20 @@ from datetime import timedelta
 from users.models import User
 from game.models import Game, BingoCard, StakeLobbyLock, SystemBalanceLedger
 from wallet.models import Wallet, Transaction
+from game.security import (
+    get_request_access_token,
+    rate_limit,
+    require_path_telegram_auth,
+    require_valid_web_token,
+    verify_user_access_token,
+)
 import json
+import logging
 
 
 BOT_TELEGRAM_ID_THRESHOLD = 9000000000
 MIN_REAL_USERS_TO_START = 2
+logger = logging.getLogger(__name__)
 
 
 def get_supported_stakes():
@@ -160,10 +170,13 @@ def build_lobby_game_row(game, user):
             status_label = 'Waiting for players'
 
     action = 'none'
-    action_label = 'In Progress' if game.state == 'playing' else 'Unavailable'
+    action_label = 'Watch' if game.state == 'playing' else 'Unavailable'
     if user_has_card:
         action = 'play'
         action_label = 'Play'
+    elif game.state == 'playing':
+        action = 'watch'
+        action_label = 'Watch'
     elif game.state == 'waiting':
         action = 'join'
         action_label = 'Join Now'
@@ -271,6 +284,18 @@ def ensure_game_started(game_id):
 
 def game_lobby(request, telegram_id):
     """Game lobby - show card selection"""
+    token = get_request_access_token(request)
+    if not token:
+        return render(request, 'game/error.html', {
+            'error': 'Missing access token. Please open the game from Telegram.'
+        })
+
+    auth_tid = verify_user_access_token(token)
+    if auth_tid is None or int(auth_tid) != int(telegram_id):
+        return render(request, 'game/error.html', {
+            'error': 'Invalid or expired access token. Please open the game from Telegram.'
+        })
+
     try:
         user = User.objects.select_related('wallet').get(telegram_id=telegram_id)
     except User.DoesNotExist:
@@ -278,11 +303,23 @@ def game_lobby(request, telegram_id):
             'error': 'User not found. Please start the bot first.'
         })
 
-    return redirect(f"{settings.REACT_APP_URL}/home/{telegram_id}")
+    return redirect(f"{settings.REACT_APP_URL}/home/{telegram_id}?token={token}")
 
 
 def game_play(request, telegram_id, game_id):
     """Game play screen - show user's bingo card"""
+    token = get_request_access_token(request)
+    if not token:
+        return render(request, 'game/error.html', {
+            'error': 'Missing access token. Please open the game from Telegram.'
+        })
+
+    auth_tid = verify_user_access_token(token)
+    if auth_tid is None or int(auth_tid) != int(telegram_id):
+        return render(request, 'game/error.html', {
+            'error': 'Invalid or expired access token. Please open the game from Telegram.'
+        })
+
     try:
         user = User.objects.get(telegram_id=telegram_id)
     except User.DoesNotExist:
@@ -290,18 +327,20 @@ def game_play(request, telegram_id, game_id):
             'error': 'User not found.'
         })
 
-    return redirect(f"{settings.REACT_APP_URL}/play/{telegram_id}/{game_id}")
+    return redirect(f"{settings.REACT_APP_URL}/play/{telegram_id}/{game_id}?token={token}")
 
 
 @csrf_exempt
+@require_POST
+@rate_limit(key_prefix='select-card', max_requests=25, window_seconds=60)
+@require_valid_web_token
 def select_card_api(request):
     """API endpoint to select a card"""
-    if request.method != 'POST':
-        return JsonResponse({'error': 'Method not allowed'}, status=405)
-    
     try:
         data = json.loads(request.body)
-        telegram_id = data.get('telegram_id')
+        telegram_id = int(data.get('telegram_id'))
+        if telegram_id != int(request.auth_telegram_id):
+            return JsonResponse({'error': 'Forbidden.'}, status=403)
         card_number = int(data.get('card_number'))
         stake_amount = data.get('stake_amount')
         supported_stakes = get_supported_stakes()
@@ -408,13 +447,16 @@ def select_card_api(request):
                 'grid': card.get_grid(),
             },
         })
-        
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return JsonResponse({'error': 'Invalid request payload.'}, status=400)
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+        logger.exception('select_card_api failed: %s', e)
+        return JsonResponse({'error': 'Unable to complete card selection right now.'}, status=500)
 
 
-@csrf_exempt
 @never_cache
+@rate_limit(key_prefix='game-status', max_requests=60, window_seconds=60)
+@require_valid_web_token
 def game_status_api(request, game_id):
     """API endpoint to get game status (for real-time updates)"""
     try:
@@ -441,10 +483,13 @@ def game_status_api(request, game_id):
             'winner_card': winner_card,
         })
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+        logger.exception('game_status_api failed for game %s: %s', game_id, e)
+        return JsonResponse({'error': 'Unable to fetch game status right now.'}, status=500)
 
 
 @never_cache
+@rate_limit(key_prefix='lobby-state', max_requests=60, window_seconds=60)
+@require_path_telegram_auth
 def lobby_state_api(request, telegram_id):
     """Return lobby data for React UI."""
     try:
@@ -507,16 +552,18 @@ def lobby_state_api(request, telegram_id):
 
 
 @never_cache
+@rate_limit(key_prefix='play-state', max_requests=60, window_seconds=60)
+@require_path_telegram_auth
 def play_state_api(request, telegram_id, game_id):
     """Return play data for React UI."""
     try:
         user = User.objects.get(telegram_id=telegram_id)
         game = ensure_game_started(game_id)
-        user_card = get_object_or_404(BingoCard, game=game, user=user)
     except User.DoesNotExist:
         return JsonResponse({'error': 'User not found.'}, status=404)
 
-    grid = user_card.get_grid()
+    user_card = BingoCard.objects.filter(game=game, user=user).first()
+    grid = user_card.get_grid() if user_card else None
     called_numbers = game.get_called_numbers()
     total_players = game.cards.count()
     stake_amount = get_game_stake(game)
@@ -543,9 +590,9 @@ def play_state_api(request, telegram_id, game_id):
         'card': {
             'card_number': user_card.card_number,
             'grid': grid,
-        },
+        } if user_card else None,
         'bingo_number_max': settings.BINGO_NUMBER_MAX,
-        'marked_numbers': user_card.get_marked_positions(),
+        'marked_numbers': user_card.get_marked_positions() if user_card else [],
         'called_numbers': game.get_called_number_entries(),
         'total_players': total_players,
         'prize_amount': float(prize_amount),
@@ -556,6 +603,8 @@ def play_state_api(request, telegram_id, game_id):
 
 
 @never_cache
+@rate_limit(key_prefix='profile-state', max_requests=40, window_seconds=60)
+@require_path_telegram_auth
 def profile_state_api(request, telegram_id):
     """Return profile data for React UI."""
     try:
@@ -662,6 +711,8 @@ def profile_state_api(request, telegram_id):
 
 
 @never_cache
+@rate_limit(key_prefix='wallet-state', max_requests=40, window_seconds=60)
+@require_path_telegram_auth
 def wallet_state_api(request, telegram_id):
     """Return read-only wallet information for React UI."""
     try:
@@ -830,6 +881,8 @@ def wallet_state_api(request, telegram_id):
 
 
 @never_cache
+@rate_limit(key_prefix='trophy-state', max_requests=40, window_seconds=60)
+@require_path_telegram_auth
 def trophy_state_api(request, telegram_id):
     """Return trophy/leaderboard data for React UI."""
     try:
@@ -983,14 +1036,16 @@ def trophy_state_api(request, telegram_id):
 
 
 @csrf_exempt
+@require_POST
+@rate_limit(key_prefix='mark-number', max_requests=30, window_seconds=60)
+@require_valid_web_token
 def mark_number_api(request):
     """Mark only the current called number on the player's bingo card."""
-    if request.method != 'POST':
-        return JsonResponse({'error': 'Method not allowed'}, status=405)
-
     try:
         data = json.loads(request.body)
-        telegram_id = data.get('telegram_id')
+        telegram_id = int(data.get('telegram_id'))
+        if telegram_id != int(request.auth_telegram_id):
+            return JsonResponse({'error': 'Forbidden.'}, status=403)
         game_id = data.get('game_id')
         number = int(data.get('number'))
 
@@ -1026,21 +1081,24 @@ def mark_number_api(request):
             'marked_numbers': marked_numbers,
             'marked_number': number,
         })
-    except ValueError:
+    except (TypeError, ValueError, json.JSONDecodeError):
         return JsonResponse({'error': 'Invalid number'}, status=400)
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+        logger.exception('mark_number_api failed: %s', e)
+        return JsonResponse({'error': 'Unable to mark number right now.'}, status=500)
 
 
 @csrf_exempt
+@require_POST
+@rate_limit(key_prefix='claim-bingo', max_requests=15, window_seconds=60)
+@require_valid_web_token
 def claim_bingo_api(request):
     """API endpoint to validate BINGO claim"""
-    if request.method != 'POST':
-        return JsonResponse({'error': 'Method not allowed'}, status=405)
-    
     try:
         data = json.loads(request.body)
-        telegram_id = data.get('telegram_id')
+        telegram_id = int(data.get('telegram_id'))
+        if telegram_id != int(request.auth_telegram_id):
+            return JsonResponse({'error': 'Forbidden.'}, status=403)
         game_id = data.get('game_id')
         
         user = User.objects.get(telegram_id=telegram_id)
@@ -1161,5 +1219,8 @@ def claim_bingo_api(request):
                 'message': '❌ Not a valid BINGO yet. Keep playing!'
             })
         
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return JsonResponse({'error': 'Invalid request payload.'}, status=400)
     except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
+        logger.exception('claim_bingo_api failed: %s', e)
+        return JsonResponse({'error': 'Unable to validate bingo claim right now.'}, status=500)

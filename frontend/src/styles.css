@@ -961,7 +961,7 @@ body.night-mode .stat-value {
 }
 
 .trophy-title {
-  background: linear-gradient(115deg, color-mix(in srgb, var(--accent-3) 78%, var(--ink-1)), color-mix(in srgb, var(--accent-1) 68%, var(--ink-1)));
+  background: linear-gradient(115deg, color-mix(in srgb, var(--ink-1) 78%, var(--ink-1)), color-mix(in srgb, var(--accent-1) 68%, var(--ink-1)));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
@@ -1498,7 +1498,7 @@ body.night-mode .stat-value {
 
 .profile-title {
   font-size: clamp(1.5rem, 4vw, 2.2rem);
-  background: linear-gradient(110deg, color-mix(in srgb, var(--accent-1) 78%, var(--ink-1)), color-mix(in srgb, var(--accent-2) 74%, var(--ink-1)));
+  background: linear-gradient(110deg, color-mix(in srgb, var(--ink-1) 78%, var(--ink-1)), color-mix(in srgb, var(--accent-2) 74%, var(--ink-1)));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;

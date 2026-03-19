@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { fetchJson, postJson } from "../api/client.js";
+import { withAuthPath } from "../utils/auth.js";
 import HeaderComponent from "../components/HeaderComponent.jsx";
 import BingoGridComponent from "../components/BingoGridComponent.jsx";
 import CalledNumbersComponent from "../components/CalledNumbersComponent.jsx";
@@ -184,7 +185,7 @@ export default function PlayPage() {
         return;
       }
     }
-    navigate(`/home/${telegramId}`);
+    navigate(withAuthPath(`/home/${telegramId}`));
   }
 
   useEffect(() => {
@@ -233,11 +234,11 @@ export default function PlayPage() {
       setFinishCountdown(remaining);
       if (remaining <= 0) {
         clearInterval(timer);
-        window.location.assign(`/home/${telegramId}`);
+        window.location.assign(withAuthPath(`/home/${telegramId}`));
       }
     }, 1000);
     const fallback = setTimeout(() => {
-      window.location.assign(`/home/${telegramId}`);
+      window.location.assign(withAuthPath(`/home/${telegramId}`));
     }, 3500);
     return () => {
       clearInterval(timer);
@@ -253,7 +254,7 @@ export default function PlayPage() {
     const handlePopState = () => {
       const confirmed = window.confirm("Are you sure you want to quit this game and go back to home?");
       if (confirmed) {
-        window.location.assign(`/home/${telegramId}`);
+        window.location.assign(withAuthPath(`/home/${telegramId}`));
         return;
       }
       window.history.pushState({ guard: "play-page" }, "", window.location.href);
@@ -304,7 +305,7 @@ export default function PlayPage() {
       <div className="app-card">
         <HeaderComponent
           title="Bingo "
-          subtitle={`Game #${state.game.id} • Card #${state.card.card_number} • ${state.user.first_name}`}
+          subtitle={`Game #${state.game?.id ?? "-"} • ${hasCard ? `Card #${state.card.card_number} • ` : "Spectator • "}${state.user?.first_name ?? "Player"}`}
           stats={stats}
         />
 
@@ -339,13 +340,15 @@ export default function PlayPage() {
             
           )
           }
+          {!hasCard && state.game?.state === "playing" && (
+            <SpectatorViewComponent id="bingoGridComponent" title="Your Bingo Grid" />
+          )}
           <CalledNumbersComponent 
             calledNumbers={calledNumbers} 
             maxNumber={state.bingo_number_max || 400}
             onNumberClick={markCurrentNumber}
             interactive={hasCard && state.game?.state === "playing"}
           />
-          {!hasCard && state.game?.state === "playing" && <SpectatorViewComponent />}
         </div>
       </div>
       {state.game?.state === "finished" && (

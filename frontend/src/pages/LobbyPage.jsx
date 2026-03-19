@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { fetchJson, postJson } from "../api/client.js";
+import { withAuthPath } from "../utils/auth.js";
 import HeaderComponent from "../components/HeaderComponent.jsx";
 import CardSelectionComponent from "../components/CardSelectionComponent.jsx";
 import BingoGridComponent from "../components/BingoGridComponent.jsx";
@@ -165,14 +166,14 @@ export default function LobbyPage() {
         return;
       }
     }
-    navigate(`/home/${telegramId}`);
+    navigate(withAuthPath(`/home/${telegramId}`));
   }
 
   useEffect(() => {
-    if (data.game?.state === "playing" && hasCard) {
-      navigate(`/play/${telegramId}/${data.game.id}`);
+    if (data.game?.state === "playing" && data.game?.id) {
+      navigate(withAuthPath(`/play/${telegramId}/${data.game.id}`));
     }
-  }, [data.game?.state, data.game?.id, hasCard, navigate, telegramId]);
+  }, [data.game?.state, data.game?.id, navigate, telegramId]);
 
   useEffect(() => {
     if (data.game?.state !== "finished") {
@@ -186,11 +187,11 @@ export default function LobbyPage() {
       setFinishCountdown(remaining);
       if (remaining <= 0) {
         clearInterval(timer);
-        window.location.assign(`/home/${telegramId}`);
+        window.location.assign(withAuthPath(`/home/${telegramId}`));
       }
     }, 1000);
     const fallback = setTimeout(() => {
-      window.location.assign(`/home/${telegramId}`);
+      window.location.assign(withAuthPath(`/home/${telegramId}`));
     }, 3500);
     return () => {
       clearInterval(timer);
