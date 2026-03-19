@@ -46,11 +46,17 @@ export default function App() {
       </button>
       <Routes>
         <Route path="/home/:telegramId" element={<HomePage />} />
+        <Route path="/home/:telegramId/" element={<HomePage />} />
         <Route path="/profile/:telegramId" element={<ProfilePage />} />
+        <Route path="/profile/:telegramId/" element={<ProfilePage />} />
         <Route path="/trophy/:telegramId" element={<TrophyPage />} />
+        <Route path="/trophy/:telegramId/" element={<TrophyPage />} />
         <Route path="/wallet/:telegramId" element={<WalletPage />} />
+        <Route path="/wallet/:telegramId/" element={<WalletPage />} />
         <Route path="/lobby/:telegramId" element={<LobbyPage />} />
+        <Route path="/lobby/:telegramId/" element={<LobbyPage />} />
         <Route path="/play/:telegramId/:gameId" element={<PlayPage />} />
+        <Route path="/play/:telegramId/:gameId/" element={<PlayPage />} />
         <Route path="*" element={<Navigate to="/home/0" replace />} />
       </Routes>
     </>

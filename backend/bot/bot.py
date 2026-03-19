@@ -1,29 +1,20 @@
 import asyncio
 import os
 import sys
-import django
 from pathlib import Path
-
-# Setup Django
-BASE_DIR = Path(__file__).resolve().parent.parent
-sys.path.append(str(BASE_DIR))
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'bingo_project.settings')
-django.setup()
 
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
-from dotenv import load_dotenv
 
 try:
     from aiogram.client.default import DefaultBotProperties
-    bot_kwargs = {"default": DefaultBotProperties(parse_mode=ParseMode.HTML)}
+    def _make_bot(token):
+        return Bot(token=token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 except ImportError:
-    # aiogram < 3.4
-    bot_kwargs = {"parse_mode": ParseMode.HTML}
+    def _make_bot(token):
+        return Bot(token=token, parse_mode=ParseMode.HTML)
 
 from bot.handlers import user_handlers, game_handlers, wallet_handlers, admin_handlers
-
-load_dotenv()
 
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 
@@ -32,18 +23,23 @@ if not BOT_TOKEN:
 
 
 async def main():
-    bot = Bot(token=BOT_TOKEN, **bot_kwargs)
+    bot = _make_bot(BOT_TOKEN)
     dp = Dispatcher()
-    
-    # Register routers
+
     dp.include_router(user_handlers.router)
     dp.include_router(game_handlers.router)
     dp.include_router(wallet_handlers.router)
     dp.include_router(admin_handlers.router)
-    
-    print("Bot started successfully!")
+
+    print("Bot started successfully!", flush=True)
     await dp.start_polling(bot)
 
 
 if __name__ == '__main__':
+    # When run directly, setup Django first
+    BASE_DIR = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(BASE_DIR))
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'bingo_project.settings')
+    import django
+    django.setup()
     asyncio.run(main())
