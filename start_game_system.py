@@ -14,6 +14,10 @@ def main():
     print("🎮 ETHIO BINGO GAME SYSTEM")
     print("=" * 60)
     print()
+
+    print("👤 Ensuring Django superuser from environment...")
+    subprocess.run([sys.executable, 'manage.py', 'ensure_superuser'], check=False)
+    print()
     
     processes = []
     

@@ -7,16 +7,25 @@ from django.core.management.base import BaseCommand
 class Command(BaseCommand):
     help = "Create a Django superuser during deploy when env vars are provided."
 
+    @staticmethod
+    def _get_first_env(*names: str) -> str:
+        for name in names:
+            value = os.getenv(name, "").strip()
+            if value:
+                return value
+        return ""
+
     def handle(self, *args, **options):
-        username = os.getenv("DJANGO_SUPERUSER_USERNAME", "").strip()
-        email = os.getenv("DJANGO_SUPERUSER_EMAIL", "").strip()
-        password = os.getenv("DJANGO_SUPERUSER_PASSWORD", "").strip()
+        username = self._get_first_env("DJANGO_SUPERUSER_USERNAME", "ADMIN_USERNAME", "SUPERUSER_USERNAME")
+        email = self._get_first_env("DJANGO_SUPERUSER_EMAIL", "ADMIN_EMAIL", "SUPERUSER_EMAIL")
+        password = self._get_first_env("DJANGO_SUPERUSER_PASSWORD", "ADMIN_PASSWORD", "SUPERUSER_PASSWORD")
 
         if not username or not email or not password:
             self.stdout.write(
                 self.style.WARNING(
                     "Skipping superuser creation: set DJANGO_SUPERUSER_USERNAME, "
-                    "DJANGO_SUPERUSER_EMAIL, and DJANGO_SUPERUSER_PASSWORD."
+                    "DJANGO_SUPERUSER_EMAIL, and DJANGO_SUPERUSER_PASSWORD "
+                    "(or ADMIN_USERNAME, ADMIN_EMAIL, ADMIN_PASSWORD)."
                 )
             )
             return

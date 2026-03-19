@@ -47,6 +47,9 @@ def main() -> int:
     port = os.getenv("PORT", "10000")
     workers = os.getenv("WEB_CONCURRENCY", "2")
 
+    print("Ensuring Django superuser from environment...", flush=True)
+    subprocess.run([sys.executable, "manage.py", "ensure_superuser"], check=False)
+
     commands = [
         (
             "web",
