@@ -17,6 +17,7 @@ Including another URLconf
 from django.contrib import admin
 from django.http import HttpResponse
 from django.urls import path, include
+from django.contrib.staticfiles.urls import staticfiles_urlpatterns
 
 
 def favicon(_request):
@@ -46,3 +47,7 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("game/", include('game.urls')),
 ]
+
+# Safety fallback: serve static assets through Django URL patterns if middleware-based
+# static serving is unavailable in the current deployment configuration.
+urlpatterns += staticfiles_urlpatterns()
