@@ -4,7 +4,12 @@ import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 from typing import List, Tuple, Optional
+
+# Always run from the directory containing this script (backend/)
+BASE_DIR = Path(__file__).resolve().parent
+os.chdir(BASE_DIR)
 
 
 def _stream_logs(name: str, process: subprocess.Popen) -> None:
@@ -21,6 +26,7 @@ def _start_process(name: str, command: List[str]) -> Tuple[str, subprocess.Popen
         stderr=subprocess.STDOUT,
         text=True,
         bufsize=1,
+        cwd=str(BASE_DIR),
     )
     thread = threading.Thread(target=_stream_logs, args=(name, process), daemon=True)
     thread.start()
@@ -49,7 +55,7 @@ def main() -> int:
     workers = os.getenv("WEB_CONCURRENCY", "2")
 
     print("Ensuring Django superuser from environment...", flush=True)
-    subprocess.run([sys.executable, "manage.py", "ensure_superuser"], check=False)
+    subprocess.run([sys.executable, "manage.py", "ensure_superuser"], check=False, cwd=str(BASE_DIR))
 
     # Critical: web server must stay alive
     # Non-critical: engine and bot can crash and restart

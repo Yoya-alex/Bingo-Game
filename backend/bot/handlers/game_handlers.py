@@ -177,22 +177,36 @@ async def play_bingo(message: Message):
     
     # Generate web app URL
     access_token = create_user_access_token(user.telegram_id)
-    web_url = f"{settings.REACT_APP_URL}/home/{user.telegram_id}/?token={access_token}"
+    react_url = settings.REACT_APP_URL.rstrip('/')
+    web_url = f"{react_url}/home/{user.telegram_id}/?token={access_token}"
     
-    game_text = (
-        f"<b>🎮 BINGO GAME</b>\n\n"
-        f"💰 Your Balance: {wallet.total_balance} Birr\n"
-        f"💵 Card Price: {settings.CARD_PRICE} Birr\n\n"
-        f"<b>📋 To play the game:</b>\n\n"
-        f"1️⃣ Copy this URL:\n"
-        f"<code>{web_url}</code>\n\n"
-        f"2️⃣ Paste it in your browser\n\n"
-        f"3️⃣ Select your card from 400 available cards!\n\n"
-        f"<i>💡 Tip: Long press the URL above to copy it</i>\n\n"
-        f"<i>Note: For production, we'll use a public domain that works with Telegram buttons</i>"
-    )
+    # Use WebApp button if URL is HTTPS (production), otherwise send as text link
+    is_https = web_url.startswith("https://")
     
-    await message.answer(game_text, reply_markup=main_menu_keyboard())
+    if is_https:
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(
+                text="🎮 Open Bingo Game",
+                web_app=WebAppInfo(url=web_url)
+            )
+        ]])
+        game_text = (
+            f"<b>🎮 BINGO GAME</b>\n\n"
+            f"💰 Your Balance: {wallet.total_balance} Birr\n"
+            f"💵 Card Price: {settings.CARD_PRICE} Birr\n\n"
+            f"Tap the button below to open the game!"
+        )
+        await message.answer(game_text, reply_markup=keyboard)
+    else:
+        game_text = (
+            f"<b>🎮 BINGO GAME</b>\n\n"
+            f"💰 Your Balance: {wallet.total_balance} Birr\n"
+            f"💵 Card Price: {settings.CARD_PRICE} Birr\n\n"
+            f"<b>📋 Open this link to play:</b>\n"
+            f"<code>{web_url}</code>\n\n"
+            f"<i>💡 Long press the URL above to copy it</i>"
+        )
+        await message.answer(game_text, reply_markup=main_menu_keyboard())
 
 
 @router.callback_query(F.data.startswith("cards_page:"))
