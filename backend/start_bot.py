@@ -11,7 +11,8 @@ BASE_DIR = Path(__file__).resolve().parent
 sys.path.append(str(BASE_DIR))
 
 # Check if .env exists
-if not os.path.exists('.env'):
+env_path = BASE_DIR / '.env'
+if not env_path.exists():
     print("❌ .env file not found!")
     print("Please create .env file and add your BOT_TOKEN")
     print("\nExample:")
@@ -20,7 +21,7 @@ if not os.path.exists('.env'):
 
 # Check if BOT_TOKEN is set
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(env_path)
 
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 if not BOT_TOKEN or BOT_TOKEN == 'YOUR_BOT_TOKEN_HERE':

@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Optional
 
 from django.conf import settings
 from django.db import transaction as db_transaction
@@ -10,7 +11,7 @@ from users.models import User, Referral, ReferralEvent
 from wallet.models import Wallet, Transaction
 
 
-def _resolve_start_param(start_param: str) -> str | None:
+def _resolve_start_param(start_param: str) -> Optional[str]:
     if not start_param:
         return None
     start_param = start_param.strip()
@@ -22,7 +23,7 @@ def _resolve_start_param(start_param: str) -> str | None:
     return code
 
 
-def register_referral_for_new_user(new_user: User, start_param: str | None):
+def register_referral_for_new_user(new_user: User, start_param: Optional[str]):
     invite_code = _resolve_start_param(start_param or "")
     if not invite_code:
         return None

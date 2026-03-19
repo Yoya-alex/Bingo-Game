@@ -5,6 +5,7 @@ from aiogram.exceptions import TelegramForbiddenError
 from django.conf import settings
 from asgiref.sync import sync_to_async
 from urllib.parse import quote_plus
+from typing import Optional
 
 from users.models import User
 from wallet.models import Wallet, Transaction
@@ -16,7 +17,7 @@ from bot.utils.referral_service import register_referral_for_new_user, get_user_
 router = Router()
 
 
-def _normalize_bot_username(raw_value: str | None) -> str:
+def _normalize_bot_username(raw_value: Optional[str]) -> str:
     if not raw_value:
         return ""
     value = raw_value.strip()

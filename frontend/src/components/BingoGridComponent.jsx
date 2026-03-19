@@ -42,7 +42,7 @@ export default function BingoGridComponent({
             interactive &&
             markSource === "marked" &&
             !isFree &&
-            Number(cell) === Number(clickableNumber) &&
+            calledSet.has(cell) &&  // Allow clicking any called number
             !markedSet.has(cell);
 
           return (

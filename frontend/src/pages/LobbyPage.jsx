@@ -136,6 +136,14 @@ export default function LobbyPage() {
       notify("error", "Card selection is closed for this round.");
       return;
     }
+    
+    // Check if user has sufficient balance
+    const requiredBalance = data.stake || preferredStake;
+    if (data.wallet_balance < requiredBalance) {
+      notify("error", `Insufficient balance! You need ${requiredBalance} Birr to play. Please deposit first.`);
+      return;
+    }
+    
     if (isSelecting) {
       return;
     }
