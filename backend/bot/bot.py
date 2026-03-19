@@ -11,9 +11,15 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'bingo_project.settings')
 django.setup()
 
 from aiogram import Bot, Dispatcher
-from aiogram.client.default import DefaultBotProperties   # pyright: ignore[reportMissingImports]
 from aiogram.enums import ParseMode
 from dotenv import load_dotenv
+
+try:
+    from aiogram.client.default import DefaultBotProperties
+    bot_kwargs = {"default": DefaultBotProperties(parse_mode=ParseMode.HTML)}
+except ImportError:
+    # aiogram < 3.4
+    bot_kwargs = {"parse_mode": ParseMode.HTML}
 
 from bot.handlers import user_handlers, game_handlers, wallet_handlers, admin_handlers
 
@@ -26,7 +32,7 @@ if not BOT_TOKEN:
 
 
 async def main():
-    bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    bot = Bot(token=BOT_TOKEN, **bot_kwargs)
     dp = Dispatcher()
     
     # Register routers
