@@ -4,6 +4,7 @@ import subprocess
 import sys
 import threading
 import time
+from typing import List, Tuple
 
 
 def _stream_logs(name: str, process: subprocess.Popen) -> None:
@@ -13,7 +14,7 @@ def _stream_logs(name: str, process: subprocess.Popen) -> None:
         print(f"[{name}] {line.rstrip()}", flush=True)
 
 
-def _start_process(name: str, command: list[str]) -> tuple[str, subprocess.Popen]:
+def _start_process(name: str, command: List[str]) -> Tuple[str, subprocess.Popen]:
     process = subprocess.Popen(
         command,
         stdout=subprocess.PIPE,
@@ -26,7 +27,7 @@ def _start_process(name: str, command: list[str]) -> tuple[str, subprocess.Popen
     return name, process
 
 
-def _stop_all(processes: list[tuple[str, subprocess.Popen]]) -> None:
+def _stop_all(processes: List[Tuple[str, subprocess.Popen]]) -> None:
     for name, process in processes:
         if process.poll() is None:
             print(f"Stopping {name}...", flush=True)
@@ -68,7 +69,7 @@ def main() -> int:
         ("bot", [sys.executable, "start_bot.py"]),
     ]
 
-    processes: list[tuple[str, subprocess.Popen]] = []
+    processes: List[Tuple[str, subprocess.Popen]] = []
     stopping = False
 
     def _handle_signal(signum, _frame):
