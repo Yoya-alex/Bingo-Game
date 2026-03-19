@@ -28,6 +28,7 @@ print("🚀 Starting Bingo Bot...")
 print("\nPress Ctrl+C to stop\n")
 
 # Start bot
+import traceback
 from bot.bot import main
 import asyncio
 
@@ -35,3 +36,7 @@ try:
     asyncio.run(main())
 except KeyboardInterrupt:
     print("\n\n👋 Bot stopped")
+except Exception as e:
+    print(f"❌ Bot crashed with error: {e}", flush=True)
+    traceback.print_exc()
+    sys.exit(1)

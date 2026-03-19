@@ -132,8 +132,9 @@ def main() -> int:
                 print(f"[bot] Bot exited with code {code}.", flush=True)
                 if restart_counts["bot"] < 5:
                     restart_counts["bot"] += 1
-                    print(f"[bot] Restarting bot (attempt {restart_counts['bot']})...", flush=True)
-                    time.sleep(5)
+                    wait = restart_counts["bot"] * 10  # 10s, 20s, 30s...
+                    print(f"[bot] Restarting bot (attempt {restart_counts['bot']}) in {wait}s...", flush=True)
+                    time.sleep(wait)
                     bot_name, bot_proc = _start_process("bot", bot_command)
                     processes = [(n, p) for n, p in processes if n != "bot"]
                     processes.append((bot_name, bot_proc))
