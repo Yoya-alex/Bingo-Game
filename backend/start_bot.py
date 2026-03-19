@@ -1,6 +1,6 @@
 """
 Quick start script for Bingo Bot
-Run this after setting up your BOT_TOKEN in .env
+Run this after setting up your BOT_TOKEN in .env or environment variables
 """
 import os
 import sys
@@ -10,24 +10,17 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 sys.path.append(str(BASE_DIR))
 
-# Check if .env exists
+# Load .env file if it exists (local development)
+from dotenv import load_dotenv
 env_path = BASE_DIR / '.env'
-if not env_path.exists():
-    print("❌ .env file not found!")
-    print("Please create .env file and add your BOT_TOKEN")
-    print("\nExample:")
-    print("BOT_TOKEN=your_bot_token_here")
-    sys.exit(1)
+if env_path.exists():
+    load_dotenv(env_path)
 
 # Check if BOT_TOKEN is set
-from dotenv import load_dotenv
-load_dotenv(env_path)
-
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 if not BOT_TOKEN or BOT_TOKEN == 'YOUR_BOT_TOKEN_HERE':
     print("❌ BOT_TOKEN not configured!")
-    print("Please edit .env file and add your actual bot token")
-    print("\nGet your token from @BotFather on Telegram")
+    print("Please set BOT_TOKEN in your environment variables or .env file")
     sys.exit(1)
 
 print("✅ Configuration OK")

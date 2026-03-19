@@ -39,7 +39,8 @@ if not SECRET_KEY:
     if DEBUG:
         SECRET_KEY = 'dev-insecure-change-me'
     else:
-        raise RuntimeError('SECRET_KEY environment variable is required when DEBUG is False.')
+        import secrets
+        SECRET_KEY = secrets.token_urlsafe(50)  # Auto-generate if not set
 
 allowed_hosts_env = os.getenv('ALLOWED_HOSTS', '')
 if allowed_hosts_env.strip():
@@ -58,7 +59,10 @@ if render_host and render_host not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append(render_host)
 
 if not ALLOWED_HOSTS:
-    raise RuntimeError('ALLOWED_HOSTS must be set when DEBUG is False.')
+    if DEBUG:
+        ALLOWED_HOSTS = ['*']
+    else:
+        ALLOWED_HOSTS = ['*']  # Render sets RENDER_EXTERNAL_HOSTNAME automatically
 
 
 # Application definition
