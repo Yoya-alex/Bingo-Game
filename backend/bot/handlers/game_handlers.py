@@ -178,7 +178,7 @@ async def play_bingo(message: Message):
     # Generate web app URL
     access_token = create_user_access_token(user.telegram_id)
     react_url = settings.REACT_APP_URL.rstrip('/')
-    web_url = f"{react_url}/home/{user.telegram_id}?token={access_token}"
+    web_url = f"{react_url}/?telegram_id={user.telegram_id}&token={access_token}"
     
     # Use WebApp button if URL is HTTPS (production), otherwise send as text link
     is_https = web_url.startswith("https://")

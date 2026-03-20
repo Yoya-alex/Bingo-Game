@@ -23,6 +23,22 @@ function getInitialTheme() {
   return "dark";
 }
 
+function buildHomeTargetFromQuery() {
+  if (typeof window === "undefined") {
+    return "/home/0";
+  }
+
+  const params = new URLSearchParams(window.location.search || "");
+  const telegramId = (params.get("telegram_id") || params.get("telegramId") || "0").trim() || "0";
+  const token = (params.get("token") || "").trim();
+
+  if (!token) {
+    return `/home/${telegramId}`;
+  }
+
+  return `/home/${telegramId}?token=${encodeURIComponent(token)}`;
+}
+
 export default function App() {
   const [theme, setTheme] = useState(getInitialTheme);
 
@@ -45,6 +61,7 @@ export default function App() {
         {theme === "dark" ? "☀️ Light" : "🌙 Night"}
       </button>
       <Routes>
+        <Route path="/" element={<Navigate to={buildHomeTargetFromQuery()} replace />} />
         <Route path="/home/:telegramId" element={<HomePage />} />
         <Route path="/home/:telegramId/" element={<HomePage />} />
         <Route path="/profile/:telegramId" element={<ProfilePage />} />
