@@ -194,7 +194,9 @@ async def play_bingo(message: Message):
             f"<b>🎮 BINGO GAME</b>\n\n"
             f"💰 Your Balance: {wallet.total_balance} Birr\n"
             f"💵 Card Price: {settings.CARD_PRICE} Birr\n\n"
-            f"Tap the button below to open the game!"
+            f"Tap the button below to open the game!\n\n"
+            f"<b>🔗 Direct Link:</b>\n"
+            f"<code>{web_url}</code>"
         )
         await message.answer(game_text, reply_markup=keyboard)
     else:
