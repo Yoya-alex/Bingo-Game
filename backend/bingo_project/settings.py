@@ -175,7 +175,7 @@ ADMIN_IDS = [int(id.strip()) for id in os.getenv('ADMIN_IDS', '').split(',') if 
 
 # React UI Configuration
 USE_REACT_UI = os.getenv('USE_REACT_UI', 'True') == 'True'
-REACT_APP_URL = os.getenv('REACT_APP_URL', 'http://localhost:5173')
+REACT_APP_URL = os.getenv('REACT_APP_URL', 'https://bingo-game-1-5kj6.onrender.com')
 
 web_allowed_origins_env = os.getenv('WEB_ALLOWED_ORIGINS', '')
 if web_allowed_origins_env.strip():
