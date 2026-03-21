@@ -53,6 +53,10 @@ export default function EngagementPage() {
     setTimeout(() => setPromoOverlay(EMPTY_PROMO_OVERLAY), 2200);
   }
 
+  function hidePromoOverlay() {
+    setPromoOverlay(EMPTY_PROMO_OVERLAY);
+  }
+
   async function loadAll() {
     const [missions, promos, events] = await Promise.all([
       fetchJson(`/game/api/missions-state/${telegramId}/`),
@@ -139,8 +143,8 @@ export default function EngagementPage() {
         <NotificationComponent notification={notification} />
 
         {promoOverlay.show && (
-          <div className="engagement-overlay" role="status" aria-live="polite">
-            <div className={`engagement-overlay-card ${promoOverlay.type}`}>
+          <div className="engagement-overlay" role="status" aria-live="polite" onClick={hidePromoOverlay}>
+            <div className={`engagement-overlay-card ${promoOverlay.type}`} onClick={(event) => event.stopPropagation()}>
               <h3>{promoOverlay.type === "success" ? "Promo Applied" : "Promo Unavailable"}</h3>
               <p>{promoOverlay.message}</p>
             </div>

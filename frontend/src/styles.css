@@ -486,22 +486,123 @@ body::after {
   font-size: 1rem;
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+@keyframes button-glow-breathe {
+  0% {
+    box-shadow: 0 8px 18px color-mix(in srgb, var(--accent-2) 18%, transparent);
+    filter: saturate(1);
+  }
+  50% {
+    box-shadow: 0 12px 28px color-mix(in srgb, var(--accent-2) 34%, transparent);
+    filter: saturate(1.08);
+  }
+  100% {
+    box-shadow: 0 8px 18px color-mix(in srgb, var(--accent-2) 18%, transparent);
+    filter: saturate(1);
+  }
+}
+
+@keyframes button-shimmer-sweep {
+  0% {
+    transform: translateX(-180%) skewX(-20deg);
+    opacity: 0;
+  }
+  22% {
+    opacity: 0.88;
+  }
+  100% {
+    transform: translateX(180%) skewX(-20deg);
+    opacity: 0;
+  }
+}
+
+.btn::after,
+.lobby-action-btn::after,
+.game-info-btn::after,
+.trophy-filter-chip::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -58%;
+  width: 56%;
+  border-radius: inherit;
+  clip-path: inset(0 round inherit);
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, white 26%, transparent) 28%,
+    color-mix(in srgb, white 92%, transparent) 50%,
+    color-mix(in srgb, white 22%, transparent) 72%,
+    transparent 100%
+  );
+  opacity: 0;
+  transform: translateX(-180%) skewX(-20deg);
+}
+
+.lobby-action-btn,
+.game-info-btn,
+.trophy-filter-chip {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.btn-primary:not(:disabled)::after,
+.btn-secondary:not(:disabled)::after,
+.btn-success:not(:disabled)::after,
+.lobby-action-btn:not(.disabled)::after,
+.game-info-btn::after {
+  opacity: 0.58;
+  animation: button-shimmer-sweep 3s linear infinite;
+}
+
+.btn:hover:not(:disabled)::after,
+.btn:focus-visible::after,
+.lobby-action-btn:hover:not(.disabled)::after,
+.lobby-action-btn:focus-visible::after,
+.game-info-btn:hover::after,
+.game-info-btn:focus-visible::after,
+.trophy-filter-chip:hover::after,
+.trophy-filter-chip:focus-visible::after {
+  animation: button-shimmer-sweep 0.9s ease-out;
 }
 
 .btn-primary {
   background: var(--accent-1);
   color: white;
   box-shadow: 0 10px 25px rgba(255, 122, 89, 0.35);
+  animation: button-glow-breathe 2.6s ease-in-out infinite;
 }
 
 .btn-secondary {
   background: var(--accent-2);
   color: var(--btn-secondary-ink);
+  animation: button-glow-breathe 2.8s ease-in-out infinite;
 }
 
 .btn-success {
   background: var(--success);
   color: white;
+  animation: button-glow-breathe 2.5s ease-in-out infinite;
+}
+
+.btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 14px 26px color-mix(in srgb, var(--accent-2) 32%, transparent);
+}
+
+.btn:focus-visible,
+.lobby-action-btn:focus-visible,
+.game-info-btn:focus-visible,
+.trophy-filter-chip:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-2) 72%, white 28%);
+  outline-offset: 2px;
 }
 
 .btn:disabled {
@@ -530,6 +631,11 @@ body::after {
 .notification.success {
   background: var(--notification-success-bg);
   color: var(--notification-success-ink);
+}
+
+.profile-section-notice {
+  margin-top: 0;
+  margin-bottom: 10px;
 }
 
 .page-actions {
@@ -1064,6 +1170,7 @@ body.night-mode .stat-value {
   background: linear-gradient(130deg, color-mix(in srgb, var(--accent-1) 62%, #f97316), color-mix(in srgb, var(--accent-2) 56%, #0ea5e9));
   color: #1f2a32;
   box-shadow: 0 8px 16px color-mix(in srgb, var(--accent-2) 24%, transparent);
+  animation: button-glow-breathe 2.4s ease-in-out infinite;
 }
 
 .trophy-filter-chip:hover {
@@ -2130,6 +2237,7 @@ body.night-mode .stat-value {
   cursor: pointer;
   box-shadow: 0 8px 18px color-mix(in srgb, var(--accent-2) 25%, transparent);
   transition: transform 0.2s ease, box-shadow 0.2s ease, filter 0.2s ease;
+  animation: button-glow-breathe 2.5s ease-in-out infinite;
 }
 
 .lobby-action-btn:hover:not(.disabled) {
@@ -2164,6 +2272,7 @@ body.night-mode .stat-value {
   padding: 0 16px;
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
+  animation: button-glow-breathe 2.7s ease-in-out infinite;
 }
 
 .game-info-btn:hover {
@@ -2280,6 +2389,27 @@ body.night-mode .stat-value {
   background: linear-gradient(130deg, color-mix(in srgb, var(--accent-2) 80%, #0ea5e9), color-mix(in srgb, var(--accent-1) 56%, #fb7185));
   border-color: color-mix(in srgb, white 36%, transparent);
   box-shadow: 0 8px 14px color-mix(in srgb, var(--accent-2) 30%, transparent);
+  animation: button-glow-breathe 2.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-primary,
+  .btn-secondary,
+  .btn-success,
+  .trophy-filter-chip.active,
+  .lobby-action-btn,
+  .game-info-btn,
+  .bottom-nav-item.active .bottom-nav-icon {
+    animation: none;
+  }
+
+  .btn::after,
+  .lobby-action-btn::after,
+  .game-info-btn::after,
+  .trophy-filter-chip::after {
+    animation: none;
+    opacity: 0;
+  }
 }
 
 .bottom-nav-item.active .bottom-nav-label {
@@ -2816,6 +2946,50 @@ body.night-mode .stat-value {
 }
 
 @media (max-width: 420px) {
+  .trophy-card .profile-table-wrap {
+    overflow-x: hidden;
+    padding: 4px;
+  }
+
+  .trophy-card .profile-table {
+    width: 100%;
+    min-width: 0;
+    table-layout: fixed;
+  }
+
+  .trophy-card .profile-table th,
+  .trophy-card .profile-table td {
+    font-size: 0.56rem;
+    padding: 5px 2px;
+    line-height: 1.1;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    white-space: normal;
+  }
+
+  .trophy-filter-chip {
+    min-height: 26px;
+    padding: 0 8px;
+    font-size: 0.58rem;
+  }
+
+  .trophy-leaderboard .profile-table th:nth-child(7),
+  .trophy-leaderboard .profile-table td:nth-child(7),
+  .trophy-leaderboard .profile-table th:nth-child(8),
+  .trophy-leaderboard .profile-table td:nth-child(8) {
+    display: none;
+  }
+
+  .trophy-recent-wins .profile-table th:nth-child(5),
+  .trophy-recent-wins .profile-table td:nth-child(5) {
+    display: none;
+  }
+
+  .trophy-most-active .profile-table th:nth-child(1),
+  .trophy-most-active .profile-table td:nth-child(1) {
+    width: 62%;
+  }
+
   .engagement-card {
     padding-bottom: 102px;
   }

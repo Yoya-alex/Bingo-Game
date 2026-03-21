@@ -36,6 +36,10 @@ export default function ProfilePage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState(EMPTY_NOTIFICATION);
+  const [sectionNotifications, setSectionNotifications] = useState({
+    referrals: EMPTY_NOTIFICATION,
+    support: EMPTY_NOTIFICATION,
+  });
   const [preferences, setPreferences] = useState(() => {
     try {
       const saved = window.localStorage.getItem("bingo-profile-preferences");
@@ -76,6 +80,20 @@ export default function ProfilePage() {
     setTimeout(() => setNotification(EMPTY_NOTIFICATION), 3500);
   }
 
+  function notifySection(section, type, message) {
+    setSectionNotifications((prev) => ({
+      ...prev,
+      [section]: { type, message },
+    }));
+
+    setTimeout(() => {
+      setSectionNotifications((prev) => ({
+        ...prev,
+        [section]: EMPTY_NOTIFICATION,
+      }));
+    }, 3500);
+  }
+
   function togglePreference(key) {
     setPreferences((prev) => ({ ...prev, [key]: !prev[key] }));
   }
@@ -83,12 +101,12 @@ export default function ProfilePage() {
   function copyInviteCode() {
     const code = data.referrals?.invite_code;
     if (!code) {
-      notify("error", "Invite code not available.");
+      notifySection("referrals", "error", "Invite code not available.");
       return;
     }
     navigator.clipboard.writeText(code)
-      .then(() => notify("success", "Invite code copied."))
-      .catch(() => notify("error", "Unable to copy invite code."));
+      .then(() => notifySection("referrals", "success", "Invite code copied."))
+      .catch(() => notifySection("referrals", "error", "Unable to copy invite code."));
   }
 
   const achievements = useMemo(() => {
@@ -168,6 +186,11 @@ export default function ProfilePage() {
 
         <section className="component profile-section section-referrals">
           <h2 className="component-title">Referrals</h2>
+          {sectionNotifications.referrals?.message && (
+            <div className={`notification show ${sectionNotifications.referrals.type} profile-section-notice`}>
+              {sectionNotifications.referrals.message}
+            </div>
+          )}
           <div className="profile-grid profile-grid-4">
             <div className="profile-metric metric-ref-code"><span>Invite Code</span><strong>{data.referrals?.invite_code || "-"}</strong></div>
             <div className="profile-metric metric-ref-total"><span>Total Referred</span><strong>{data.referrals?.referred_count || 0}</strong></div>
@@ -270,6 +293,11 @@ export default function ProfilePage() {
 
         <section className="component profile-section section-support">
           <h2 className="component-title">Support</h2>
+          {sectionNotifications.support?.message && (
+            <div className={`notification show ${sectionNotifications.support.type} profile-section-notice`}>
+              {sectionNotifications.support.message}
+            </div>
+          )}
           <div className="page-actions">
             <button
               type="button"
@@ -281,7 +309,7 @@ export default function ProfilePage() {
             <button
               type="button"
               className="btn btn-secondary"
-              onClick={() => notify("success", "Issue report noted. Please contact support with details.")}
+              onClick={() => notifySection("support", "success", "Issue report noted. Please contact support with details.")}
             >
               Report Issue
             </button>
