@@ -2218,7 +2218,7 @@ body.night-mode .stat-value {
   bottom: 0;
   min-height: 72px;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 4px;
   padding: 8px;
   background: color-mix(in srgb, var(--page-grad-3) 72%, var(--surface-1) 28%);
@@ -2284,6 +2284,228 @@ body.night-mode .stat-value {
 
 .bottom-nav-item.active .bottom-nav-label {
   color: #ffffff;
+}
+
+.engagement-card {
+  padding-bottom: 96px;
+}
+
+.engagement-header {
+  border-left: 6px solid color-mix(in srgb, var(--accent-2) 50%, var(--accent-1));
+  background:
+    radial-gradient(110% 140% at 86% 0%, color-mix(in srgb, var(--accent-2) 16%, transparent), transparent 62%),
+    linear-gradient(140deg, color-mix(in srgb, var(--surface-1) 92%, var(--accent-2) 8%), color-mix(in srgb, var(--surface-2) 94%, var(--accent-1) 8%));
+}
+
+.section-engagement-streak {
+  --section-accent: #14b8a6;
+}
+
+.section-engagement-missions {
+  --section-accent: #3b82f6;
+}
+
+.section-engagement-promos {
+  --section-accent: #f59e0b;
+}
+
+.section-engagement-events {
+  --section-accent: #22c55e;
+}
+
+.engagement-claim-banner {
+  margin-bottom: 12px;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: linear-gradient(130deg, color-mix(in srgb, var(--success) 22%, transparent), color-mix(in srgb, var(--accent-2) 16%, transparent));
+  border: 1px solid color-mix(in srgb, var(--success) 45%, transparent);
+  color: var(--ink-1);
+  font-weight: 700;
+  font-size: 0.86rem;
+}
+
+.engagement-promo-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.engagement-promo-input {
+  flex: 1 1 240px;
+  min-height: 44px;
+  border-radius: 10px;
+  border: 1px solid var(--border-soft);
+  background: linear-gradient(140deg, color-mix(in srgb, var(--surface-1) 96%, transparent), color-mix(in srgb, var(--surface-2) 95%, transparent));
+  color: var(--ink-1);
+  padding: 0 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.engagement-promo-input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, #f59e0b 46%, var(--border-soft));
+  box-shadow: 0 0 0 3px color-mix(in srgb, #f59e0b 20%, transparent);
+}
+
+.engagement-tier-chip,
+.engagement-balance-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0 7px;
+  margin-left: 6px;
+}
+
+.engagement-tier-chip.tier-common {
+  color: color-mix(in srgb, #0ea5e9 80%, var(--ink-1));
+  background: color-mix(in srgb, #0ea5e9 18%, transparent);
+  border-color: color-mix(in srgb, #0ea5e9 34%, transparent);
+}
+
+.engagement-tier-chip.tier-rare {
+  color: color-mix(in srgb, #f59e0b 80%, var(--ink-1));
+  background: color-mix(in srgb, #f59e0b 18%, transparent);
+  border-color: color-mix(in srgb, #f59e0b 34%, transparent);
+}
+
+.engagement-tier-chip.tier-legendary {
+  color: color-mix(in srgb, #ec4899 78%, var(--ink-1));
+  background: color-mix(in srgb, #ec4899 16%, transparent);
+  border-color: color-mix(in srgb, #ec4899 34%, transparent);
+}
+
+.engagement-balance-chip.balance-bonus {
+  color: color-mix(in srgb, #8b5cf6 80%, var(--ink-1));
+  background: color-mix(in srgb, #8b5cf6 15%, transparent);
+  border-color: color-mix(in srgb, #8b5cf6 34%, transparent);
+}
+
+.engagement-balance-chip.balance-main {
+  color: color-mix(in srgb, #22c55e 80%, var(--ink-1));
+  background: color-mix(in srgb, #22c55e 15%, transparent);
+  border-color: color-mix(in srgb, #22c55e 34%, transparent);
+}
+
+.engagement-balance-chip.balance-winnings {
+  color: color-mix(in srgb, #0ea5e9 80%, var(--ink-1));
+  background: color-mix(in srgb, #0ea5e9 15%, transparent);
+  border-color: color-mix(in srgb, #0ea5e9 34%, transparent);
+}
+
+.wallet-note-inline {
+  margin-top: 4px;
+  color: var(--ink-2);
+  font-size: 0.78rem;
+}
+
+.engagement-event-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.engagement-event-col h3 {
+  margin-bottom: 8px;
+  font-size: 0.92rem;
+  color: var(--ink-2);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+.engagement-event-card {
+  border: 1px solid var(--border-soft);
+  background: linear-gradient(140deg, color-mix(in srgb, var(--surface-1) 94%, transparent), color-mix(in srgb, var(--surface-2) 94%, transparent));
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+
+.engagement-event-card.live {
+  border-color: color-mix(in srgb, var(--success) 42%, var(--border-soft));
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--success) 16%, transparent);
+}
+
+.engagement-event-card.event-happy_hour {
+  border-left: 4px solid color-mix(in srgb, #f59e0b 74%, transparent);
+}
+
+.engagement-event-card.event-flash_promo {
+  border-left: 4px solid color-mix(in srgb, #ec4899 74%, transparent);
+}
+
+.engagement-event-card.event-double_reward {
+  border-left: 4px solid color-mix(in srgb, #22c55e 74%, transparent);
+}
+
+.engagement-event-title {
+  font-weight: 800;
+  color: var(--ink-1);
+  margin-bottom: 4px;
+}
+
+.engagement-event-meta {
+  color: var(--ink-2);
+  font-size: 0.82rem;
+}
+
+.engagement-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: color-mix(in srgb, var(--page-grad-3) 62%, transparent);
+  backdrop-filter: blur(2px);
+}
+
+.engagement-overlay-card {
+  width: min(420px, 100%);
+  border-radius: 18px;
+  border: 1px solid var(--border-soft);
+  background: linear-gradient(145deg, color-mix(in srgb, var(--surface-1) 96%, transparent), color-mix(in srgb, var(--surface-2) 95%, transparent));
+  box-shadow: 0 20px 40px color-mix(in srgb, var(--page-grad-3) 34%, transparent);
+  padding: 18px 18px 16px;
+  animation: home-fade-in 0.2s ease;
+}
+
+.engagement-overlay-card h3 {
+  font-size: 1rem;
+  margin-bottom: 7px;
+}
+
+.engagement-overlay-card p {
+  font-size: 0.92rem;
+  color: var(--ink-1);
+  line-height: 1.35;
+}
+
+.engagement-overlay-card.success {
+  border-color: color-mix(in srgb, var(--success) 52%, var(--border-soft));
+  background: linear-gradient(145deg, color-mix(in srgb, var(--success) 14%, var(--surface-1)), color-mix(in srgb, var(--accent-2) 10%, var(--surface-2)));
+}
+
+.engagement-overlay-card.success h3 {
+  color: color-mix(in srgb, var(--success) 76%, var(--ink-1));
+}
+
+.engagement-overlay-card.error {
+  border-color: color-mix(in srgb, var(--danger) 52%, var(--border-soft));
+  background: linear-gradient(145deg, color-mix(in srgb, var(--danger) 11%, var(--surface-1)), color-mix(in srgb, var(--accent-1) 12%, var(--surface-2)));
+}
+
+.engagement-overlay-card.error h3 {
+  color: color-mix(in srgb, var(--danger) 74%, var(--ink-1));
 }
 
 @keyframes home-fade-in {
@@ -2386,6 +2608,10 @@ body.night-mode .stat-value {
 
   .bottom-nav {
     box-shadow: 0 -10px 22px color-mix(in srgb, var(--accent-2) 20%, transparent);
+  }
+
+  .bottom-nav-label {
+    font-size: 0.64rem;
   }
 
   .bottom-nav-item {
@@ -2570,9 +2796,82 @@ body.night-mode .stat-value {
     width: 14px;
     height: 14px;
   }
+
+  .engagement-event-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .engagement-overlay-card {
+    padding: 14px 14px 13px;
+    border-radius: 14px;
+  }
+
+  .engagement-overlay-card h3 {
+    font-size: 0.9rem;
+  }
+
+  .engagement-overlay-card p {
+    font-size: 0.82rem;
+  }
 }
 
 @media (max-width: 420px) {
+  .engagement-card {
+    padding-bottom: 102px;
+  }
+
+  .engagement-card .profile-table-wrap {
+    overflow-x: hidden;
+    padding: 4px;
+  }
+
+  .engagement-card .profile-table {
+    width: 100%;
+    min-width: 0;
+    table-layout: fixed;
+  }
+
+  .engagement-card .profile-table th,
+  .engagement-card .profile-table td {
+    font-size: 0.58rem;
+    padding: 5px 2px;
+    line-height: 1.12;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    white-space: normal;
+  }
+
+  .engagement-card .lobby-action-btn {
+    min-height: 30px;
+    padding: 0 3px;
+    font-size: 0.56rem;
+    white-space: normal;
+  }
+
+  .engagement-card .status-chip {
+    min-height: 18px;
+    padding: 0 5px;
+    font-size: 0.54rem;
+    white-space: normal;
+  }
+
+  .engagement-card .wallet-note-inline {
+    font-size: 0.66rem;
+    line-height: 1.08;
+  }
+
+  .engagement-tier-chip,
+  .engagement-balance-chip {
+    font-size: 0.56rem;
+    min-height: 17px;
+    padding: 0 5px;
+    margin-left: 4px;
+  }
+
+  .engagement-promo-input {
+    flex-basis: 100%;
+  }
+
   .profile-table {
     min-width: 80px;
   }

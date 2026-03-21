@@ -113,6 +113,9 @@ export default function TrophyPage() {
         <header className="component trophy-header">
           <h1 className="title trophy-title">Top Winners</h1>
           <p className="subtitle">Leaderboard refresh: {formatDate(data.refresh_time)}</p>
+          {data.filters?.period === "season" && data.filters?.season_name && (
+            <p className="subtitle">Season: {data.filters.season_name}</p>
+          )}
         </header>
 
         <NotificationComponent notification={notification} />
@@ -193,6 +196,7 @@ export default function TrophyPage() {
                     <th>Wins</th>
                     <th>Games</th>
                     <th>Win Rate</th>
+                    <th>Season Pts</th>
                     <th>Biggest Win</th>
                   </tr>
                 </thead>
@@ -205,6 +209,7 @@ export default function TrophyPage() {
                       <td className="trophy-cell-success">{row.wins}</td>
                       <td className="trophy-cell-active">{row.games_joined}</td>
                       <td className="trophy-cell-rate">{Number(row.win_rate || 0).toFixed(2)}%</td>
+                      <td className="trophy-cell-active">{row.season_points ?? "-"}</td>
                       <td className="trophy-cell-jackpot">{formatBirr(row.biggest_win)}</td>
                     </tr>
                   ))}
@@ -276,6 +281,12 @@ export default function TrophyPage() {
             {(data.tie_break_rules || []).map((rule) => (
               <p key={rule}>{rule}</p>
             ))}
+            {data.season_rules?.point_formula && <p>Season points: {data.season_rules.point_formula}</p>}
+            {data.season_rules?.top_rewards && (
+              <p>
+                Season rewards: 1st {formatBirr(data.season_rules.top_rewards.top_1)}, 2nd {formatBirr(data.season_rules.top_rewards.top_2)}, 3rd {formatBirr(data.season_rules.top_rewards.top_3)}, participation {formatBirr(data.season_rules.top_rewards.participation)}.
+              </p>
+            )}
           </div>
         </section>
 
@@ -295,6 +306,10 @@ export default function TrophyPage() {
           <button type="button" className="bottom-nav-item" onClick={() => navigate(withAuthPath(`/wallet/${telegramId}`))}>
             <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="wallet" /></span>
             <span className="bottom-nav-label">Wallet</span>
+          </button>
+          <button type="button" className="bottom-nav-item" onClick={() => navigate(withAuthPath(`/engagement/${telegramId}`))}>
+            <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="engagement" /></span>
+            <span className="bottom-nav-label">Engage</span>
           </button>
         </nav>
       </div>

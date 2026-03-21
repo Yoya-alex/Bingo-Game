@@ -189,6 +189,9 @@ export default function HomePage() {
           <button type="button" className="game-info-btn" onClick={() => setShowInfoModal(true)}>
             Game Information
           </button>
+          <button type="button" className="game-info-btn" onClick={() => navigate(withAuthPath(`/engagement/${telegramId}`))}>
+            Engagement Center
+          </button>
           <p className="lobby-sync-note">Live updates every {POLL_MS / 1000}s</p>
         </div>
 
@@ -208,6 +211,10 @@ export default function HomePage() {
           <button type="button" className="bottom-nav-item" onClick={() => navigate(withAuthPath(`/wallet/${telegramId}`))}>
             <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="wallet" /></span>
             <span className="bottom-nav-label">Wallet</span>
+          </button>
+          <button type="button" className="bottom-nav-item" onClick={() => navigate(withAuthPath(`/engagement/${telegramId}`))}>
+            <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="engagement" /></span>
+            <span className="bottom-nav-label">Engage</span>
           </button>
         </nav>
       </div>

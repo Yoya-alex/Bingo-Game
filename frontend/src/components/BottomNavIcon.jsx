@@ -29,6 +29,14 @@ export default function BottomNavIcon({ name }) {
     );
   }
 
+  if (name === "engagement") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M12 3 14.2 8.4 20 9.1 15.5 13 16.8 18.7 12 15.8 7.2 18.7 8.5 13 4 9.1 9.8 8.4Z" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       <rect x="4" y="6" width="16" height="12" rx="2" fill="none" stroke="currentColor" strokeWidth="1.8" />

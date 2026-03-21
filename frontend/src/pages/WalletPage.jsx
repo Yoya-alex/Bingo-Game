@@ -207,6 +207,10 @@ export default function WalletPage() {
             <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="wallet" /></span>
             <span className="bottom-nav-label">Wallet</span>
           </button>
+          <button type="button" className="bottom-nav-item" onClick={() => navigate(withAuthPath(`/engagement/${telegramId}`))}>
+            <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="engagement" /></span>
+            <span className="bottom-nav-label">Engage</span>
+          </button>
         </nav>
       </div>
     </div>

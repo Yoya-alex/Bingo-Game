@@ -6,6 +6,7 @@ import PlayPage from "./pages/PlayPage.jsx";
 import ProfilePage from "./pages/ProfilePage.jsx";
 import TrophyPage from "./pages/TrophyPage.jsx";
 import WalletPage from "./pages/WalletPage.jsx";
+import EngagementPage from "./pages/EngagementPage.jsx";
 import { bootstrapAuthToken } from "./utils/auth.js";
 
 const THEME_KEY = "bingo-theme";
@@ -70,6 +71,8 @@ export default function App() {
         <Route path="/trophy/:telegramId/" element={<TrophyPage />} />
         <Route path="/wallet/:telegramId" element={<WalletPage />} />
         <Route path="/wallet/:telegramId/" element={<WalletPage />} />
+        <Route path="/engagement/:telegramId" element={<EngagementPage />} />
+        <Route path="/engagement/:telegramId/" element={<EngagementPage />} />
         <Route path="/lobby/:telegramId" element={<LobbyPage />} />
         <Route path="/lobby/:telegramId/" element={<LobbyPage />} />
         <Route path="/play/:telegramId/:gameId" element={<PlayPage />} />
