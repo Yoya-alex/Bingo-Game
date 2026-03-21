@@ -239,3 +239,271 @@ class BingoCard(models.Model):
     
     def __str__(self):
         return f"Card {self.card_number} - Game {self.game.id} - {self.user.first_name}"
+
+
+class RewardSafetyPolicy(models.Model):
+    daily_reward_cap = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('500.00'))
+    min_seconds_between_rewards = models.IntegerField(default=20)
+    max_reward_redemptions_per_hour = models.IntegerField(default=20)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'reward_safety_policy'
+
+    @classmethod
+    def get_active(cls):
+        policy, _ = cls.objects.get_or_create(pk=1)
+        return policy
+
+    def __str__(self):
+        return f"Reward Safety Policy #{self.pk}"
+
+
+class UserRewardWindow(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reward_windows')
+    reward_date = models.DateField()
+    reward_total = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    redemption_count = models.IntegerField(default=0)
+    last_reward_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'user_reward_window'
+        unique_together = ['user', 'reward_date']
+        indexes = [
+            models.Index(fields=['reward_date']),
+            models.Index(fields=['user', 'reward_date']),
+        ]
+
+    def __str__(self):
+        return f"RewardWindow({self.user_id}, {self.reward_date})"
+
+
+class PromoCode(models.Model):
+    TIER_COMMON = 'common'
+    TIER_RARE = 'rare'
+    TIER_LEGENDARY = 'legendary'
+    TIER_CHOICES = [
+        (TIER_COMMON, 'Common'),
+        (TIER_RARE, 'Rare'),
+        (TIER_LEGENDARY, 'Legendary'),
+    ]
+
+    BALANCE_BONUS = 'bonus'
+    BALANCE_MAIN = 'main'
+    BALANCE_WINNINGS = 'winnings'
+    BALANCE_CHOICES = [
+        (BALANCE_BONUS, 'Bonus Balance'),
+        (BALANCE_MAIN, 'Main Balance'),
+        (BALANCE_WINNINGS, 'Winnings Balance'),
+    ]
+
+    code = models.CharField(max_length=40, unique=True, db_index=True)
+    title = models.CharField(max_length=120, blank=True)
+    tier = models.CharField(max_length=20, choices=TIER_CHOICES, default=TIER_COMMON)
+    reward_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    reward_balance = models.CharField(max_length=20, choices=BALANCE_CHOICES, default=BALANCE_BONUS)
+    starts_at = models.DateTimeField(default=timezone.now)
+    ends_at = models.DateTimeField()
+    max_redemptions = models.IntegerField(default=0)
+    per_user_limit = models.IntegerField(default=1)
+    min_account_age_days = models.IntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    is_visible_in_frontend = models.BooleanField(default=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'promo_codes'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['code']),
+            models.Index(fields=['is_active', 'starts_at', 'ends_at']),
+        ]
+
+    def is_live(self):
+        now = timezone.now()
+        return bool(self.is_active and self.starts_at <= now <= self.ends_at)
+
+    def __str__(self):
+        return f"{self.code} ({self.tier})"
+
+
+class PromoCodeRedemption(models.Model):
+    promo_code = models.ForeignKey(PromoCode, on_delete=models.CASCADE, related_name='redemptions')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='promo_redemptions')
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = 'promo_code_redemptions'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['promo_code', 'created_at']),
+            models.Index(fields=['user', 'created_at']),
+        ]
+
+    def __str__(self):
+        return f"PromoRedemption({self.promo_code_id}, {self.user_id})"
+
+
+class MissionTemplate(models.Model):
+    TYPE_PLAY_GAMES = 'play_games'
+    TYPE_WIN_GAMES = 'win_games'
+    TYPE_REDEEM_PROMO = 'redeem_promo'
+    TYPE_INVITE_USERS = 'invite_users'
+    TYPE_CHOICES = [
+        (TYPE_PLAY_GAMES, 'Play Games'),
+        (TYPE_WIN_GAMES, 'Win Games'),
+        (TYPE_REDEEM_PROMO, 'Redeem Promo'),
+        (TYPE_INVITE_USERS, 'Invite Users'),
+    ]
+
+    PERIOD_DAILY = 'daily'
+    PERIOD_WEEKLY = 'weekly'
+    PERIOD_CHOICES = [
+        (PERIOD_DAILY, 'Daily'),
+        (PERIOD_WEEKLY, 'Weekly'),
+    ]
+
+    key = models.CharField(max_length=60, unique=True, db_index=True)
+    title = models.CharField(max_length=120)
+    description = models.CharField(max_length=255, blank=True)
+    mission_type = models.CharField(max_length=30, choices=TYPE_CHOICES)
+    period = models.CharField(max_length=10, choices=PERIOD_CHOICES, default=PERIOD_DAILY)
+    target_value = models.IntegerField(default=1)
+    reward_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    reward_balance = models.CharField(max_length=20, choices=PromoCode.BALANCE_CHOICES, default=PromoCode.BALANCE_BONUS)
+    is_active = models.BooleanField(default=True)
+    sort_order = models.IntegerField(default=100)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'mission_templates'
+        ordering = ['sort_order', 'id']
+        indexes = [
+            models.Index(fields=['is_active', 'period']),
+            models.Index(fields=['mission_type']),
+        ]
+
+    def __str__(self):
+        return f"{self.key} ({self.period})"
+
+
+class UserMissionProgress(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='mission_progress')
+    mission = models.ForeignKey(MissionTemplate, on_delete=models.CASCADE, related_name='progress_rows')
+    period_start = models.DateField()
+    period_end = models.DateField()
+    progress_value = models.IntegerField(default=0)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    claimed_at = models.DateTimeField(null=True, blank=True)
+    reward_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'user_mission_progress'
+        unique_together = ['user', 'mission', 'period_start']
+        ordering = ['-period_start', 'mission_id']
+        indexes = [
+            models.Index(fields=['user', 'period_start']),
+            models.Index(fields=['period_end']),
+        ]
+
+    @property
+    def is_completed(self):
+        return self.progress_value >= self.mission.target_value
+
+    @property
+    def is_claimed(self):
+        return bool(self.claimed_at)
+
+    def __str__(self):
+        return f"MissionProgress({self.user_id}, {self.mission_id}, {self.period_start})"
+
+
+class UserStreak(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='streak')
+    current_streak = models.IntegerField(default=0)
+    best_streak = models.IntegerField(default=0)
+    last_active_date = models.DateField(null=True, blank=True)
+    streak_protect_tokens = models.IntegerField(default=1)
+    last_protect_grant_week = models.CharField(max_length=8, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'user_streaks'
+
+    def __str__(self):
+        return f"Streak({self.user_id}) current={self.current_streak}"
+
+
+class LiveEvent(models.Model):
+    TYPE_HAPPY_HOUR = 'happy_hour'
+    TYPE_FLASH_PROMO = 'flash_promo'
+    TYPE_DOUBLE_REWARD = 'double_reward'
+    TYPE_CHOICES = [
+        (TYPE_HAPPY_HOUR, 'Happy Hour'),
+        (TYPE_FLASH_PROMO, 'Flash Promo'),
+        (TYPE_DOUBLE_REWARD, 'Double Reward'),
+    ]
+
+    name = models.CharField(max_length=120)
+    event_type = models.CharField(max_length=30, choices=TYPE_CHOICES)
+    description = models.CharField(max_length=255, blank=True)
+    starts_at = models.DateTimeField()
+    ends_at = models.DateTimeField()
+    bonus_multiplier = models.DecimalField(max_digits=4, decimal_places=2, default=Decimal('1.00'))
+    is_active = models.BooleanField(default=True)
+    auto_announce = models.BooleanField(default=True)
+    announced_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'live_events'
+        ordering = ['starts_at', 'id']
+        indexes = [
+            models.Index(fields=['is_active', 'starts_at', 'ends_at']),
+            models.Index(fields=['event_type']),
+        ]
+
+    def is_live(self):
+        now = timezone.now()
+        return bool(self.is_active and self.starts_at <= now <= self.ends_at)
+
+    def __str__(self):
+        return f"{self.name} ({self.event_type})"
+
+
+class Season(models.Model):
+    name = models.CharField(max_length=120)
+    starts_at = models.DateTimeField()
+    ends_at = models.DateTimeField()
+    is_active = models.BooleanField(default=True)
+    top_1_reward = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    top_2_reward = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    top_3_reward = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    participation_reward = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'seasons'
+        ordering = ['-starts_at']
+        indexes = [
+            models.Index(fields=['is_active', 'starts_at', 'ends_at']),
+        ]
+
+    @classmethod
+    def get_current(cls):
+        now = timezone.now()
+        return cls.objects.filter(is_active=True, starts_at__lte=now, ends_at__gte=now).order_by('-starts_at').first()
+
+    def __str__(self):
+        return self.name

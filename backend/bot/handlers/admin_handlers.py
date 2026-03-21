@@ -1,5 +1,6 @@
 from aiogram import Router, F
 from decimal import Decimal, InvalidOperation
+from datetime import timedelta
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
@@ -11,10 +12,25 @@ from django.db.models import Sum
 from django.conf import settings
 from users.models import User
 from wallet.models import Wallet, Transaction
-from game.models import Game, SystemBalance, SystemBalanceLedger
+from game.models import (
+    Game,
+    LiveEvent,
+    MissionTemplate,
+    PromoCode,
+    PromoCodeRedemption,
+    RewardSafetyPolicy,
+    Season,
+    SystemBalance,
+    SystemBalanceLedger,
+)
 from notifications.models import Notification, NotificationDelivery
 from bot.keyboards import (
     admin_main_menu_keyboard,
+    engagement_balance_target_keyboard,
+    engagement_frontend_visibility_keyboard,
+    engagement_event_type_keyboard,
+    engagement_main_keyboard,
+    engagement_promo_tier_keyboard,
     main_menu_keyboard,
     system_balance_action_keyboard,
     wallet_balance_type_keyboard,
@@ -49,6 +65,41 @@ class AnnouncementStates(StatesGroup):
 class SystemBalanceAdjustStates(StatesGroup):
     waiting_for_amount = State()
     waiting_for_reason = State()
+
+
+class PromoCreateStates(StatesGroup):
+    waiting_for_code = State()
+    waiting_for_tier = State()
+    waiting_for_amount = State()
+    waiting_for_balance = State()
+    waiting_for_start_minutes = State()
+    waiting_for_duration_minutes = State()
+    waiting_for_max_redemptions = State()
+    waiting_for_per_user_limit = State()
+    waiting_for_frontend_visibility = State()
+
+
+class EventCreateStates(StatesGroup):
+    waiting_for_name = State()
+    waiting_for_type = State()
+    waiting_for_multiplier = State()
+    waiting_for_start_minutes = State()
+    waiting_for_duration_minutes = State()
+
+
+class SeasonCreateStates(StatesGroup):
+    waiting_for_name = State()
+    waiting_for_days = State()
+    waiting_for_top1 = State()
+    waiting_for_top2 = State()
+    waiting_for_top3 = State()
+    waiting_for_participation = State()
+
+
+class RewardPolicyStates(StatesGroup):
+    waiting_for_daily_cap = State()
+    waiting_for_cooldown_seconds = State()
+    waiting_for_hourly_limit = State()
 
 
 @sync_to_async
@@ -2405,4 +2456,1260 @@ async def admin_not_implemented(message: Message):
         "Use the Django admin panel for full control.",
         reply_markup=admin_main_menu_keyboard(),
     )
+
+
+@sync_to_async
+def _get_engagement_overview():
+    now = timezone.now()
+    active_promos = PromoCode.objects.filter(is_active=True, starts_at__lte=now, ends_at__gte=now).count()
+    total_promos = PromoCode.objects.count()
+    promo_redemptions_today = PromoCodeRedemption.objects.filter(created_at__date=now.date()).count()
+
+    active_events = LiveEvent.objects.filter(is_active=True, starts_at__lte=now, ends_at__gte=now).count()
+    upcoming_events = LiveEvent.objects.filter(is_active=True, starts_at__gt=now).count()
+
+    active_missions = MissionTemplate.objects.filter(is_active=True).count()
+    daily_missions = MissionTemplate.objects.filter(is_active=True, period=MissionTemplate.PERIOD_DAILY).count()
+    weekly_missions = MissionTemplate.objects.filter(is_active=True, period=MissionTemplate.PERIOD_WEEKLY).count()
+
+    current_season = Season.get_current()
+    policy = RewardSafetyPolicy.get_active()
+
+    return {
+        'active_promos': active_promos,
+        'total_promos': total_promos,
+        'promo_redemptions_today': promo_redemptions_today,
+        'active_events': active_events,
+        'upcoming_events': upcoming_events,
+        'active_missions': active_missions,
+        'daily_missions': daily_missions,
+        'weekly_missions': weekly_missions,
+        'current_season': current_season,
+        'policy': policy,
+    }
+
+
+@router.message(F.text == "🚀 Engagement Management")
+async def admin_engagement_management(message: Message):
+    if not await _ensure_admin(message):
+        return
+
+    await _send_engagement_overview(message)
+
+
+async def _send_engagement_overview(message_or_callback):
+    overview = await _get_engagement_overview()
+    season = overview['current_season']
+    policy = overview['policy']
+
+    text = (
+        "<b>🚀 Engagement Management</b>\n\n"
+        f"🎟 Active Promos: {overview['active_promos']} / {overview['total_promos']}\n"
+        f"✅ Promo Redemptions Today: {overview['promo_redemptions_today']}\n"
+        f"🎉 Active Live Events: {overview['active_events']}\n"
+        f"⏭ Upcoming Live Events: {overview['upcoming_events']}\n"
+        f"🎯 Active Missions: {overview['active_missions']} (Daily: {overview['daily_missions']}, Weekly: {overview['weekly_missions']})\n"
+        f"🏆 Current Season: {season.name if season else 'None'}\n\n"
+        "<b>Reward Safety Policy</b>\n"
+        f"• Daily Cap: {policy.daily_reward_cap} Birr\n"
+        f"• Cooldown: {policy.min_seconds_between_rewards}s\n"
+        f"• Hourly Limit: {policy.max_reward_redemptions_per_hour}\n\n"
+        "Use the buttons below to manage engagement features."
+    )
+
+    if isinstance(message_or_callback, CallbackQuery):
+        await message_or_callback.message.answer(text, reply_markup=engagement_main_keyboard())
+    else:
+        await message_or_callback.answer(text, reply_markup=engagement_main_keyboard())
+
+
+@router.callback_query(F.data.in_({"eng:open", "eng:refresh"}))
+async def admin_engagement_open(callback: CallbackQuery):
+    if not await _ensure_admin(callback):
+        await callback.answer()
+        return
+
+    await _send_engagement_overview(callback)
+    await callback.answer("Updated")
+
+
+@router.callback_query(F.data == "eng:promo:list")
+async def admin_engagement_promo_list_inline(callback: CallbackQuery):
+    if not await _ensure_admin(callback):
+        await callback.answer()
+        return
+
+    now = timezone.now()
+    promos = await sync_to_async(lambda: list(PromoCode.objects.order_by('-created_at')[:10]))()
+    if not promos:
+        await callback.message.answer("No promo codes found.", reply_markup=engagement_main_keyboard())
+        await callback.answer()
+        return
+
+    lines = ["<b>🎟 Promo Codes</b>"]
+    buttons = []
+    for promo in promos:
+        redemptions = await sync_to_async(lambda p=promo: PromoCodeRedemption.objects.filter(promo_code=p).count())()
+        state = "🟢 LIVE" if (promo.is_active and promo.starts_at <= now <= promo.ends_at) else ("🟡 ACTIVE" if promo.is_active else "🔴 OFF")
+        frontend_state = "🌐 FRONTEND" if promo.is_visible_in_frontend else "🙈 HIDDEN"
+        lines.append(
+            f"#{promo.id} {promo.code} [{promo.tier}] {state} {frontend_state}\n"
+            f"Reward: {promo.reward_amount} -> {promo.reward_balance}\n"
+            f"Used: {redemptions}/{promo.max_redemptions if promo.max_redemptions > 0 else '∞'}"
+        )
+        if promo.is_active:
+            buttons.append([InlineKeyboardButton(text=f"Disable {promo.code}", callback_data=f"eng:promo:disable:{promo.id}")])
+        buttons.append([InlineKeyboardButton(text=f"Toggle Frontend {promo.code}", callback_data=f"eng:promo:frontend-toggle:{promo.id}")])
+
+    buttons.append([InlineKeyboardButton(text="⬅ Back", callback_data="eng:open")])
+    await callback.message.answer(
+        "\n\n".join(lines),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("eng:promo:disable:"))
+async def admin_engagement_promo_disable_inline(callback: CallbackQuery):
+    if not await _ensure_admin(callback):
+        await callback.answer()
+        return
+
+    try:
+        promo_id = int(callback.data.split(":")[-1])
+    except (TypeError, ValueError):
+        await callback.answer("Invalid promo", show_alert=True)
+        return
+
+    @sync_to_async
+    def _disable():
+        promo = PromoCode.objects.filter(id=promo_id).first()
+        if not promo:
+            return None
+        promo.is_active = False
+        promo.save(update_fields=['is_active', 'updated_at'])
+        return promo
+
+    promo = await _disable()
+    if not promo:
+        await callback.answer("Promo not found", show_alert=True)
+        return
+
+    await callback.message.answer(f"✅ Promo {promo.code} disabled.", reply_markup=engagement_main_keyboard())
+    await callback.answer("Disabled")
+
+
+@router.callback_query(F.data.startswith("eng:promo:frontend-toggle:"))
+async def admin_engagement_promo_frontend_toggle_inline(callback: CallbackQuery):
+    if not await _ensure_admin(callback):
+        await callback.answer()
+        return
+
+    try:
+        promo_id = int(callback.data.split(":")[-1])
+    except (TypeError, ValueError):
+        await callback.answer("Invalid promo", show_alert=True)
+        return
+
+    @sync_to_async
+    def _toggle():
+        promo = PromoCode.objects.filter(id=promo_id).first()
+        if not promo:
+            return None
+        promo.is_visible_in_frontend = not promo.is_visible_in_frontend
+        promo.save(update_fields=['is_visible_in_frontend', 'updated_at'])
+        return promo
+
+    promo = await _toggle()
+    if not promo:
+        await callback.answer("Promo not found", show_alert=True)
+        return
+
+    state = "visible" if promo.is_visible_in_frontend else "hidden"
+    await callback.message.answer(
+        f"✅ Promo {promo.code} is now {state} in frontend.",
+        reply_markup=engagement_main_keyboard(),
+    )
+    await callback.answer("Updated")
+
+
+@router.callback_query(F.data == "eng:promo:create")
+async def admin_engagement_promo_create_inline_start(callback: CallbackQuery, state: FSMContext):
+    if not await _ensure_admin(callback):
+        await state.clear()
+        await callback.answer()
+        return
+    await state.set_state(PromoCreateStates.waiting_for_code)
+    await callback.message.answer("Enter promo code (e.g. FLASH100):")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("eng:promo:tier:"))
+async def admin_engagement_promo_create_inline_tier(callback: CallbackQuery, state: FSMContext):
+    tier = callback.data.split(":")[-1]
+    allowed = {PromoCode.TIER_COMMON, PromoCode.TIER_RARE, PromoCode.TIER_LEGENDARY}
+    if tier not in allowed:
+        await callback.answer("Invalid tier", show_alert=True)
+        return
+    await state.update_data(tier=tier)
+    await state.set_state(PromoCreateStates.waiting_for_amount)
+    await callback.message.answer("Enter reward amount in Birr:")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("eng:promo:balance:"))
+async def admin_engagement_promo_create_inline_balance(callback: CallbackQuery, state: FSMContext):
+    balance = callback.data.split(":")[-1]
+    allowed = {PromoCode.BALANCE_BONUS, PromoCode.BALANCE_MAIN, PromoCode.BALANCE_WINNINGS}
+    if balance not in allowed:
+        await callback.answer("Invalid balance", show_alert=True)
+        return
+    await state.update_data(balance=balance)
+    await state.set_state(PromoCreateStates.waiting_for_start_minutes)
+    await callback.message.answer("Start in how many minutes from now? (0 for immediate)")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "eng:event:list")
+async def admin_engagement_event_list_inline(callback: CallbackQuery):
+    if not await _ensure_admin(callback):
+        await callback.answer()
+        return
+
+    now = timezone.now()
+    events = await sync_to_async(lambda: list(LiveEvent.objects.order_by('-starts_at')[:10]))()
+    if not events:
+        await callback.message.answer("No live events found.", reply_markup=engagement_main_keyboard())
+        await callback.answer()
+        return
+
+    lines = ["<b>🎉 Live Events</b>"]
+    buttons = []
+    for event in events:
+        state = "🟢 LIVE" if (event.is_active and event.starts_at <= now <= event.ends_at) else ("🟡 ACTIVE" if event.is_active else "🔴 OFF")
+        lines.append(
+            f"#{event.id} {event.name} [{event.event_type}] {state}\n"
+            f"Multiplier: {event.bonus_multiplier}x\n"
+            f"Window: {event.starts_at:%Y-%m-%d %H:%M} -> {event.ends_at:%Y-%m-%d %H:%M}"
+        )
+        if event.is_active:
+            buttons.append([InlineKeyboardButton(text=f"Disable {event.name}", callback_data=f"eng:event:disable:{event.id}")])
+
+    buttons.append([InlineKeyboardButton(text="⬅ Back", callback_data="eng:open")])
+    await callback.message.answer(
+        "\n\n".join(lines),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("eng:event:disable:"))
+async def admin_engagement_event_disable_inline(callback: CallbackQuery):
+    if not await _ensure_admin(callback):
+        await callback.answer()
+        return
+
+    try:
+        event_id = int(callback.data.split(":")[-1])
+    except (TypeError, ValueError):
+        await callback.answer("Invalid event", show_alert=True)
+        return
+
+    @sync_to_async
+    def _disable():
+        event = LiveEvent.objects.filter(id=event_id).first()
+        if not event:
+            return None
+        event.is_active = False
+        event.save(update_fields=['is_active', 'updated_at'])
+        return event
+
+    event = await _disable()
+    if not event:
+        await callback.answer("Event not found", show_alert=True)
+        return
+
+    await callback.message.answer(f"✅ Event '{event.name}' disabled.", reply_markup=engagement_main_keyboard())
+    await callback.answer("Disabled")
+
+
+@router.callback_query(F.data == "eng:event:create")
+async def admin_engagement_event_create_inline_start(callback: CallbackQuery, state: FSMContext):
+    if not await _ensure_admin(callback):
+        await state.clear()
+        await callback.answer()
+        return
+    await state.set_state(EventCreateStates.waiting_for_name)
+    await callback.message.answer("Enter event name:")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("eng:event:type:"))
+async def admin_engagement_event_create_inline_type(callback: CallbackQuery, state: FSMContext):
+    event_type = callback.data.split(":")[-1]
+    allowed = {LiveEvent.TYPE_HAPPY_HOUR, LiveEvent.TYPE_FLASH_PROMO, LiveEvent.TYPE_DOUBLE_REWARD}
+    if event_type not in allowed:
+        await callback.answer("Invalid type", show_alert=True)
+        return
+    await state.update_data(event_type=event_type)
+    await state.set_state(EventCreateStates.waiting_for_multiplier)
+    await callback.message.answer("Enter reward multiplier (e.g. 1.00, 1.50, 2.00)")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "eng:mission:list")
+async def admin_engagement_mission_list_inline(callback: CallbackQuery):
+    if not await _ensure_admin(callback):
+        await callback.answer()
+        return
+
+    missions = await sync_to_async(lambda: list(MissionTemplate.objects.order_by('sort_order', 'id')[:20]))()
+    if not missions:
+        await callback.message.answer("No missions found.", reply_markup=engagement_main_keyboard())
+        await callback.answer()
+        return
+
+    lines = ["<b>🎯 Missions</b>"]
+    buttons = []
+    for mission in missions:
+        state = "🟢 ON" if mission.is_active else "🔴 OFF"
+        lines.append(
+            f"#{mission.id} {mission.title} {state}\n"
+            f"Type: {mission.mission_type} | Period: {mission.period}\n"
+            f"Target: {mission.target_value} | Reward: {mission.reward_amount} -> {mission.reward_balance}"
+        )
+        buttons.append([InlineKeyboardButton(text=f"Toggle {mission.id}", callback_data=f"eng:mission:toggle:{mission.id}")])
+
+    buttons.append([InlineKeyboardButton(text="⬅ Back", callback_data="eng:open")])
+    await callback.message.answer(
+        "\n\n".join(lines),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("eng:mission:toggle:"))
+async def admin_engagement_mission_toggle_inline(callback: CallbackQuery):
+    if not await _ensure_admin(callback):
+        await callback.answer()
+        return
+
+    try:
+        mission_id = int(callback.data.split(":")[-1])
+    except (TypeError, ValueError):
+        await callback.answer("Invalid mission", show_alert=True)
+        return
+
+    @sync_to_async
+    def _toggle():
+        mission = MissionTemplate.objects.filter(id=mission_id).first()
+        if not mission:
+            return None
+        mission.is_active = not mission.is_active
+        mission.save(update_fields=['is_active', 'updated_at'])
+        return mission
+
+    mission = await _toggle()
+    if not mission:
+        await callback.answer("Mission not found", show_alert=True)
+        return
+
+    await callback.message.answer(
+        f"✅ Mission '{mission.title}' is now {'active' if mission.is_active else 'disabled'}.",
+        reply_markup=engagement_main_keyboard(),
+    )
+    await callback.answer("Toggled")
+
+
+@router.callback_query(F.data == "eng:season:list")
+async def admin_engagement_season_list_inline(callback: CallbackQuery):
+    if not await _ensure_admin(callback):
+        await callback.answer()
+        return
+
+    seasons = await sync_to_async(lambda: list(Season.objects.order_by('-starts_at')[:10]))()
+    if not seasons:
+        await callback.message.answer("No seasons found.", reply_markup=engagement_main_keyboard())
+        await callback.answer()
+        return
+
+    now = timezone.now()
+    lines = ["<b>🏆 Seasons</b>"]
+    buttons = [[InlineKeyboardButton(text="➕ Create Season", callback_data="eng:season:create")]]
+    for season in seasons:
+        if season.is_active and season.starts_at <= now <= season.ends_at:
+            status = "🟢 CURRENT"
+        elif season.is_active:
+            status = "🟡 ACTIVE"
+        else:
+            status = "🔴 OFF"
+        lines.append(
+            f"#{season.id} {season.name} {status}\n"
+            f"Window: {season.starts_at:%Y-%m-%d} -> {season.ends_at:%Y-%m-%d}\n"
+            f"Rewards: {season.top_1_reward}/{season.top_2_reward}/{season.top_3_reward} + {season.participation_reward}"
+        )
+        buttons.append([InlineKeyboardButton(text=f"Activate {season.id}", callback_data=f"eng:season:activate:{season.id}")])
+
+    buttons.append([InlineKeyboardButton(text="⬅ Back", callback_data="eng:open")])
+    await callback.message.answer(
+        "\n\n".join(lines),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "eng:season:create")
+async def admin_engagement_season_create_inline_start(callback: CallbackQuery, state: FSMContext):
+    if not await _ensure_admin(callback):
+        await state.clear()
+        await callback.answer()
+        return
+    await state.set_state(SeasonCreateStates.waiting_for_name)
+    await callback.message.answer("Enter season name:")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("eng:season:activate:"))
+async def admin_engagement_season_activate_inline(callback: CallbackQuery):
+    if not await _ensure_admin(callback):
+        await callback.answer()
+        return
+
+    try:
+        season_id = int(callback.data.split(":")[-1])
+    except (TypeError, ValueError):
+        await callback.answer("Invalid season", show_alert=True)
+        return
+
+    @sync_to_async
+    def _activate():
+        target = Season.objects.filter(id=season_id).first()
+        if not target:
+            return None
+        Season.objects.exclude(id=target.id).update(is_active=False)
+        target.is_active = True
+        target.save(update_fields=['is_active', 'updated_at'])
+        return target
+
+    season = await _activate()
+    if not season:
+        await callback.answer("Season not found", show_alert=True)
+        return
+
+    await callback.message.answer(f"✅ Season '{season.name}' activated.", reply_markup=engagement_main_keyboard())
+    await callback.answer("Activated")
+
+
+@router.callback_query(F.data == "eng:policy:show")
+async def admin_engagement_policy_show_inline(callback: CallbackQuery):
+    if not await _ensure_admin(callback):
+        await callback.answer()
+        return
+
+    policy = await sync_to_async(RewardSafetyPolicy.get_active)()
+    await callback.message.answer(
+        "<b>🛡 Reward Safety Policy</b>\n\n"
+        f"Daily Cap: {policy.daily_reward_cap} Birr\n"
+        f"Cooldown: {policy.min_seconds_between_rewards} seconds\n"
+        f"Hourly Limit: {policy.max_reward_redemptions_per_hour}",
+        reply_markup=engagement_main_keyboard(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "eng:policy:set")
+async def admin_engagement_policy_set_inline_start(callback: CallbackQuery, state: FSMContext):
+    if not await _ensure_admin(callback):
+        await state.clear()
+        await callback.answer()
+        return
+    await state.set_state(RewardPolicyStates.waiting_for_daily_cap)
+    await callback.message.answer("Enter new daily reward cap (Birr):")
+    await callback.answer()
+
+
+@router.message(Command("eng_promo_list"))
+async def admin_eng_promo_list(message: Message):
+    if not await _ensure_admin(message):
+        return
+
+    @sync_to_async
+    def _get_rows():
+        now = timezone.now()
+        rows = []
+        promos = PromoCode.objects.order_by('-created_at')[:15]
+        for promo in promos:
+            rows.append({
+                'id': promo.id,
+                'code': promo.code,
+                'tier': promo.tier,
+                'amount': promo.reward_amount,
+                'balance': promo.reward_balance,
+                'live': promo.is_active and promo.starts_at <= now <= promo.ends_at,
+                'is_active': promo.is_active,
+                'is_visible_in_frontend': promo.is_visible_in_frontend,
+                'redemptions': PromoCodeRedemption.objects.filter(promo_code=promo).count(),
+                'max_redemptions': promo.max_redemptions,
+                'ends_at': promo.ends_at,
+            })
+        return rows
+
+    rows = await _get_rows()
+    if not rows:
+        await message.answer("No promo codes found.", reply_markup=admin_main_menu_keyboard())
+        return
+
+    lines = ["<b>🎟 Promo Codes (latest 15)</b>"]
+    for row in rows:
+        live_mark = "🟢 LIVE" if row['live'] else ("🟡 ACTIVE" if row['is_active'] else "🔴 OFF")
+        frontend_mark = "🌐 FRONTEND" if row['is_visible_in_frontend'] else "🙈 HIDDEN"
+        lines.append(
+            f"#{row['id']} {row['code']} [{row['tier']}] {live_mark} {frontend_mark}\n"
+            f"Reward: {row['amount']} -> {row['balance']}\n"
+            f"Redeemed: {row['redemptions']}/{row['max_redemptions'] if row['max_redemptions'] > 0 else '∞'}\n"
+            f"Ends: {row['ends_at']:%Y-%m-%d %H:%M}\n"
+            f"Disable: /eng_promo_disable_{row['id']}\n"
+            f"Frontend Toggle: /eng_promo_frontend_toggle_{row['id']}"
+        )
+    await message.answer("\n\n".join(lines), reply_markup=admin_main_menu_keyboard())
+
+
+@router.message(F.text.regexp(r"^/eng_promo_disable_(\d+)$"))
+async def admin_eng_promo_disable(message: Message):
+    if not await _ensure_admin(message):
+        return
+
+    try:
+        promo_id = int(message.text.split("_")[-1])
+    except (TypeError, ValueError):
+        await message.answer("❌ Invalid promo reference.")
+        return
+
+    @sync_to_async
+    def _disable():
+        promo = PromoCode.objects.filter(id=promo_id).first()
+        if not promo:
+            return False, None
+        promo.is_active = False
+        promo.save(update_fields=['is_active', 'updated_at'])
+        return True, promo
+
+    ok, promo = await _disable()
+    if not ok:
+        await message.answer("❌ Promo not found.", reply_markup=admin_main_menu_keyboard())
+        return
+
+    await message.answer(
+        f"✅ Promo {promo.code} disabled.",
+        reply_markup=admin_main_menu_keyboard(),
+    )
+
+
+@router.message(F.text.regexp(r"^/eng_promo_frontend_toggle_(\d+)$"))
+async def admin_eng_promo_frontend_toggle(message: Message):
+    if not await _ensure_admin(message):
+        return
+
+    try:
+        promo_id = int(message.text.split("_")[-1])
+    except (TypeError, ValueError):
+        await message.answer("❌ Invalid promo reference.")
+        return
+
+    @sync_to_async
+    def _toggle():
+        promo = PromoCode.objects.filter(id=promo_id).first()
+        if not promo:
+            return False, None
+        promo.is_visible_in_frontend = not promo.is_visible_in_frontend
+        promo.save(update_fields=['is_visible_in_frontend', 'updated_at'])
+        return True, promo
+
+    ok, promo = await _toggle()
+    if not ok:
+        await message.answer("❌ Promo not found.", reply_markup=admin_main_menu_keyboard())
+        return
+
+    state = "visible" if promo.is_visible_in_frontend else "hidden"
+    await message.answer(
+        f"✅ Promo {promo.code} is now {state} in frontend.",
+        reply_markup=admin_main_menu_keyboard(),
+    )
+
+
+@router.message(Command("eng_promo_create"))
+async def admin_eng_promo_create_start(message: Message, state: FSMContext):
+    if not await _ensure_admin(message):
+        return
+    await state.set_state(PromoCreateStates.waiting_for_code)
+    await message.answer("Enter promo code (e.g. FLASH100):")
+
+
+@router.message(PromoCreateStates.waiting_for_code)
+async def admin_eng_promo_create_code(message: Message, state: FSMContext):
+    code = (message.text or '').strip().upper()
+    if not code or len(code) < 4:
+        await message.answer("❌ Promo code must be at least 4 characters.")
+        return
+    await state.update_data(code=code)
+    await state.set_state(PromoCreateStates.waiting_for_tier)
+    await message.answer(
+        "Select promo tier:",
+        reply_markup=engagement_promo_tier_keyboard(),
+    )
+
+
+@router.message(PromoCreateStates.waiting_for_tier)
+async def admin_eng_promo_create_tier(message: Message, state: FSMContext):
+    tier = (message.text or '').strip().lower()
+    if tier not in {PromoCode.TIER_COMMON, PromoCode.TIER_RARE, PromoCode.TIER_LEGENDARY}:
+        await message.answer("❌ Tier must be common, rare, or legendary.")
+        return
+    await state.update_data(tier=tier)
+    await state.set_state(PromoCreateStates.waiting_for_amount)
+    await message.answer("Enter reward amount in Birr:")
+
+
+@router.message(PromoCreateStates.waiting_for_amount)
+async def admin_eng_promo_create_amount(message: Message, state: FSMContext):
+    try:
+        amount = Decimal((message.text or '').strip())
+    except (InvalidOperation, AttributeError):
+        await message.answer("❌ Invalid amount.")
+        return
+    if amount <= 0:
+        await message.answer("❌ Amount must be > 0.")
+        return
+    await state.update_data(amount=str(amount))
+    await state.set_state(PromoCreateStates.waiting_for_balance)
+    await message.answer(
+        "Select balance target:",
+        reply_markup=engagement_balance_target_keyboard(),
+    )
+
+
+@router.message(PromoCreateStates.waiting_for_balance)
+async def admin_eng_promo_create_balance(message: Message, state: FSMContext):
+    balance = (message.text or '').strip().lower()
+    if balance not in {PromoCode.BALANCE_BONUS, PromoCode.BALANCE_MAIN, PromoCode.BALANCE_WINNINGS}:
+        await message.answer("❌ Balance must be bonus, main, or winnings.")
+        return
+    await state.update_data(balance=balance)
+    await state.set_state(PromoCreateStates.waiting_for_start_minutes)
+    await message.answer("Start in how many minutes from now? (0 for immediate)")
+
+
+@router.message(PromoCreateStates.waiting_for_start_minutes)
+async def admin_eng_promo_create_start_minutes(message: Message, state: FSMContext):
+    try:
+        minutes = int((message.text or '').strip())
+    except (TypeError, ValueError):
+        await message.answer("❌ Please enter a whole number.")
+        return
+    if minutes < 0:
+        await message.answer("❌ Start minutes cannot be negative.")
+        return
+    await state.update_data(start_minutes=minutes)
+    await state.set_state(PromoCreateStates.waiting_for_duration_minutes)
+    await message.answer("Duration in minutes?")
+
+
+@router.message(PromoCreateStates.waiting_for_duration_minutes)
+async def admin_eng_promo_create_duration_minutes(message: Message, state: FSMContext):
+    try:
+        minutes = int((message.text or '').strip())
+    except (TypeError, ValueError):
+        await message.answer("❌ Please enter a whole number.")
+        return
+    if minutes <= 0:
+        await message.answer("❌ Duration must be > 0.")
+        return
+    await state.update_data(duration_minutes=minutes)
+    await state.set_state(PromoCreateStates.waiting_for_max_redemptions)
+    await message.answer("Max redemptions globally? (0 for unlimited)")
+
+
+@router.message(PromoCreateStates.waiting_for_max_redemptions)
+async def admin_eng_promo_create_max_redemptions(message: Message, state: FSMContext):
+    try:
+        max_redemptions = int((message.text or '').strip())
+    except (TypeError, ValueError):
+        await message.answer("❌ Please enter a whole number.")
+        return
+    if max_redemptions < 0:
+        await message.answer("❌ Max redemptions cannot be negative.")
+        return
+    await state.update_data(max_redemptions=max_redemptions)
+    await state.set_state(PromoCreateStates.waiting_for_per_user_limit)
+    await message.answer("Per-user redemption limit? (usually 1)")
+
+
+@router.message(PromoCreateStates.waiting_for_per_user_limit)
+async def admin_eng_promo_create_per_user_limit(message: Message, state: FSMContext):
+    try:
+        per_user_limit = int((message.text or '').strip())
+    except (TypeError, ValueError):
+        await message.answer("❌ Please enter a whole number.")
+        return
+    if per_user_limit <= 0:
+        await message.answer("❌ Per-user limit must be > 0.")
+        return
+
+    await state.update_data(per_user_limit=per_user_limit)
+    await state.set_state(PromoCreateStates.waiting_for_frontend_visibility)
+    await message.answer(
+        "Should this promo be visible in frontend promo list?",
+        reply_markup=engagement_frontend_visibility_keyboard(),
+    )
+
+
+@router.callback_query(F.data.startswith("eng:promo:frontend:"))
+async def admin_eng_promo_create_frontend_visibility(callback: CallbackQuery, state: FSMContext):
+    value = callback.data.split(":")[-1]
+    if value not in {"show", "hide"}:
+        await callback.answer("Invalid option", show_alert=True)
+        return
+
+    data = await state.get_data()
+    if not data:
+        await callback.answer("Promo draft expired. Start again.", show_alert=True)
+        await state.clear()
+        return
+
+    per_user_limit = int(data.get('per_user_limit', 1))
+    is_visible_in_frontend = (value == "show")
+    now = timezone.now()
+    starts_at = now + timedelta(minutes=int(data['start_minutes']))
+    ends_at = starts_at + timedelta(minutes=int(data['duration_minutes']))
+
+    @sync_to_async
+    def _create_promo():
+        if PromoCode.objects.filter(code=data['code']).exists():
+            return None
+        return PromoCode.objects.create(
+            code=data['code'],
+            tier=data['tier'],
+            reward_amount=Decimal(data['amount']),
+            reward_balance=data['balance'],
+            starts_at=starts_at,
+            ends_at=ends_at,
+            max_redemptions=int(data['max_redemptions']),
+            per_user_limit=per_user_limit,
+            is_active=True,
+            is_visible_in_frontend=is_visible_in_frontend,
+        )
+
+    promo = await _create_promo()
+    if not promo:
+        await message.answer("❌ Promo code already exists.")
+        await state.clear()
+        return
+
+    await message.answer(
+        f"✅ Promo created: {promo.code}\n"
+        f"Tier: {promo.tier}\n"
+        f"Reward: {promo.reward_amount} -> {promo.reward_balance}\n"
+        f"Window: {promo.starts_at:%Y-%m-%d %H:%M} to {promo.ends_at:%Y-%m-%d %H:%M}\n"
+        f"Limits: global={promo.max_redemptions if promo.max_redemptions > 0 else '∞'}, per-user={promo.per_user_limit}\n"
+        f"Frontend: {'Visible' if promo.is_visible_in_frontend else 'Hidden'}",
+        reply_markup=admin_main_menu_keyboard(),
+    )
+    await callback.answer("Promo created")
+    await state.clear()
+
+
+@router.message(Command("eng_event_list"))
+async def admin_eng_event_list(message: Message):
+    if not await _ensure_admin(message):
+        return
+
+    @sync_to_async
+    def _rows():
+        now = timezone.now()
+        rows = []
+        for event in LiveEvent.objects.order_by('-starts_at')[:15]:
+            rows.append({
+                'id': event.id,
+                'name': event.name,
+                'event_type': event.event_type,
+                'multiplier': event.bonus_multiplier,
+                'state': 'LIVE' if (event.is_active and event.starts_at <= now <= event.ends_at) else ('UPCOMING' if event.is_active and event.starts_at > now else ('ACTIVE' if event.is_active else 'OFF')),
+                'starts_at': event.starts_at,
+                'ends_at': event.ends_at,
+            })
+        return rows
+
+    rows = await _rows()
+    if not rows:
+        await message.answer("No live events found.", reply_markup=admin_main_menu_keyboard())
+        return
+
+    lines = ["<b>🎉 Live Events (latest 15)</b>"]
+    for row in rows:
+        lines.append(
+            f"#{row['id']} {row['name']} [{row['event_type']}] {row['state']}\n"
+            f"Multiplier: {row['multiplier']}x\n"
+            f"Window: {row['starts_at']:%Y-%m-%d %H:%M} -> {row['ends_at']:%Y-%m-%d %H:%M}\n"
+            f"Disable: /eng_event_disable_{row['id']}"
+        )
+    await message.answer("\n\n".join(lines), reply_markup=admin_main_menu_keyboard())
+
+
+@router.message(F.text.regexp(r"^/eng_event_disable_(\d+)$"))
+async def admin_eng_event_disable(message: Message):
+    if not await _ensure_admin(message):
+        return
+
+    try:
+        event_id = int(message.text.split("_")[-1])
+    except (TypeError, ValueError):
+        await message.answer("❌ Invalid event reference.")
+        return
+
+    @sync_to_async
+    def _disable():
+        event = LiveEvent.objects.filter(id=event_id).first()
+        if not event:
+            return False, None
+        event.is_active = False
+        event.save(update_fields=['is_active', 'updated_at'])
+        return True, event
+
+    ok, event = await _disable()
+    if not ok:
+        await message.answer("❌ Event not found.", reply_markup=admin_main_menu_keyboard())
+        return
+
+    await message.answer(f"✅ Event '{event.name}' disabled.", reply_markup=admin_main_menu_keyboard())
+
+
+@router.message(Command("eng_event_create"))
+async def admin_eng_event_create_start(message: Message, state: FSMContext):
+    if not await _ensure_admin(message):
+        return
+    await state.set_state(EventCreateStates.waiting_for_name)
+    await message.answer("Enter event name:")
+
+
+@router.message(EventCreateStates.waiting_for_name)
+async def admin_eng_event_create_name(message: Message, state: FSMContext):
+    name = (message.text or '').strip()
+    if not name:
+        await message.answer("❌ Event name is required.")
+        return
+    await state.update_data(name=name)
+    await state.set_state(EventCreateStates.waiting_for_type)
+    await message.answer(
+        "Select event type:",
+        reply_markup=engagement_event_type_keyboard(),
+    )
+
+
+@router.message(EventCreateStates.waiting_for_type)
+async def admin_eng_event_create_type(message: Message, state: FSMContext):
+    event_type = (message.text or '').strip().lower()
+    allowed = {LiveEvent.TYPE_HAPPY_HOUR, LiveEvent.TYPE_FLASH_PROMO, LiveEvent.TYPE_DOUBLE_REWARD}
+    if event_type not in allowed:
+        await message.answer("❌ Invalid event type.")
+        return
+    await state.update_data(event_type=event_type)
+    await state.set_state(EventCreateStates.waiting_for_multiplier)
+    await message.answer("Enter reward multiplier (e.g. 1.00, 1.50, 2.00)")
+
+
+@router.message(EventCreateStates.waiting_for_multiplier)
+async def admin_eng_event_create_multiplier(message: Message, state: FSMContext):
+    try:
+        multiplier = Decimal((message.text or '').strip())
+    except (InvalidOperation, AttributeError):
+        await message.answer("❌ Invalid multiplier.")
+        return
+    if multiplier < Decimal('1.00'):
+        await message.answer("❌ Multiplier must be >= 1.00.")
+        return
+    await state.update_data(multiplier=str(multiplier))
+    await state.set_state(EventCreateStates.waiting_for_start_minutes)
+    await message.answer("Start in how many minutes from now? (0 for immediate)")
+
+
+@router.message(EventCreateStates.waiting_for_start_minutes)
+async def admin_eng_event_create_start_minutes(message: Message, state: FSMContext):
+    try:
+        minutes = int((message.text or '').strip())
+    except (TypeError, ValueError):
+        await message.answer("❌ Please enter a whole number.")
+        return
+    if minutes < 0:
+        await message.answer("❌ Start minutes cannot be negative.")
+        return
+    await state.update_data(start_minutes=minutes)
+    await state.set_state(EventCreateStates.waiting_for_duration_minutes)
+    await message.answer("Duration in minutes?")
+
+
+@router.message(EventCreateStates.waiting_for_duration_minutes)
+async def admin_eng_event_create_duration_minutes(message: Message, state: FSMContext):
+    try:
+        minutes = int((message.text or '').strip())
+    except (TypeError, ValueError):
+        await message.answer("❌ Please enter a whole number.")
+        return
+    if minutes <= 0:
+        await message.answer("❌ Duration must be > 0.")
+        return
+
+    data = await state.get_data()
+    starts_at = timezone.now() + timedelta(minutes=int(data['start_minutes']))
+    ends_at = starts_at + timedelta(minutes=minutes)
+
+    @sync_to_async
+    def _create_event():
+        return LiveEvent.objects.create(
+            name=data['name'],
+            event_type=data['event_type'],
+            starts_at=starts_at,
+            ends_at=ends_at,
+            bonus_multiplier=Decimal(data['multiplier']),
+            is_active=True,
+            auto_announce=True,
+        )
+
+    event = await _create_event()
+    await message.answer(
+        f"✅ Live event created: {event.name}\n"
+        f"Type: {event.event_type}\n"
+        f"Multiplier: {event.bonus_multiplier}x\n"
+        f"Window: {event.starts_at:%Y-%m-%d %H:%M} -> {event.ends_at:%Y-%m-%d %H:%M}",
+        reply_markup=admin_main_menu_keyboard(),
+    )
+    await state.clear()
+
+
+@router.message(Command("eng_mission_list"))
+async def admin_eng_mission_list(message: Message):
+    if not await _ensure_admin(message):
+        return
+
+    @sync_to_async
+    def _rows():
+        return list(MissionTemplate.objects.order_by('sort_order', 'id')[:30])
+
+    missions = await _rows()
+    if not missions:
+        await message.answer("No missions found.", reply_markup=admin_main_menu_keyboard())
+        return
+
+    lines = ["<b>🎯 Missions</b>"]
+    for mission in missions:
+        state = "🟢 ON" if mission.is_active else "🔴 OFF"
+        lines.append(
+            f"#{mission.id} {mission.title} {state}\n"
+            f"Key: {mission.key} | Type: {mission.mission_type} | Period: {mission.period}\n"
+            f"Target: {mission.target_value} | Reward: {mission.reward_amount} -> {mission.reward_balance}\n"
+            f"Toggle: /eng_mission_toggle_{mission.id}"
+        )
+    await message.answer("\n\n".join(lines), reply_markup=admin_main_menu_keyboard())
+
+
+@router.message(F.text.regexp(r"^/eng_mission_toggle_(\d+)$"))
+async def admin_eng_mission_toggle(message: Message):
+    if not await _ensure_admin(message):
+        return
+
+    try:
+        mission_id = int(message.text.split("_")[-1])
+    except (TypeError, ValueError):
+        await message.answer("❌ Invalid mission reference.")
+        return
+
+    @sync_to_async
+    def _toggle():
+        mission = MissionTemplate.objects.filter(id=mission_id).first()
+        if not mission:
+            return None
+        mission.is_active = not mission.is_active
+        mission.save(update_fields=['is_active', 'updated_at'])
+        return mission
+
+    mission = await _toggle()
+    if not mission:
+        await message.answer("❌ Mission not found.", reply_markup=admin_main_menu_keyboard())
+        return
+
+    await message.answer(
+        f"✅ Mission '{mission.title}' is now {'active' if mission.is_active else 'disabled'}.",
+        reply_markup=admin_main_menu_keyboard(),
+    )
+
+
+@router.message(Command("eng_season_list"))
+async def admin_eng_season_list(message: Message):
+    if not await _ensure_admin(message):
+        return
+
+    @sync_to_async
+    def _rows():
+        return list(Season.objects.order_by('-starts_at')[:12])
+
+    seasons = await _rows()
+    if not seasons:
+        await message.answer("No seasons found.", reply_markup=admin_main_menu_keyboard())
+        return
+
+    lines = ["<b>🏆 Seasons</b>"]
+    now = timezone.now()
+    for season in seasons:
+        if season.is_active and season.starts_at <= now <= season.ends_at:
+            status = "🟢 CURRENT"
+        elif season.is_active:
+            status = "🟡 ACTIVE"
+        else:
+            status = "🔴 OFF"
+        lines.append(
+            f"#{season.id} {season.name} {status}\n"
+            f"Window: {season.starts_at:%Y-%m-%d} -> {season.ends_at:%Y-%m-%d}\n"
+            f"Rewards: 1st={season.top_1_reward}, 2nd={season.top_2_reward}, 3rd={season.top_3_reward}, participation={season.participation_reward}\n"
+            f"Activate: /eng_season_activate_{season.id}"
+        )
+    await message.answer("\n\n".join(lines), reply_markup=admin_main_menu_keyboard())
+
+
+@router.message(F.text.regexp(r"^/eng_season_activate_(\d+)$"))
+async def admin_eng_season_activate(message: Message):
+    if not await _ensure_admin(message):
+        return
+
+    try:
+        season_id = int(message.text.split("_")[-1])
+    except (TypeError, ValueError):
+        await message.answer("❌ Invalid season reference.")
+        return
+
+    @sync_to_async
+    def _activate():
+        target = Season.objects.filter(id=season_id).first()
+        if not target:
+            return None
+        Season.objects.exclude(id=target.id).update(is_active=False)
+        target.is_active = True
+        target.save(update_fields=['is_active', 'updated_at'])
+        return target
+
+    season = await _activate()
+    if not season:
+        await message.answer("❌ Season not found.", reply_markup=admin_main_menu_keyboard())
+        return
+
+    await message.answer(
+        f"✅ Season '{season.name}' activated.",
+        reply_markup=admin_main_menu_keyboard(),
+    )
+
+
+@router.message(Command("eng_season_create"))
+async def admin_eng_season_create_start(message: Message, state: FSMContext):
+    if not await _ensure_admin(message):
+        return
+    await state.set_state(SeasonCreateStates.waiting_for_name)
+    await message.answer("Enter season name:")
+
+
+@router.message(SeasonCreateStates.waiting_for_name)
+async def admin_eng_season_create_name(message: Message, state: FSMContext):
+    name = (message.text or '').strip()
+    if not name:
+        await message.answer("❌ Season name is required.")
+        return
+    await state.update_data(name=name)
+    await state.set_state(SeasonCreateStates.waiting_for_days)
+    await message.answer("Season duration in days?")
+
+
+@router.message(SeasonCreateStates.waiting_for_days)
+async def admin_eng_season_create_days(message: Message, state: FSMContext):
+    try:
+        days = int((message.text or '').strip())
+    except (TypeError, ValueError):
+        await message.answer("❌ Please enter a whole number.")
+        return
+    if days <= 0:
+        await message.answer("❌ Duration must be > 0 days.")
+        return
+    await state.update_data(days=days)
+    await state.set_state(SeasonCreateStates.waiting_for_top1)
+    await message.answer("Top 1 reward amount?")
+
+
+@router.message(SeasonCreateStates.waiting_for_top1)
+async def admin_eng_season_create_top1(message: Message, state: FSMContext):
+    try:
+        amount = Decimal((message.text or '').strip())
+    except (InvalidOperation, AttributeError):
+        await message.answer("❌ Invalid amount.")
+        return
+    if amount < 0:
+        await message.answer("❌ Amount cannot be negative.")
+        return
+    await state.update_data(top1=str(amount))
+    await state.set_state(SeasonCreateStates.waiting_for_top2)
+    await message.answer("Top 2 reward amount?")
+
+
+@router.message(SeasonCreateStates.waiting_for_top2)
+async def admin_eng_season_create_top2(message: Message, state: FSMContext):
+    try:
+        amount = Decimal((message.text or '').strip())
+    except (InvalidOperation, AttributeError):
+        await message.answer("❌ Invalid amount.")
+        return
+    if amount < 0:
+        await message.answer("❌ Amount cannot be negative.")
+        return
+    await state.update_data(top2=str(amount))
+    await state.set_state(SeasonCreateStates.waiting_for_top3)
+    await message.answer("Top 3 reward amount?")
+
+
+@router.message(SeasonCreateStates.waiting_for_top3)
+async def admin_eng_season_create_top3(message: Message, state: FSMContext):
+    try:
+        amount = Decimal((message.text or '').strip())
+    except (InvalidOperation, AttributeError):
+        await message.answer("❌ Invalid amount.")
+        return
+    if amount < 0:
+        await message.answer("❌ Amount cannot be negative.")
+        return
+    await state.update_data(top3=str(amount))
+    await state.set_state(SeasonCreateStates.waiting_for_participation)
+    await message.answer("Participation reward amount?")
+
+
+@router.message(SeasonCreateStates.waiting_for_participation)
+async def admin_eng_season_create_participation(message: Message, state: FSMContext):
+    try:
+        amount = Decimal((message.text or '').strip())
+    except (InvalidOperation, AttributeError):
+        await message.answer("❌ Invalid amount.")
+        return
+    if amount < 0:
+        await message.answer("❌ Amount cannot be negative.")
+        return
+
+    data = await state.get_data()
+    starts_at = timezone.now()
+    ends_at = starts_at + timedelta(days=int(data['days']))
+
+    @sync_to_async
+    def _create():
+        return Season.objects.create(
+            name=data['name'],
+            starts_at=starts_at,
+            ends_at=ends_at,
+            is_active=False,
+            top_1_reward=Decimal(data['top1']),
+            top_2_reward=Decimal(data['top2']),
+            top_3_reward=Decimal(data['top3']),
+            participation_reward=amount,
+        )
+
+    season = await _create()
+    await message.answer(
+        f"✅ Season created: {season.name}\n"
+        f"Window: {season.starts_at:%Y-%m-%d %H:%M} -> {season.ends_at:%Y-%m-%d %H:%M}\n"
+        f"Use /eng_season_activate_{season.id} to activate it.",
+        reply_markup=admin_main_menu_keyboard(),
+    )
+    await state.clear()
+
+
+@router.message(Command("eng_policy_show"))
+async def admin_eng_policy_show(message: Message):
+    if not await _ensure_admin(message):
+        return
+
+    @sync_to_async
+    def _get_policy():
+        return RewardSafetyPolicy.get_active()
+
+    policy = await _get_policy()
+    await message.answer(
+        "<b>🛡 Reward Safety Policy</b>\n\n"
+        f"Daily Cap: {policy.daily_reward_cap} Birr\n"
+        f"Cooldown: {policy.min_seconds_between_rewards} seconds\n"
+        f"Hourly Redemptions Limit: {policy.max_reward_redemptions_per_hour}\n\n"
+        "Use /eng_policy_set to update values.",
+        reply_markup=admin_main_menu_keyboard(),
+    )
+
+
+@router.message(Command("eng_policy_set"))
+async def admin_eng_policy_set_start(message: Message, state: FSMContext):
+    if not await _ensure_admin(message):
+        return
+    await state.set_state(RewardPolicyStates.waiting_for_daily_cap)
+    await message.answer("Enter new daily reward cap (Birr):")
+
+
+@router.message(RewardPolicyStates.waiting_for_daily_cap)
+async def admin_eng_policy_set_daily_cap(message: Message, state: FSMContext):
+    try:
+        cap = Decimal((message.text or '').strip())
+    except (InvalidOperation, AttributeError):
+        await message.answer("❌ Invalid amount.")
+        return
+    if cap <= 0:
+        await message.answer("❌ Daily cap must be > 0.")
+        return
+    await state.update_data(daily_cap=str(cap))
+    await state.set_state(RewardPolicyStates.waiting_for_cooldown_seconds)
+    await message.answer("Enter cooldown in seconds:")
+
+
+@router.message(RewardPolicyStates.waiting_for_cooldown_seconds)
+async def admin_eng_policy_set_cooldown(message: Message, state: FSMContext):
+    try:
+        cooldown = int((message.text or '').strip())
+    except (TypeError, ValueError):
+        await message.answer("❌ Please enter a whole number.")
+        return
+    if cooldown < 0:
+        await message.answer("❌ Cooldown cannot be negative.")
+        return
+    await state.update_data(cooldown=cooldown)
+    await state.set_state(RewardPolicyStates.waiting_for_hourly_limit)
+    await message.answer("Enter hourly redemption limit:")
+
+
+@router.message(RewardPolicyStates.waiting_for_hourly_limit)
+async def admin_eng_policy_set_hourly_limit(message: Message, state: FSMContext):
+    try:
+        hourly_limit = int((message.text or '').strip())
+    except (TypeError, ValueError):
+        await message.answer("❌ Please enter a whole number.")
+        return
+    if hourly_limit <= 0:
+        await message.answer("❌ Hourly limit must be > 0.")
+        return
+
+    data = await state.get_data()
+
+    @sync_to_async
+    def _save_policy():
+        policy = RewardSafetyPolicy.get_active()
+        policy.daily_reward_cap = Decimal(data['daily_cap'])
+        policy.min_seconds_between_rewards = int(data['cooldown'])
+        policy.max_reward_redemptions_per_hour = hourly_limit
+        policy.save(update_fields=['daily_reward_cap', 'min_seconds_between_rewards', 'max_reward_redemptions_per_hour', 'updated_at'])
+        return policy
+
+    policy = await _save_policy()
+    await message.answer(
+        "✅ Reward safety policy updated.\n"
+        f"Daily Cap: {policy.daily_reward_cap} Birr\n"
+        f"Cooldown: {policy.min_seconds_between_rewards}s\n"
+        f"Hourly Limit: {policy.max_reward_redemptions_per_hour}",
+        reply_markup=admin_main_menu_keyboard(),
+    )
+    await state.clear()
 

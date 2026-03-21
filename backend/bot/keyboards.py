@@ -19,6 +19,7 @@ def admin_main_menu_keyboard():
         [KeyboardButton(text="📊 Dashboard")],
         [KeyboardButton(text="💰 Deposits"), KeyboardButton(text="🏧 Withdrawals")],
         [KeyboardButton(text="💼 System Balance")],
+        [KeyboardButton(text="🚀 Engagement Management")],
         [KeyboardButton(text="👛 Wallet Management"), KeyboardButton(text="🎮 Game Management")],
         [KeyboardButton(text="👤 User Management"), KeyboardButton(text="📜 Transaction Logs")],
         [KeyboardButton(text="📢 Announcement")],
@@ -146,5 +147,71 @@ def system_balance_action_keyboard():
             InlineKeyboardButton(text="💵 Cash Out", callback_data="sysbal:cash_out"),
         ],
         [InlineKeyboardButton(text="🔄 Refresh", callback_data="sysbal:refresh")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def engagement_main_keyboard():
+    keyboard = [
+        [
+            InlineKeyboardButton(text="🎟 Promo Codes", callback_data="eng:promo:list"),
+            InlineKeyboardButton(text="➕ Create Promo", callback_data="eng:promo:create"),
+        ],
+        [
+            InlineKeyboardButton(text="🎉 Live Events", callback_data="eng:event:list"),
+            InlineKeyboardButton(text="➕ Create Event", callback_data="eng:event:create"),
+        ],
+        [
+            InlineKeyboardButton(text="🎯 Missions", callback_data="eng:mission:list"),
+            InlineKeyboardButton(text="🏆 Seasons", callback_data="eng:season:list"),
+        ],
+        [
+            InlineKeyboardButton(text="🛡 Reward Policy", callback_data="eng:policy:show"),
+            InlineKeyboardButton(text="⚙ Update Policy", callback_data="eng:policy:set"),
+        ],
+        [InlineKeyboardButton(text="🔄 Refresh", callback_data="eng:refresh")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def engagement_promo_tier_keyboard():
+    keyboard = [
+        [
+            InlineKeyboardButton(text="Common", callback_data="eng:promo:tier:common"),
+            InlineKeyboardButton(text="Rare", callback_data="eng:promo:tier:rare"),
+            InlineKeyboardButton(text="Legendary", callback_data="eng:promo:tier:legendary"),
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def engagement_balance_target_keyboard():
+    keyboard = [
+        [
+            InlineKeyboardButton(text="Bonus", callback_data="eng:promo:balance:bonus"),
+            InlineKeyboardButton(text="Main", callback_data="eng:promo:balance:main"),
+            InlineKeyboardButton(text="Winnings", callback_data="eng:promo:balance:winnings"),
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def engagement_frontend_visibility_keyboard():
+    keyboard = [
+        [
+            InlineKeyboardButton(text="Show In Frontend", callback_data="eng:promo:frontend:show"),
+            InlineKeyboardButton(text="Hide From Frontend", callback_data="eng:promo:frontend:hide"),
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def engagement_event_type_keyboard():
+    keyboard = [
+        [
+            InlineKeyboardButton(text="Happy Hour", callback_data="eng:event:type:happy_hour"),
+            InlineKeyboardButton(text="Flash Promo", callback_data="eng:event:type:flash_promo"),
+        ],
+        [InlineKeyboardButton(text="Double Reward", callback_data="eng:event:type:double_reward")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)

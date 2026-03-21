@@ -10,7 +10,19 @@ from django.db.models import Count, Max, Sum
 from decimal import Decimal
 from datetime import timedelta
 from users.models import User
-from game.models import Game, BingoCard, StakeLobbyLock, SystemBalanceLedger
+from game.models import (
+    Game,
+    BingoCard,
+    StakeLobbyLock,
+    SystemBalanceLedger,
+    LiveEvent,
+    MissionTemplate,
+    PromoCode,
+    PromoCodeRedemption,
+    Season,
+    UserMissionProgress,
+)
+from game.engagement import claim_mission, credit_user_reward, increment_missions, touch_user_streak, RewardSafetyError
 from wallet.models import Wallet, Transaction
 from game.security import (
     get_request_access_token,
@@ -26,6 +38,26 @@ import logging
 BOT_TELEGRAM_ID_THRESHOLD = 9000000000
 MIN_REAL_USERS_TO_START = 2
 logger = logging.getLogger(__name__)
+
+
+def _serialize_mission_progress(progress):
+    mission = progress.mission
+    return {
+        'progress_id': progress.id,
+        'mission_key': mission.key,
+        'title': mission.title,
+        'description': mission.description,
+        'mission_type': mission.mission_type,
+        'period': mission.period,
+        'target_value': mission.target_value,
+        'progress_value': progress.progress_value,
+        'is_completed': progress.progress_value >= mission.target_value,
+        'is_claimed': bool(progress.claimed_at),
+        'reward_amount': float(progress.reward_amount),
+        'reward_balance': mission.reward_balance,
+        'period_start': progress.period_start.isoformat(),
+        'period_end': progress.period_end.isoformat(),
+    }
 
 
 def get_supported_stakes():
@@ -431,6 +463,9 @@ def select_card_api(request):
                     user=user,
                     card_number=card_number
                 )
+
+                increment_missions(user, MissionTemplate.TYPE_PLAY_GAMES, amount=1)
+                touch_user_streak(user)
 
                 current_player_count = previous_player_count + 1
                 if previous_player_count < settings.GAME_MIN_PLAYERS <= current_player_count:
@@ -892,6 +927,7 @@ def trophy_state_api(request, telegram_id):
 
     period = (request.GET.get('period') or 'all').lower()
     stake_param = request.GET.get('stake')
+    season_id = request.GET.get('season_id')
 
     stakes = get_supported_stakes()
     stake_value = None
@@ -905,18 +941,35 @@ def trophy_state_api(request, telegram_id):
 
     now = timezone.now()
     start_at = None
+    current_season = None
     if period == 'today':
         start_at = now.replace(hour=0, minute=0, second=0, microsecond=0)
     elif period == 'week':
         start_at = now - timedelta(days=7)
     elif period == 'month':
         start_at = now - timedelta(days=30)
+    elif period == 'season':
+        if season_id:
+            try:
+                current_season = Season.objects.get(id=int(season_id))
+            except (ValueError, Season.DoesNotExist):
+                return JsonResponse({'error': 'Invalid season filter.'}, status=400)
+        else:
+            current_season = Season.get_current()
+
+        if not current_season:
+            return JsonResponse({'error': 'No active season found.'}, status=404)
+
+        start_at = current_season.starts_at
+        end_at = current_season.ends_at
     elif period != 'all':
         return JsonResponse({'error': 'Invalid period filter.'}, status=400)
 
     finished_games = Game.objects.filter(state='finished')
     if start_at is not None:
         finished_games = finished_games.filter(finished_at__gte=start_at)
+    if period == 'season' and current_season:
+        finished_games = finished_games.filter(finished_at__lte=end_at)
     if stake_value is not None:
         finished_games = finished_games.filter(stake_amount=stake_value)
 
@@ -952,6 +1005,7 @@ def trophy_state_api(request, telegram_id):
             'username': row['winner__username'],
             'total_winnings': float(row['total_winnings'] or 0),
             'wins': wins,
+            'season_points': int(wins * 3),
             'games_joined': joined,
             'win_rate': win_rate,
             'biggest_win': float(row['biggest_win'] or 0),
@@ -1018,8 +1072,10 @@ def trophy_state_api(request, telegram_id):
         'filters': {
             'period': period,
             'stake': stake_value,
+            'season_id': current_season.id if current_season else None,
+            'season_name': current_season.name if current_season else None,
             'available_stakes': stakes,
-            'available_periods': ['today', 'week', 'month', 'all'],
+            'available_periods': ['today', 'week', 'month', 'season', 'all'],
         },
         'leaderboard': top_rows,
         'podium': podium,
@@ -1032,6 +1088,243 @@ def trophy_state_api(request, telegram_id):
             'If tied, higher wins ranks first.',
             'If still tied, earlier achiever ranks first.',
         ],
+        'season_rules': {
+            'point_formula': '3 points per win',
+            'top_rewards': {
+                'top_1': float(current_season.top_1_reward) if current_season else 0,
+                'top_2': float(current_season.top_2_reward) if current_season else 0,
+                'top_3': float(current_season.top_3_reward) if current_season else 0,
+                'participation': float(current_season.participation_reward) if current_season else 0,
+            },
+        },
+    })
+
+
+@never_cache
+@rate_limit(key_prefix='missions-state', max_requests=40, window_seconds=60)
+@require_path_telegram_auth
+def missions_state_api(request, telegram_id):
+    try:
+        user = User.objects.get(telegram_id=telegram_id)
+    except User.DoesNotExist:
+        return JsonResponse({'error': 'User not found. Please start the bot first.'}, status=404)
+
+    touch_user_streak(user)
+    templates = MissionTemplate.objects.filter(is_active=True).order_by('sort_order', 'id')
+
+    now = timezone.now().date()
+    weekly_start = now - timedelta(days=now.weekday())
+
+    progress_rows = []
+    for mission in templates:
+        if mission.period == MissionTemplate.PERIOD_DAILY:
+            period_start = now
+        else:
+            period_start = weekly_start
+
+        progress = (
+            UserMissionProgress.objects.select_related('mission')
+            .filter(user=user, mission=mission, period_start=period_start)
+            .first()
+        )
+        if not progress:
+            period_end = period_start if mission.period == MissionTemplate.PERIOD_DAILY else (weekly_start + timedelta(days=6))
+            progress = UserMissionProgress.objects.create(
+                user=user,
+                mission=mission,
+                period_start=period_start,
+                period_end=period_end,
+                reward_amount=mission.reward_amount,
+            )
+        progress_rows.append(_serialize_mission_progress(progress))
+
+    streak = getattr(user, 'streak', None)
+    return JsonResponse({
+        'missions': progress_rows,
+        'streak': {
+            'current_streak': streak.current_streak if streak else 0,
+            'best_streak': streak.best_streak if streak else 0,
+            'last_active_date': streak.last_active_date.isoformat() if streak and streak.last_active_date else None,
+            'streak_protect_tokens': streak.streak_protect_tokens if streak else 1,
+        },
+        'server_time': timezone.now().isoformat(),
+    })
+
+
+@csrf_exempt
+@require_POST
+@rate_limit(key_prefix='mission-claim', max_requests=20, window_seconds=60)
+@require_valid_web_token
+def claim_mission_api(request):
+    try:
+        data = json.loads(request.body)
+        telegram_id = int(data.get('telegram_id'))
+        if telegram_id != int(request.auth_telegram_id):
+            return JsonResponse({'error': 'Forbidden.'}, status=403)
+        progress_id = int(data.get('progress_id'))
+
+        user = User.objects.get(telegram_id=telegram_id)
+        amount, progress = claim_mission(user, progress_id)
+        return JsonResponse({
+            'success': True,
+            'reward_amount': float(amount),
+            'progress': _serialize_mission_progress(progress),
+        })
+    except RewardSafetyError as exc:
+        return JsonResponse({'error': str(exc)}, status=429)
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        return JsonResponse({'error': str(exc) or 'Invalid request payload.'}, status=400)
+    except User.DoesNotExist:
+        return JsonResponse({'error': 'User not found.'}, status=404)
+    except Exception as exc:
+        logger.exception('claim_mission_api failed: %s', exc)
+        return JsonResponse({'error': 'Unable to claim mission right now.'}, status=500)
+
+
+@never_cache
+@rate_limit(key_prefix='events-state', max_requests=50, window_seconds=60)
+@require_path_telegram_auth
+def live_events_api(request, telegram_id):
+    try:
+        User.objects.get(telegram_id=telegram_id)
+    except User.DoesNotExist:
+        return JsonResponse({'error': 'User not found. Please start the bot first.'}, status=404)
+
+    now = timezone.now()
+    active = LiveEvent.objects.filter(is_active=True, starts_at__lte=now, ends_at__gte=now).order_by('ends_at')
+    upcoming = LiveEvent.objects.filter(is_active=True, starts_at__gt=now).order_by('starts_at')[:10]
+
+    def serialize_event(event):
+        return {
+            'id': event.id,
+            'name': event.name,
+            'event_type': event.event_type,
+            'description': event.description,
+            'starts_at': event.starts_at.isoformat(),
+            'ends_at': event.ends_at.isoformat(),
+            'bonus_multiplier': float(event.bonus_multiplier),
+            'is_live': event.is_live(),
+        }
+
+    return JsonResponse({
+        'active_events': [serialize_event(event) for event in active],
+        'upcoming_events': [serialize_event(event) for event in upcoming],
+        'server_time': now.isoformat(),
+    })
+
+
+@csrf_exempt
+@require_POST
+@rate_limit(key_prefix='promo-redeem', max_requests=20, window_seconds=60)
+@require_valid_web_token
+def redeem_promo_code_api(request):
+    try:
+        data = json.loads(request.body)
+        telegram_id = int(data.get('telegram_id'))
+        if telegram_id != int(request.auth_telegram_id):
+            return JsonResponse({'error': 'Forbidden.'}, status=403)
+
+        promo_code = str(data.get('code', '')).strip().upper()
+        if not promo_code:
+            return JsonResponse({'error': 'Promo code is required.'}, status=400)
+
+        user = User.objects.get(telegram_id=telegram_id)
+        promo = PromoCode.objects.filter(code=promo_code).first()
+        if not promo:
+            return JsonResponse({'error': 'Promo code not found.'}, status=404)
+
+        now = timezone.now()
+        if not promo.is_active or now < promo.starts_at or now > promo.ends_at:
+            return JsonResponse({'error': 'Promo code is not active right now.'}, status=400)
+
+        account_age_days = (now.date() - user.registration_date.date()).days
+        if account_age_days < promo.min_account_age_days:
+            return JsonResponse({'error': 'Account is too new for this promo code.'}, status=400)
+
+        with transaction.atomic():
+            PromoCode.objects.select_for_update().get(pk=promo.pk)
+
+            total_redemptions = PromoCodeRedemption.objects.filter(promo_code=promo).count()
+            if promo.max_redemptions > 0 and total_redemptions >= promo.max_redemptions:
+                return JsonResponse({'error': 'Promo redemption limit reached.'}, status=400)
+
+            user_redemptions = PromoCodeRedemption.objects.filter(promo_code=promo, user=user).count()
+            if user_redemptions >= promo.per_user_limit:
+                return JsonResponse({'error': 'You already redeemed this promo code.'}, status=400)
+
+            credited_amount = credit_user_reward(
+                user=user,
+                amount=promo.reward_amount,
+                reward_balance=promo.reward_balance,
+                description=f"Promo code {promo.code}",
+            )
+
+            PromoCodeRedemption.objects.create(
+                promo_code=promo,
+                user=user,
+                amount=credited_amount,
+            )
+
+        increment_missions(user, MissionTemplate.TYPE_REDEEM_PROMO, amount=1)
+        touch_user_streak(user)
+
+        return JsonResponse({
+            'success': True,
+            'code': promo.code,
+            'tier': promo.tier,
+            'credited_amount': float(credited_amount),
+            'reward_balance': promo.reward_balance,
+            'expires_at': promo.ends_at.isoformat(),
+        })
+    except RewardSafetyError as exc:
+        return JsonResponse({'error': str(exc)}, status=429)
+    except User.DoesNotExist:
+        return JsonResponse({'error': 'User not found.'}, status=404)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return JsonResponse({'error': 'Invalid request payload.'}, status=400)
+    except Exception as exc:
+        logger.exception('redeem_promo_code_api failed: %s', exc)
+        return JsonResponse({'error': 'Unable to redeem promo code right now.'}, status=500)
+
+
+@never_cache
+@rate_limit(key_prefix='promo-list', max_requests=30, window_seconds=60)
+@require_path_telegram_auth
+def promo_codes_api(request, telegram_id):
+    try:
+        user = User.objects.get(telegram_id=telegram_id)
+    except User.DoesNotExist:
+        return JsonResponse({'error': 'User not found. Please start the bot first.'}, status=404)
+
+    now = timezone.now()
+    rows = []
+    promos = PromoCode.objects.filter(
+        is_active=True,
+        is_visible_in_frontend=True,
+        ends_at__gte=now,
+    ).order_by('starts_at', 'id')[:40]
+    for promo in promos:
+        user_uses = PromoCodeRedemption.objects.filter(promo_code=promo, user=user).count()
+        global_uses = PromoCodeRedemption.objects.filter(promo_code=promo).count()
+        rows.append({
+            'id': promo.id,
+            'code': promo.code,
+            'title': promo.title,
+            'tier': promo.tier,
+            'reward_amount': float(promo.reward_amount),
+            'reward_balance': promo.reward_balance,
+            'starts_at': promo.starts_at.isoformat(),
+            'ends_at': promo.ends_at.isoformat(),
+            'is_live': promo.starts_at <= now <= promo.ends_at,
+            'max_redemptions': promo.max_redemptions,
+            'global_redemptions': global_uses,
+            'per_user_limit': promo.per_user_limit,
+            'user_redemptions': user_uses,
+        })
+
+    return JsonResponse({
+        'promo_codes': rows,
+        'server_time': now.isoformat(),
     })
 
 
@@ -1184,6 +1477,9 @@ def claim_bingo_api(request):
                 status='approved',
                 description=f'Won Game #{game.id} - {pattern}'
             )
+
+            increment_missions(user, MissionTemplate.TYPE_WIN_GAMES, amount=1)
+            touch_user_streak(user)
 
             if system_revenue > 0:
                 SystemBalanceLedger.append_entry(

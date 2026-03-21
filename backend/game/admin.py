@@ -1,6 +1,20 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import Game, BingoCard, SystemBalance, SystemBalanceLedger
+from .models import (
+    Game,
+    BingoCard,
+    LiveEvent,
+    MissionTemplate,
+    PromoCode,
+    PromoCodeRedemption,
+    RewardSafetyPolicy,
+    Season,
+    SystemBalance,
+    SystemBalanceLedger,
+    UserMissionProgress,
+    UserRewardWindow,
+    UserStreak,
+)
 
 
 @admin.register(Game)
@@ -131,3 +145,63 @@ class SystemBalanceLedgerAdmin(admin.ModelAdmin):
         'idempotency_key',
         'created_at',
     ]
+
+
+@admin.register(RewardSafetyPolicy)
+class RewardSafetyPolicyAdmin(admin.ModelAdmin):
+    list_display = ['id', 'daily_reward_cap', 'min_seconds_between_rewards', 'max_reward_redemptions_per_hour', 'updated_at']
+
+
+@admin.register(UserRewardWindow)
+class UserRewardWindowAdmin(admin.ModelAdmin):
+    list_display = ['id', 'user', 'reward_date', 'reward_total', 'redemption_count', 'last_reward_at']
+    list_filter = ['reward_date']
+    search_fields = ['user__first_name', 'user__username', 'user__telegram_id']
+
+
+@admin.register(PromoCode)
+class PromoCodeAdmin(admin.ModelAdmin):
+    list_display = ['code', 'tier', 'reward_amount', 'reward_balance', 'is_active', 'is_visible_in_frontend', 'starts_at', 'ends_at']
+    list_filter = ['tier', 'reward_balance', 'is_active', 'is_visible_in_frontend', 'starts_at']
+    search_fields = ['code', 'title']
+
+
+@admin.register(PromoCodeRedemption)
+class PromoCodeRedemptionAdmin(admin.ModelAdmin):
+    list_display = ['id', 'promo_code', 'user', 'amount', 'created_at']
+    list_filter = ['promo_code', 'created_at']
+    search_fields = ['promo_code__code', 'user__first_name', 'user__username', 'user__telegram_id']
+
+
+@admin.register(MissionTemplate)
+class MissionTemplateAdmin(admin.ModelAdmin):
+    list_display = ['key', 'title', 'mission_type', 'period', 'target_value', 'reward_amount', 'reward_balance', 'is_active', 'sort_order']
+    list_filter = ['mission_type', 'period', 'reward_balance', 'is_active']
+    search_fields = ['key', 'title', 'description']
+
+
+@admin.register(UserMissionProgress)
+class UserMissionProgressAdmin(admin.ModelAdmin):
+    list_display = ['id', 'user', 'mission', 'period_start', 'progress_value', 'reward_amount', 'completed_at', 'claimed_at']
+    list_filter = ['mission__period', 'period_start', 'claimed_at']
+    search_fields = ['user__first_name', 'user__username', 'mission__key', 'mission__title']
+
+
+@admin.register(UserStreak)
+class UserStreakAdmin(admin.ModelAdmin):
+    list_display = ['id', 'user', 'current_streak', 'best_streak', 'streak_protect_tokens', 'last_active_date', 'updated_at']
+    search_fields = ['user__first_name', 'user__username', 'user__telegram_id']
+
+
+@admin.register(LiveEvent)
+class LiveEventAdmin(admin.ModelAdmin):
+    list_display = ['id', 'name', 'event_type', 'bonus_multiplier', 'starts_at', 'ends_at', 'is_active', 'auto_announce', 'announced_at']
+    list_filter = ['event_type', 'is_active', 'auto_announce', 'starts_at']
+    search_fields = ['name', 'description']
+
+
+@admin.register(Season)
+class SeasonAdmin(admin.ModelAdmin):
+    list_display = ['id', 'name', 'starts_at', 'ends_at', 'is_active', 'top_1_reward', 'top_2_reward', 'top_3_reward', 'participation_reward']
+    list_filter = ['is_active', 'starts_at']
+    search_fields = ['name']
