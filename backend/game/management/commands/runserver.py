@@ -9,7 +9,7 @@ from django.core.management.commands.runserver import Command as DjangoRunserver
 
 
 class Command(DjangoRunserverCommand):
-    help = "Starts Django server and automatically starts game engine and bot."
+    help = "Starts Django server. Set AUTO_START_GAME_SERVICES=1 to auto-start game engine and bot."
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -56,7 +56,7 @@ class Command(DjangoRunserverCommand):
         self.stdout.write(self.style.SUCCESS("[startup] Game Engine and Bot started."))
 
     def _auto_start_enabled(self):
-        value = os.environ.get("AUTO_START_GAME_SERVICES", "1").strip().lower()
+        value = os.environ.get("AUTO_START_GAME_SERVICES", "0").strip().lower()
         return value in {"1", "true", "yes", "on"}
 
     def _start_process(self, name, command, cwd):

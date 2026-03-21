@@ -17,6 +17,12 @@ try:
     if env_path.exists():
         load_dotenv(env_path)
         print("Loaded .env file", flush=True)
+
+    django_env = os.getenv('DJANGO_ENV', '').strip().lower()
+    dev_env_path = BASE_DIR / '.env.development'
+    if django_env in {'dev', 'development', 'local'} and dev_env_path.exists():
+        load_dotenv(dev_env_path, override=True)
+        print("Loaded .env.development file", flush=True)
 except Exception as e:
     print(f"dotenv load skipped: {e}", flush=True)
 
@@ -44,6 +50,7 @@ except Exception as e:
 try:
     print("Importing bot module...", flush=True)
     from bot.bot import main
+    from aiogram.exceptions import TelegramUnauthorizedError
     print("✅ Bot module imported OK", flush=True)
 except Exception as e:
     print(f"❌ Bot import failed: {e}", flush=True)
@@ -55,6 +62,10 @@ import asyncio
 print("🚀 Starting Bingo Bot...", flush=True)
 try:
     asyncio.run(main())
+except TelegramUnauthorizedError:
+    print("❌ Telegram rejected BOT_TOKEN (Unauthorized).", flush=True)
+    print("   Action: Create a new token in @BotFather and update backend/.env", flush=True)
+    sys.exit(1)
 except KeyboardInterrupt:
     print("👋 Bot stopped", flush=True)
 except Exception as e:

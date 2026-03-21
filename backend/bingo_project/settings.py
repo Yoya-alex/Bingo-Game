@@ -23,7 +23,11 @@ def env_bool(name: str, default: bool = False) -> bool:
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Load environment variables
-load_dotenv()
+# Base .env is always loaded first. In development, .env.development can override it.
+load_dotenv(BASE_DIR / '.env')
+django_env = os.getenv('DJANGO_ENV', '').strip().lower()
+if django_env in {'dev', 'development', 'local'}:
+    load_dotenv(BASE_DIR / '.env.development', override=True)
 
 
 # Quick-start development settings - unsuitable for production

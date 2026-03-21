@@ -48,6 +48,7 @@ staticfiles/
 
 # Environment variables
 .env
+.env.development
 .venv
 env/
 venv/
