@@ -5,7 +5,7 @@ Automatically starts games and calls numbers
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from django.conf import settings
-from game.models import Game, BingoCard, SystemBalanceLedger
+from game.models import Game, BingoCard, GameEngineSettings, SystemBalanceLedger
 from users.models import User
 from wallet.models import Wallet
 from bot.utils.game_logic import get_next_number, check_bingo_win, generate_winning_grid_from_called_numbers
@@ -265,6 +265,7 @@ class Command(BaseCommand):
         while True:
             try:
                 self.sync_missing_system_balance_entries()
+                engine_settings = GameEngineSettings.get_active()
 
                 # Check for games in waiting state that should start
                 waiting_games = Game.objects.filter(state='waiting')
@@ -309,6 +310,8 @@ class Command(BaseCommand):
                     remaining_time = settings.WAITING_TIME - time_elapsed
                     
                     if (
+                        engine_settings.enable_fake_users
+                        and
                         remaining_time <= 10
                         and player_count < 5
                         and real_player_count >= self.MIN_REAL_USERS_TO_START

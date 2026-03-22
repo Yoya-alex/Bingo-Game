@@ -1,0 +1,392 @@
+{% extends "admin/base_site.html" %} {% block content %}
+<style>
+  .analysis-shell {
+    --tone-bg: linear-gradient(135deg, #f6fbff, #edf5ff 42%, #fff8ef);
+    --tone-card: #ffffff;
+    --tone-card-soft: #f8fafc;
+    --tone-border: #cbd8e6;
+    --tone-line: #e4ecf4;
+    --tone-ink: #0f172a;
+    --tone-muted: #334155;
+    --tone-subtle: #64748b;
+    --tone-secondary: #1d4ed8;
+    --tone-secondary-strong: #1e40af;
+    --tone-note-bg: #fff7ed;
+    --tone-note-border: #fdba74;
+    --tone-note-ink: #9a3412;
+  }
+
+  html[data-theme="dark"] .analysis-shell {
+    --tone-bg: linear-gradient(145deg, #0f172a, #0b2239 44%, #1a2238);
+    --tone-card: #0f2233;
+    --tone-card-soft: #13293f;
+    --tone-border: #264762;
+    --tone-line: #1f405a;
+    --tone-ink: #f8fafc;
+    --tone-muted: #dbe7f3;
+    --tone-subtle: #b4c7da;
+    --tone-secondary: #60a5fa;
+    --tone-secondary-strong: #3b82f6;
+    --tone-note-bg: #3a250f;
+    --tone-note-border: #c2410c;
+    --tone-note-ink: #ffe7cf;
+  }
+
+  .analysis-shell {
+    max-width: 1220px;
+    margin: 0 auto;
+    padding: 16px;
+    background: var(--tone-bg);
+    border: 1px solid var(--tone-border);
+    border-radius: 14px;
+  }
+
+  .analysis-header {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+
+  .analysis-title {
+    margin: 0;
+    color: var(--tone-ink);
+    font-size: 28px;
+  }
+
+  .analysis-subtitle {
+    margin: 6px 0 0;
+    color: var(--tone-subtle);
+  }
+
+  .analysis-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .analysis-select {
+    border: 1px solid var(--tone-border);
+    border-radius: 8px;
+    background: var(--tone-card);
+    color: var(--tone-ink);
+    padding: 6px 10px;
+  }
+
+  .analysis-export {
+    background: linear-gradient(
+      135deg,
+      var(--tone-secondary),
+      var(--tone-secondary-strong)
+    );
+    color: #fff;
+    text-decoration: none;
+    border-radius: 8px;
+    padding: 7px 12px;
+    font-weight: 600;
+  }
+
+  .analysis-export:hover,
+  .analysis-export:focus {
+    filter: brightness(1.08);
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.3);
+  }
+
+  .analysis-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .analysis-kpi {
+    border: 1px solid var(--tone-border);
+    border-radius: 12px;
+    padding: 12px;
+    background: var(--tone-card);
+    box-shadow: 0 3px 10px rgba(15, 23, 42, 0.05);
+  }
+
+  .analysis-kpi-label {
+    font-size: 12px;
+    color: var(--tone-subtle);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .analysis-kpi-value {
+    margin-top: 6px;
+    font-size: 26px;
+    color: var(--tone-ink);
+    font-weight: 700;
+  }
+
+  .analysis-section {
+    border: 1px solid var(--tone-border);
+    border-radius: 12px;
+    background: var(--tone-card);
+    margin-bottom: 14px;
+    overflow: hidden;
+  }
+
+  .analysis-section h2 {
+    margin: 0;
+    padding: 12px 14px;
+    background: linear-gradient(
+      135deg,
+      var(--tone-card-soft),
+      color-mix(in srgb, var(--tone-card-soft) 55%, var(--tone-bg))
+    );
+    color: var(--tone-ink);
+    font-size: 16px;
+    border-bottom: 1px solid var(--tone-line);
+  }
+
+  .analysis-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .analysis-table th,
+  .analysis-table td {
+    border-bottom: 1px solid var(--tone-line);
+    padding: 9px 10px;
+    color: var(--tone-muted);
+  }
+
+  .analysis-table th {
+    text-align: left;
+    background: var(--tone-card-soft);
+    color: var(--tone-ink);
+  }
+
+  .analysis-table td:last-child,
+  .analysis-table th:last-child {
+    text-align: right;
+  }
+
+  .analysis-reco {
+    padding: 12px 14px;
+  }
+
+  .analysis-reco ul {
+    margin: 0 0 10px 20px;
+  }
+
+  .analysis-note {
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--tone-note-bg);
+    border: 1px solid var(--tone-note-border);
+    color: var(--tone-note-ink);
+  }
+
+  .analysis-strong {
+    color: var(--tone-ink);
+  }
+</style>
+
+<div class="analysis-shell">
+  <div class="analysis-header">
+    <div>
+      <h1 class="analysis-title">System Balance Analysis</h1>
+      <p class="analysis-subtitle">
+        Period: {{ analysis.start_date }} to {{ analysis.today }} ({{
+        analysis.days }} days)
+      </p>
+    </div>
+
+    <form method="get" class="analysis-actions">
+      <label for="days"><strong>Window:</strong></label>
+      <select
+        id="days"
+        name="days"
+        class="analysis-select"
+        onchange="this.form.submit()">
+        {% for option in days_options %}
+        <option
+          value="{{ option }}"
+          {%
+          if
+          option=""
+          ="analysis.days"
+          %}selected{%
+          endif
+          %}>
+          {{ option }} days
+        </option>
+        {% endfor %}
+      </select>
+      <a
+        class="analysis-export"
+        href="{% url 'admin:game_systembalance_analysis_export' %}?days={{ analysis.days }}"
+        >Export CSV</a
+      >
+    </form>
+  </div>
+
+  <div class="analysis-grid">
+    <div class="analysis-kpi">
+      <div class="analysis-kpi-label">Current System Balance</div>
+      <div class="analysis-kpi-value">
+        {{ analysis.system_balance.balance }} Birr
+      </div>
+    </div>
+    <div class="analysis-kpi">
+      <div class="analysis-kpi-label">Risk Level</div>
+      <div class="analysis-kpi-value">{{ analysis.risk_level }}</div>
+    </div>
+    <div class="analysis-kpi">
+      <div class="analysis-kpi-label">Runway</div>
+      <div class="analysis-kpi-value">
+        {% if analysis.runway_days %}{{ analysis.runway_days }} days{% else
+        %}Stable / Growing{% endif %}
+      </div>
+    </div>
+    <div class="analysis-kpi">
+      <div class="analysis-kpi-label">Sustainability Ratio</div>
+      <div class="analysis-kpi-value">
+        {% if analysis.sustainability_ratio %}{{ analysis.sustainability_ratio
+        }}{% else %}N/A{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <section class="analysis-section">
+    <h2>Cashflow Summary</h2>
+    <table class="analysis-table">
+      <tbody>
+        <tr>
+          <td>Total Inflow</td>
+          <td>
+            <strong class="analysis-strong"
+              >{{ analysis.inflow_total }} Birr</strong
+            >
+          </td>
+        </tr>
+        <tr>
+          <td>Total Outflow</td>
+          <td>
+            <strong class="analysis-strong"
+              >{{ analysis.outflow_total }} Birr</strong
+            >
+          </td>
+        </tr>
+        <tr>
+          <td>Net</td>
+          <td>
+            <strong class="analysis-strong"
+              >{{ analysis.net_total }} Birr</strong
+            >
+          </td>
+        </tr>
+        <tr>
+          <td>Average Daily Inflow</td>
+          <td>{{ analysis.avg_daily_inflow }} Birr</td>
+        </tr>
+        <tr>
+          <td>Average Daily Outflow</td>
+          <td>{{ analysis.avg_daily_outflow }} Birr</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="analysis-section">
+    <h2>Reward Outflow Breakdown</h2>
+    <table class="analysis-table">
+      <tbody>
+        <tr>
+          <td>Total Reward Payout</td>
+          <td>
+            <strong class="analysis-strong"
+              >{{ analysis.reward_outflow_total }} Birr</strong
+            >
+          </td>
+        </tr>
+        <tr>
+          <td>Promo Rewards</td>
+          <td>{{ analysis.promo_reward_total }} Birr</td>
+        </tr>
+        <tr>
+          <td>Mission Rewards</td>
+          <td>{{ analysis.mission_reward_total }} Birr</td>
+        </tr>
+        <tr>
+          <td>Other Rewards</td>
+          <td>{{ analysis.other_reward_total }} Birr</td>
+        </tr>
+        <tr>
+          <td>Avg Daily Reward Spend</td>
+          <td>{{ analysis.avg_daily_reward_outflow }} Birr</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="analysis-section">
+    <h2>Forecast Scenarios</h2>
+    <table class="analysis-table">
+      <thead>
+        <tr>
+          <th>Scenario</th>
+          <th>Daily Net</th>
+          <th>In 30 Days</th>
+          <th>In 60 Days</th>
+          <th>In 90 Days</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in analysis.projected_scenarios %}
+        <tr>
+          <td>{{ row.label }}</td>
+          <td>{{ row.daily_net }} Birr</td>
+          <td>{{ row.in_30_days }} Birr</td>
+          <td>{{ row.in_60_days }} Birr</td>
+          <td>{{ row.in_90_days }} Birr</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="analysis-section">
+    <h2>Recommended Giveaway Strategy</h2>
+    <div class="analysis-reco">
+      <ul>
+        <li>
+          Recommended daily giveaway budget:
+          <strong class="analysis-strong"
+            >{{ analysis.recommended_daily_budget }} Birr</strong
+          >
+        </li>
+        <li>
+          Maximum safe daily giveaway budget:
+          <strong class="analysis-strong"
+            >{{ analysis.max_safe_daily_budget }} Birr</strong
+          >
+        </li>
+        <li>
+          Minimum recommended reserve (30-day outflow):
+          <strong class="analysis-strong"
+            >{{ analysis.minimum_recommended_reserve }} Birr</strong
+          >
+        </li>
+        <li>
+          Current low-balance warning threshold:
+          <strong class="analysis-strong"
+            >{{ analysis.policy.low_system_balance_warning_threshold }}
+            Birr</strong
+          >
+        </li>
+      </ul>
+      <p class="analysis-note">
+        <strong>Recommendation:</strong> {{ analysis.recommendation }}
+      </p>
+    </div>
+  </section>
+</div>
+{% endblock %}

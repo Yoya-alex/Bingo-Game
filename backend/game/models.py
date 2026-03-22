@@ -124,6 +124,7 @@ class SystemBalanceLedger(models.Model):
     EVENT_TYPES = [
         ('game_commission', 'Game Commission'),
         ('game_no_winner', 'Game No Winner'),
+        ('reward_payout', 'Reward Payout'),
         ('admin_adjustment', 'Admin Adjustment'),
     ]
     
@@ -243,6 +244,7 @@ class BingoCard(models.Model):
 
 class RewardSafetyPolicy(models.Model):
     daily_reward_cap = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('500.00'))
+    low_system_balance_warning_threshold = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('500.00'))
     min_seconds_between_rewards = models.IntegerField(default=20)
     max_reward_redemptions_per_hour = models.IntegerField(default=20)
     created_at = models.DateTimeField(default=timezone.now)
@@ -258,6 +260,24 @@ class RewardSafetyPolicy(models.Model):
 
     def __str__(self):
         return f"Reward Safety Policy #{self.pk}"
+
+
+class GameEngineSettings(models.Model):
+    enable_fake_users = models.BooleanField(default=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'game_engine_settings'
+
+    @classmethod
+    def get_active(cls):
+        settings_row, _ = cls.objects.get_or_create(pk=1)
+        return settings_row
+
+    def __str__(self):
+        state = 'Enabled' if self.enable_fake_users else 'Disabled'
+        return f"Game Engine Settings (Fake Users: {state})"
 
 
 class UserRewardWindow(models.Model):

@@ -1,7 +1,18 @@
+import csv
+from datetime import timedelta
+from decimal import Decimal
+
 from django.contrib import admin
+from django.contrib import messages
+from django.db.models import Q, Sum
+from django.http import HttpResponse
+from django.template.response import TemplateResponse
+from django.urls import path, reverse
 from django.utils.html import format_html
+from django.utils import timezone
 from .models import (
     Game,
+    GameEngineSettings,
     BingoCard,
     LiveEvent,
     MissionTemplate,
@@ -115,8 +126,284 @@ class BingoCardAdmin(admin.ModelAdmin):
 
 @admin.register(SystemBalance)
 class SystemBalanceAdmin(admin.ModelAdmin):
-    list_display = ['id', 'balance', 'updated_at']
+    list_display = ['id', 'balance', 'balance_health', 'analysis_page', 'updated_at']
     readonly_fields = ['created_at', 'updated_at']
+
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                'analysis/',
+                self.admin_site.admin_view(self.analysis_view),
+                name='game_systembalance_analysis',
+            ),
+            path(
+                'analysis/export/',
+                self.admin_site.admin_view(self.analysis_export_view),
+                name='game_systembalance_analysis_export',
+            ),
+        ]
+        return custom_urls + urls
+
+    @staticmethod
+    def _sum_amount(queryset):
+        return queryset.aggregate(total=Sum('amount')).get('total') or Decimal('0.00')
+
+    @staticmethod
+    def _to_money(value):
+        return Decimal(value).quantize(Decimal('0.01'))
+
+    def _build_analysis_context(self, days):
+        policy = RewardSafetyPolicy.get_active()
+        system_balance, _ = SystemBalance.objects.get_or_create(pk=1)
+
+        today = timezone.localdate()
+        start_date = today - timedelta(days=days - 1)
+        ledger = SystemBalanceLedger.objects.filter(created_at__date__gte=start_date)
+
+        inflow_total = self._sum_amount(ledger.filter(direction='credit'))
+        outflow_total = self._sum_amount(ledger.filter(direction='debit'))
+        net_total = inflow_total - outflow_total
+
+        reward_outflow_total = self._sum_amount(
+            ledger.filter(direction='debit', event_type='reward_payout')
+        )
+
+        promo_filter = (
+            Q(metadata__reward_description__icontains='Promo code')
+            | Q(description__icontains='Promo code')
+        )
+        mission_filter = (
+            Q(metadata__reward_description__icontains='Mission ')
+            | Q(description__icontains='Mission ')
+        )
+
+        promo_reward_total = self._sum_amount(
+            ledger.filter(direction='debit', event_type='reward_payout').filter(promo_filter)
+        )
+        mission_reward_total = self._sum_amount(
+            ledger.filter(direction='debit', event_type='reward_payout').filter(mission_filter)
+        )
+        other_reward_total = reward_outflow_total - promo_reward_total - mission_reward_total
+        if other_reward_total < 0:
+            other_reward_total = Decimal('0.00')
+
+        day_count = Decimal(str(days))
+        avg_daily_inflow = inflow_total / day_count
+        avg_daily_outflow = outflow_total / day_count
+        avg_daily_reward_outflow = reward_outflow_total / day_count
+        avg_daily_non_reward_outflow = avg_daily_outflow - avg_daily_reward_outflow
+        if avg_daily_non_reward_outflow < 0:
+            avg_daily_non_reward_outflow = Decimal('0.00')
+
+        sustainability_ratio = None
+        if avg_daily_outflow > 0:
+            sustainability_ratio = avg_daily_inflow / avg_daily_outflow
+
+        daily_deficit = avg_daily_outflow - avg_daily_inflow
+        if daily_deficit < 0:
+            daily_deficit = Decimal('0.00')
+
+        runway_days = None
+        if daily_deficit > 0 and system_balance.balance > 0:
+            runway_days = float(system_balance.balance / daily_deficit)
+
+        projected_scenarios = []
+        for label, reward_multiplier in [
+            ('Conservative (80% reward spending)', Decimal('0.80')),
+            ('Base (current reward spending)', Decimal('1.00')),
+            ('Growth Push (120% reward spending)', Decimal('1.20')),
+        ]:
+            scenario_reward_outflow = avg_daily_reward_outflow * reward_multiplier
+            scenario_daily_outflow = avg_daily_non_reward_outflow + scenario_reward_outflow
+            scenario_daily_net = avg_daily_inflow - scenario_daily_outflow
+
+            projected_scenarios.append({
+                'label': label,
+                'daily_net': self._to_money(scenario_daily_net),
+                'in_30_days': self._to_money(system_balance.balance + (scenario_daily_net * Decimal('30'))),
+                'in_60_days': self._to_money(system_balance.balance + (scenario_daily_net * Decimal('60'))),
+                'in_90_days': self._to_money(system_balance.balance + (scenario_daily_net * Decimal('90'))),
+            })
+
+        recommended_daily_budget = self._to_money(max(avg_daily_inflow * Decimal('0.75'), Decimal('0.00')))
+        max_safe_daily_budget = self._to_money(max(avg_daily_inflow * Decimal('0.90'), Decimal('0.00')))
+        min_reserve = self._to_money(avg_daily_outflow * Decimal('30'))
+
+        if system_balance.balance <= 0:
+            risk_level = 'Critical'
+            recommendation = 'Pause non-essential promo and mission giveaways. Refill system balance immediately before allowing further reward claims.'
+        elif runway_days is not None and runway_days < 14:
+            risk_level = 'High'
+            recommendation = (
+                'Reduce giveaway spending by 25%-40%, prioritize mission rewards over promo bursts, '
+                'and replenish system balance to at least 30-day reserve.'
+            )
+        elif sustainability_ratio is not None and sustainability_ratio < Decimal('0.90'):
+            risk_level = 'Medium'
+            recommendation = (
+                'Current reward burn is near/above inflow. Tighten promo eligibility and keep daily giveaways near recommended budget.'
+            )
+        else:
+            risk_level = 'Healthy'
+            recommendation = (
+                'Reward strategy is sustainable. Maintain current missions, run controlled promo campaigns, '
+                'and monitor runway weekly.'
+            )
+
+        return {
+            'policy': policy,
+            'system_balance': system_balance,
+            'days': days,
+            'start_date': start_date,
+            'today': today,
+            'inflow_total': self._to_money(inflow_total),
+            'outflow_total': self._to_money(outflow_total),
+            'net_total': self._to_money(net_total),
+            'reward_outflow_total': self._to_money(reward_outflow_total),
+            'promo_reward_total': self._to_money(promo_reward_total),
+            'mission_reward_total': self._to_money(mission_reward_total),
+            'other_reward_total': self._to_money(other_reward_total),
+            'avg_daily_inflow': self._to_money(avg_daily_inflow),
+            'avg_daily_outflow': self._to_money(avg_daily_outflow),
+            'avg_daily_reward_outflow': self._to_money(avg_daily_reward_outflow),
+            'sustainability_ratio': round(float(sustainability_ratio), 2) if sustainability_ratio is not None else None,
+            'runway_days': round(runway_days, 1) if runway_days is not None else None,
+            'recommended_daily_budget': recommended_daily_budget,
+            'max_safe_daily_budget': max_safe_daily_budget,
+            'minimum_recommended_reserve': min_reserve,
+            'risk_level': risk_level,
+            'recommendation': recommendation,
+            'projected_scenarios': projected_scenarios,
+        }
+
+    def analysis_view(self, request):
+        try:
+            days = int(request.GET.get('days', '30'))
+        except ValueError:
+            days = 30
+        days = max(7, min(days, 180))
+
+        context = dict(
+            self.admin_site.each_context(request),
+            title='System Balance Analysis & Recommendations',
+            opts=self.model._meta,
+            analysis=self._build_analysis_context(days),
+            days_options=[7, 14, 30, 60, 90, 180],
+        )
+        return TemplateResponse(request, 'admin/game/system_balance/analysis.html', context)
+
+    def analysis_export_view(self, request):
+        try:
+            days = int(request.GET.get('days', '30'))
+        except ValueError:
+            days = 30
+        days = max(7, min(days, 180))
+
+        analysis = self._build_analysis_context(days)
+
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="system_balance_analysis_{days}d.csv"'
+
+        writer = csv.writer(response)
+        writer.writerow(['Section', 'Metric', 'Value'])
+        writer.writerow(['Summary', 'Period Start', analysis['start_date']])
+        writer.writerow(['Summary', 'Period End', analysis['today']])
+        writer.writerow(['Summary', 'Current Balance', analysis['system_balance'].balance])
+        writer.writerow(['Summary', 'Risk Level', analysis['risk_level']])
+        writer.writerow(['Summary', 'Runway Days', analysis['runway_days'] if analysis['runway_days'] is not None else 'Stable/Growing'])
+        writer.writerow(['Summary', 'Sustainability Ratio', analysis['sustainability_ratio'] if analysis['sustainability_ratio'] is not None else 'N/A'])
+
+        writer.writerow(['Cashflow', 'Total Inflow', analysis['inflow_total']])
+        writer.writerow(['Cashflow', 'Total Outflow', analysis['outflow_total']])
+        writer.writerow(['Cashflow', 'Net Total', analysis['net_total']])
+        writer.writerow(['Cashflow', 'Average Daily Inflow', analysis['avg_daily_inflow']])
+        writer.writerow(['Cashflow', 'Average Daily Outflow', analysis['avg_daily_outflow']])
+
+        writer.writerow(['Rewards', 'Total Reward Payout', analysis['reward_outflow_total']])
+        writer.writerow(['Rewards', 'Promo Rewards', analysis['promo_reward_total']])
+        writer.writerow(['Rewards', 'Mission Rewards', analysis['mission_reward_total']])
+        writer.writerow(['Rewards', 'Other Rewards', analysis['other_reward_total']])
+        writer.writerow(['Rewards', 'Average Daily Reward Spend', analysis['avg_daily_reward_outflow']])
+
+        writer.writerow(['Recommendations', 'Recommended Daily Giveaway Budget', analysis['recommended_daily_budget']])
+        writer.writerow(['Recommendations', 'Maximum Safe Daily Giveaway Budget', analysis['max_safe_daily_budget']])
+        writer.writerow(['Recommendations', 'Minimum Recommended Reserve', analysis['minimum_recommended_reserve']])
+        writer.writerow(['Recommendations', 'Low Balance Warning Threshold', analysis['policy'].low_system_balance_warning_threshold])
+        writer.writerow(['Recommendations', 'Narrative', analysis['recommendation']])
+
+        writer.writerow([])
+        writer.writerow(['Scenario Forecast', 'Scenario', 'Daily Net', 'In 30 Days', 'In 60 Days', 'In 90 Days'])
+        for row in analysis['projected_scenarios']:
+            writer.writerow([
+                'Scenario Forecast',
+                row['label'],
+                row['daily_net'],
+                row['in_30_days'],
+                row['in_60_days'],
+                row['in_90_days'],
+            ])
+
+        return response
+
+    def _warning_threshold(self):
+        return RewardSafetyPolicy.get_active().low_system_balance_warning_threshold
+
+    def _warn_if_low_balance(self, request):
+        snapshot = SystemBalance.objects.filter(pk=1).first()
+        if not snapshot:
+            self.message_user(
+                request,
+                'System balance record is missing. Create it in this page to avoid reward payout failures.',
+                level=messages.WARNING,
+            )
+            return
+
+        threshold = self._warning_threshold()
+        if snapshot.balance <= 0:
+            self.message_user(
+                request,
+                'System balance is empty. Promo and mission claims will fail until you top up.',
+                level=messages.ERROR,
+            )
+        elif snapshot.balance <= threshold:
+            self.message_user(
+                request,
+                f'System balance is low ({snapshot.balance} Birr). Top up soon to avoid reward claim failures.',
+                level=messages.WARNING,
+            )
+
+    def changelist_view(self, request, extra_context=None):
+        self._warn_if_low_balance(request)
+        self.message_user(
+            request,
+            format_html(
+                'Need projection and guidance? <a href="{}">Open System Balance Analysis & Recommendations</a>.',
+                reverse('admin:game_systembalance_analysis'),
+            ),
+            level=messages.INFO,
+        )
+        return super().changelist_view(request, extra_context=extra_context)
+
+    def change_view(self, request, object_id, form_url='', extra_context=None):
+        self._warn_if_low_balance(request)
+        return super().change_view(request, object_id, form_url=form_url, extra_context=extra_context)
+
+    def balance_health(self, obj):
+        threshold = self._warning_threshold()
+        if obj.balance <= 0:
+            return format_html('<span style="color: #b91c1c; font-weight: 700;">Critical</span>')
+        if obj.balance <= threshold:
+            return format_html('<span style="color: #b45309; font-weight: 700;">Low</span>')
+        return format_html('<span style="color: #166534; font-weight: 700;">Healthy</span>')
+    balance_health.short_description = 'Health'
+
+    def analysis_page(self, obj):
+        return format_html(
+            '<a class="button" href="{}">Open analysis</a>',
+            reverse('admin:game_systembalance_analysis'),
+        )
+    analysis_page.short_description = 'Analysis'
 
 
 @admin.register(SystemBalanceLedger)
@@ -149,7 +436,20 @@ class SystemBalanceLedgerAdmin(admin.ModelAdmin):
 
 @admin.register(RewardSafetyPolicy)
 class RewardSafetyPolicyAdmin(admin.ModelAdmin):
-    list_display = ['id', 'daily_reward_cap', 'min_seconds_between_rewards', 'max_reward_redemptions_per_hour', 'updated_at']
+    list_display = [
+        'id',
+        'daily_reward_cap',
+        'low_system_balance_warning_threshold',
+        'min_seconds_between_rewards',
+        'max_reward_redemptions_per_hour',
+        'updated_at',
+    ]
+
+
+@admin.register(GameEngineSettings)
+class GameEngineSettingsAdmin(admin.ModelAdmin):
+    list_display = ['id', 'enable_fake_users', 'updated_at']
+    readonly_fields = ['created_at', 'updated_at']
 
 
 @admin.register(UserRewardWindow)

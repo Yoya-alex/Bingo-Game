@@ -125,7 +125,7 @@ export default function HomePage() {
           </div>
 
           <p className="subtitle lobby-subtitle home-hero-greeting">
-            Welcome back, {data.user?.first_name || "Player"}
+            Welcome back, <span className="home-hero-username">{data.user?.first_name || "Player"}</span>
           </p>
 
           <div className="home-wallet-highlight">

@@ -8,6 +8,7 @@ from game.models import (
     LiveEvent,
     MissionTemplate,
     PromoCode,
+    SystemBalanceLedger,
     UserMissionProgress,
     UserRewardWindow,
     UserStreak,
@@ -113,6 +114,24 @@ def credit_user_reward(user, amount, reward_balance, description):
     with transaction.atomic():
         wallet, _ = Wallet.objects.select_for_update().get_or_create(user=user)
         window = enforce_reward_safety(user, final_amount)
+
+        try:
+            SystemBalanceLedger.append_entry(
+                event_type='reward_payout',
+                direction='debit',
+                amount=final_amount,
+                description=f'Reward payout to user #{user.id}: {description}',
+                metadata={
+                    'user_id': user.id,
+                    'telegram_id': user.telegram_id,
+                    'reward_balance': reward_balance,
+                    'reward_description': description,
+                },
+            )
+        except ValueError as exc:
+            if 'cannot be negative' in str(exc).lower():
+                raise RewardSafetyError('System balance is insufficient for this reward right now.')
+            raise
 
         _apply_wallet_credit(wallet, final_amount, reward_balance)
         wallet.save(update_fields=['main_balance', 'bonus_balance', 'winnings_balance', 'updated_at'])
