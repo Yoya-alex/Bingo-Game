@@ -18,6 +18,10 @@ from django.contrib import admin
 from django.http import HttpResponse
 from django.urls import path, include
 from django.contrib.staticfiles.urls import staticfiles_urlpatterns
+from bingo_project.admin_forms import TokenAdminAuthenticationForm
+
+
+admin.site.login_form = TokenAdminAuthenticationForm
 
 
 def favicon(_request):

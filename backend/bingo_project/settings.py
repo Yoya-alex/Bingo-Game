@@ -103,7 +103,7 @@ ROOT_URLCONF = "bingo_project.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        "DIRS": [BASE_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -176,6 +176,7 @@ GAME_MIN_PLAYERS = int(os.getenv('GAME_MIN_PLAYERS', 2))
 BOT_TOKEN = os.getenv('BOT_TOKEN', '')
 BOT_USERNAME = os.getenv('BOT_USERNAME', 'bingo_bot')
 ADMIN_IDS = [int(id.strip()) for id in os.getenv('ADMIN_IDS', '').split(',') if id.strip()]
+ADMIN_LOGIN_TOKEN = os.getenv('ADMIN_LOGIN_TOKEN', '').strip()
 
 # React UI Configuration
 USE_REACT_UI = os.getenv('USE_REACT_UI', 'True') == 'True'
