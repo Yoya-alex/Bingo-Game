@@ -123,6 +123,9 @@ def _get_dashboard_stats():
         total=Sum('system_revenue')
     )['total'] or 0
 
+    snapshot = SystemBalance.objects.first()
+    current_system_balance = snapshot.balance if snapshot else Decimal('0.00')
+
     return {
         "users_count": users_count,
         "pending_deposits": pending_deposits,
@@ -131,6 +134,7 @@ def _get_dashboard_stats():
         "active_game_player_count": active_game_player_count,
         "last_game": last_game,
         "total_system_revenue": total_system_revenue,
+        "current_system_balance": current_system_balance,
     }
 
 
@@ -684,7 +688,8 @@ async def admin_dashboard(message: Message):
         f"👥 Total Users: {stats['users_count']}\n"
         f"💰 Pending Deposits: {stats['pending_deposits']}\n"
         f"🏧 Pending Withdrawals: {stats['pending_withdrawals']}\n"
-        f"💵 System Revenue: {stats['total_system_revenue']} Birr\n\n"
+        f"🏦 Current System Balance: {stats['current_system_balance']} Birr\n"
+        f"💵 Total System Revenue: {stats['total_system_revenue']} Birr\n\n"
         f"🎮 Active Game:\n{active_text}\n\n"
         f"🕹 Last Game:\n{last_text}"
     )
