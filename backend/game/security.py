@@ -6,7 +6,7 @@ from typing import Callable, Optional
 from django.conf import settings
 from django.core.cache import cache
 from django.core.signing import BadSignature, SignatureExpired, TimestampSigner
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 
 _TOKEN_SALT = "bingo.web.token"
 _TOKEN_MAX_AGE_SECONDS = int(getattr(settings, "WEB_ACCESS_TOKEN_MAX_AGE", 3600 * 12))
@@ -109,6 +109,9 @@ def rate_limit(key_prefix: str, max_requests: int, window_seconds: int):
 def require_valid_web_token(view_func: Callable):
     @wraps(view_func)
     def wrapped(request, *args, **kwargs):
+        if request.method == "OPTIONS":
+            return HttpResponse(status=204)
+
         auth_tid = get_authenticated_telegram_id(request)
         if auth_tid is None:
             return JsonResponse({"error": "Authentication required."}, status=401)
@@ -125,6 +128,9 @@ def require_valid_web_token(view_func: Callable):
 def require_path_telegram_auth(view_func: Callable):
     @wraps(view_func)
     def wrapped(request, telegram_id, *args, **kwargs):
+        if request.method == "OPTIONS":
+            return HttpResponse(status=204)
+
         auth_tid = get_authenticated_telegram_id(request)
         if auth_tid is None:
             return JsonResponse({"error": "Authentication required."}, status=401)
