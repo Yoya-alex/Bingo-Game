@@ -183,14 +183,16 @@ USE_REACT_UI = os.getenv('USE_REACT_UI', 'True') == 'True'
 REACT_APP_URL = os.getenv('REACT_APP_URL', 'https://bingo-game-1-5kj6.onrender.com')
 
 web_allowed_origins_env = os.getenv('WEB_ALLOWED_ORIGINS', '')
+WEB_ALLOWED_ORIGINS = [
+    REACT_APP_URL.rstrip('/'),
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+]
 if web_allowed_origins_env.strip():
-    WEB_ALLOWED_ORIGINS = [origin.strip().rstrip('/') for origin in web_allowed_origins_env.split(',') if origin.strip()]
-else:
-    WEB_ALLOWED_ORIGINS = [
-        REACT_APP_URL.rstrip('/'),
-        'http://localhost:5173',
-        'http://127.0.0.1:5173',
-    ]
+    WEB_ALLOWED_ORIGINS.extend(
+        origin.strip().rstrip('/') for origin in web_allowed_origins_env.split(',') if origin.strip()
+    )
+WEB_ALLOWED_ORIGINS = list(dict.fromkeys(WEB_ALLOWED_ORIGINS))
 
 csrf_trusted_origins_env = os.getenv('CSRF_TRUSTED_ORIGINS', '')
 if csrf_trusted_origins_env.strip():
@@ -200,6 +202,9 @@ else:
 
 # Frontend is deployed on a separate Render domain, so API requests need CORS.
 CORS_ALLOWED_ORIGINS = [origin for origin in WEB_ALLOWED_ORIGINS if origin.startswith('http://') or origin.startswith('https://')]
+cors_allowed_origin_regexes_env = os.getenv('CORS_ALLOWED_ORIGIN_REGEXES', '').strip()
+if cors_allowed_origin_regexes_env:
+    CORS_ALLOWED_ORIGIN_REGEXES = [item.strip() for item in cors_allowed_origin_regexes_env.split(',') if item.strip()]
 CORS_ALLOW_HEADERS = [
     "accept",
     "accept-encoding",

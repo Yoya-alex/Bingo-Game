@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { fetchJson } from "../api/client.js";
 import { withAuthPath } from "../utils/auth.js";
@@ -18,9 +18,12 @@ export default function HomePage() {
   const { telegramId } = useParams();
   const navigate = useNavigate();
   const pollRef = useRef(null);
+  const countdownSeedRef = useRef({});
+  const zeroSyncRef = useRef({});
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState(EMPTY_NOTIFICATION);
   const [showInfoModal, setShowInfoModal] = useState(false);
+  const [displayCountdowns, setDisplayCountdowns] = useState({});
   const [data, setData] = useState({
     user: null,
     games: [],
@@ -30,7 +33,16 @@ export default function HomePage() {
 
   const gameRows = useMemo(() => {
     if (Array.isArray(data.games) && data.games.length) {
-      return data.games;
+      return data.games.map((row) => {
+        const localCountdown = Number(displayCountdowns[row.stake_amount]);
+        if (row.state === "waiting" && Number.isFinite(localCountdown) && localCountdown > 0) {
+          return {
+            ...row,
+            status_label: `Starting in ${localCountdown}s`,
+          };
+        }
+        return row;
+      });
     }
 
     return (data.stakes || [10, 20, 50, 100]).map((stake) => ({
@@ -45,7 +57,7 @@ export default function HomePage() {
       action_label: "Join Now",
       user_has_card: false,
     }));
-  }, [data.games, data.stakes]);
+  }, [data.games, data.stakes, displayCountdowns]);
 
   const liveStats = useMemo(() => {
     const waiting = gameRows.filter((row) => row.state === "waiting").length;
@@ -57,25 +69,117 @@ export default function HomePage() {
     };
   }, [gameRows]);
 
+  const syncCountdownSeeds = useCallback((payload) => {
+    const games = Array.isArray(payload?.games) ? payload.games : [];
+    const now = Date.now();
+    const nextSeeds = { ...countdownSeedRef.current };
+    const activeStakes = new Set();
+
+    setDisplayCountdowns((previous) => {
+      const nextDisplay = { ...previous };
+
+      games.forEach((row) => {
+        const stake = Number(row?.stake_amount);
+        if (!Number.isFinite(stake) || stake <= 0) {
+          return;
+        }
+
+        activeStakes.add(stake);
+        const shouldTrack = row?.state === "waiting" && Number(row?.countdown) > 0 && String(row?.status_label || "").startsWith("Starting in");
+        const key = String(stake);
+        const gameId = row?.game_id ?? null;
+
+        if (!shouldTrack) {
+          delete nextSeeds[key];
+          delete zeroSyncRef.current[key];
+          delete nextDisplay[key];
+          return;
+        }
+
+        const serverCountdown = Math.max(0, Number(row.countdown) || 0);
+        const seed = nextSeeds[key];
+        const sameGame = seed && seed.gameId === gameId;
+        const localCountdown = sameGame ? Math.max(0, seed.value - Math.floor((now - seed.startedAt) / 1000)) : null;
+        const drift = localCountdown == null ? Number.POSITIVE_INFINITY : Math.abs(localCountdown - serverCountdown);
+        const shouldReseed = !sameGame || localCountdown == null || serverCountdown > localCountdown || drift >= 2;
+
+        if (shouldReseed) {
+          nextSeeds[key] = { gameId, value: serverCountdown, startedAt: now };
+          nextDisplay[key] = serverCountdown;
+        }
+
+        const syncState = zeroSyncRef.current[key];
+        if (!syncState || syncState.gameId !== gameId) {
+          zeroSyncRef.current[key] = { gameId, sent: false };
+        }
+      });
+
+      Object.keys(nextSeeds).forEach((key) => {
+        if (!activeStakes.has(Number(key))) {
+          delete nextSeeds[key];
+          delete zeroSyncRef.current[key];
+          delete nextDisplay[key];
+        }
+      });
+
+      return nextDisplay;
+    });
+
+    countdownSeedRef.current = nextSeeds;
+  }, []);
+
+  const syncLobbyState = useCallback(() => {
+    return fetchJson(`/game/api/lobby-state/${telegramId}/`).then((payload) => {
+      setData(payload);
+      syncCountdownSeeds(payload);
+    });
+  }, [syncCountdownSeeds, telegramId]);
+
   useEffect(() => {
     setLoading(true);
-    fetchJson(`/game/api/lobby-state/${telegramId}/`)
-      .then((payload) => {
-        setData(payload);
-      })
+    syncLobbyState()
       .catch((error) => notify("error", error.message))
       .finally(() => setLoading(false));
-  }, [telegramId]);
+  }, [syncLobbyState]);
 
   useEffect(() => {
     pollRef.current = setInterval(() => {
-      fetchJson(`/game/api/lobby-state/${telegramId}/`)
-        .then((payload) => setData(payload))
+      syncLobbyState()
         .catch(() => notify("error", "Unable to sync lobby state."));
     }, POLL_MS);
 
     return () => clearInterval(pollRef.current);
-  }, [telegramId]);
+  }, [syncLobbyState]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = Date.now();
+      setDisplayCountdowns((previous) => {
+        const next = { ...previous };
+        let changed = false;
+
+        Object.entries(countdownSeedRef.current).forEach(([stakeKey, seed]) => {
+          const remaining = Math.max(0, seed.value - Math.floor((now - seed.startedAt) / 1000));
+          if (next[stakeKey] !== remaining) {
+            next[stakeKey] = remaining;
+            changed = true;
+          }
+
+          const syncState = zeroSyncRef.current[stakeKey];
+          if (remaining <= 0 && syncState && !syncState.sent) {
+            syncState.sent = true;
+            syncLobbyState().catch(() => {
+              syncState.sent = false;
+            });
+          }
+        });
+
+        return changed ? next : previous;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [syncLobbyState]);
 
   function notify(type, message) {
     setNotification({ type, message });

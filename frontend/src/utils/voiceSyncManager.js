@@ -89,6 +89,7 @@ export default class VoiceSyncManager {
     this.selectedVoice = null;
     this.selectedVoiceURI = null;
     this.onVoicesChanged = null;
+    this.customAudioEnabled = String(import.meta.env.VITE_ENABLE_CUSTOM_AUDIO || "").toLowerCase() === "true";
     this.useCustomAudio = false; // Flag for custom audio files
     this.audioCache = {}; // Cache for loaded audio files
 
@@ -96,8 +97,10 @@ export default class VoiceSyncManager {
       this.initializeVoiceSelection();
     }
     
-    // Check if custom audio files are available
-    this.checkCustomAudio();
+    // Check for custom audio only when explicitly enabled.
+    if (this.customAudioEnabled) {
+      this.checkCustomAudio();
+    }
   }
 
   async checkCustomAudio() {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { fetchJson, postJson } from "../api/client.js";
 import { withAuthPath } from "../utils/auth.js";
@@ -69,11 +69,14 @@ export default function LobbyPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const lobbyPollRef = useRef(null);
+  const countdownSeedRef = useRef({ gameId: null, value: 0, startedAt: 0 });
+  const zeroSyncRef = useRef({ gameId: null, sent: false });
   const preferredStake = Number(searchParams.get("stake")) || 10;
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState(EMPTY_NOTIFICATION);
   const [finishCountdown, setFinishCountdown] = useState(null);
   const [isSelecting, setIsSelecting] = useState(false);
+  const [displayCountdown, setDisplayCountdown] = useState(0);
   const [data, setData] = useState({
     user: null,
     game: null,
@@ -105,11 +108,42 @@ export default function LobbyPage() {
   );
   const shouldConfirmQuit = data.game?.state === "playing" && hasCard;
 
-  function syncLobbyState() {
+  const syncCountdownSeed = useCallback((nextData) => {
+    const gameId = nextData.game?.id ?? null;
+    const state = nextData.game?.state;
+    const serverCountdown = Math.max(0, Number(nextData.countdown) || 0);
+
+    if (state !== "waiting" || !gameId) {
+      countdownSeedRef.current = { gameId: null, value: 0, startedAt: 0 };
+      zeroSyncRef.current = { gameId: null, sent: false };
+      setDisplayCountdown(0);
+      return;
+    }
+
+    const now = Date.now();
+    const seed = countdownSeedRef.current;
+    const sameGame = seed.gameId === gameId;
+    const localCountdown = sameGame ? Math.max(0, seed.value - Math.floor((now - seed.startedAt) / 1000)) : null;
+    const drift = localCountdown == null ? Number.POSITIVE_INFINITY : Math.abs(localCountdown - serverCountdown);
+    const shouldReseed = !sameGame || localCountdown == null || serverCountdown > localCountdown || drift >= 2;
+
+    if (shouldReseed) {
+      countdownSeedRef.current = { gameId, value: serverCountdown, startedAt: now };
+      setDisplayCountdown(serverCountdown);
+    }
+
+    if (zeroSyncRef.current.gameId !== gameId) {
+      zeroSyncRef.current = { gameId, sent: false };
+    }
+  }, []);
+
+  const syncLobbyState = useCallback(() => {
     return fetchJson(`/game/api/lobby-state/${telegramId}/`).then((payload) => {
-      setData(normalizeLobbyPayload(payload, preferredStake));
+      const normalized = normalizeLobbyPayload(payload, preferredStake);
+      setData(normalized);
+      syncCountdownSeed(normalized);
     });
-  }
+  }, [preferredStake, syncCountdownSeed, telegramId]);
 
   useEffect(() => {
     setLoading(true);
@@ -125,7 +159,30 @@ export default function LobbyPage() {
     }, 2500);
 
     return () => clearInterval(lobbyPollRef.current);
-  }, [telegramId, preferredStake]);
+  }, [syncLobbyState]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const seed = countdownSeedRef.current;
+      if (!seed.gameId) {
+        return;
+      }
+
+      const remaining = Math.max(0, seed.value - Math.floor((Date.now() - seed.startedAt) / 1000));
+      setDisplayCountdown((prev) => (prev === remaining ? prev : remaining));
+
+      if (remaining <= 0 && data.game?.state === "waiting" && data.game?.id) {
+        if (zeroSyncRef.current.gameId === data.game.id && !zeroSyncRef.current.sent) {
+          zeroSyncRef.current.sent = true;
+          syncLobbyState().catch(() => {
+            zeroSyncRef.current.sent = false;
+          });
+        }
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [data.game?.id, data.game?.state, syncLobbyState]);
 
   function notify(type, message) {
     setNotification({ type, message });
@@ -201,7 +258,7 @@ export default function LobbyPage() {
 
   const stats = [
     { label: "State", value: displayState.toUpperCase() },
-    { label: "Count", value: data.countdown || "-" },
+    { label: "Count", value: displayState === "waiting" && displayCountdown > 0 ? displayCountdown : "-" },
     { label: "Players", value: data.total_players },
     { label: "Medeb", value: `${data.stake || preferredStake} Birr` },
   ];
