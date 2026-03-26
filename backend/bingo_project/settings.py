@@ -205,6 +205,8 @@ CORS_ALLOWED_ORIGINS = [origin for origin in WEB_ALLOWED_ORIGINS if origin.start
 cors_allowed_origin_regexes_env = os.getenv('CORS_ALLOWED_ORIGIN_REGEXES', '').strip()
 if cors_allowed_origin_regexes_env:
     CORS_ALLOWED_ORIGIN_REGEXES = [item.strip() for item in cors_allowed_origin_regexes_env.split(',') if item.strip()]
+else:
+    CORS_ALLOWED_ORIGIN_REGEXES = [r'^https://[a-z0-9-]+\.onrender\.com$']
 CORS_ALLOW_HEADERS = [
     "accept",
     "accept-encoding",
