@@ -94,6 +94,8 @@ export default function LobbyPage() {
     user_card: null,
   });
 
+
+
   const selectedCardNumber = data.user_card?.card_number ?? null;
   const takenSet = useMemo(() => {
     const taken = data.taken_cards.filter((num) => num !== selectedCardNumber);

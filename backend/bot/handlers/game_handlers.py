@@ -180,13 +180,13 @@ async def play_bingo(message: Message):
     react_url = settings.REACT_APP_URL.rstrip('/')
     web_url = f"{react_url}/?telegram_id={user.telegram_id}&token={access_token}"
     
-    # Use WebApp button if URL is HTTPS (production), otherwise send as text link
+    # Use WebApp button on HTTPS. On HTTP, still show a normal URL button.
     is_https = web_url.startswith("https://")
     
     if is_https:
         keyboard = InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(
-                text="🎮 Open Bingo Game",
+                text="▶️ Play",
                 web_app=WebAppInfo(url=web_url)
             )
         ]])
@@ -200,15 +200,22 @@ async def play_bingo(message: Message):
         )
         await message.answer(game_text, reply_markup=keyboard)
     else:
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(
+                text="▶️ Play",
+                url=web_url,
+            )
+        ]])
         game_text = (
             f"<b>🎮 BINGO GAME</b>\n\n"
             f"💰 Your Balance: {wallet.total_balance} Birr\n"
             f"💵 Card Price: {settings.CARD_PRICE} Birr\n\n"
-            f"<b>📋 Open this link to play:</b>\n"
+            f"Tap the Play button below to open the game.\n\n"
+            f"<b>📋 Direct Link:</b>\n"
             f"<code>{web_url}</code>\n\n"
             f"<i>💡 Long press the URL above to copy it</i>"
         )
-        await message.answer(game_text, reply_markup=main_menu_keyboard())
+        await message.answer(game_text, reply_markup=keyboard)
 
 
 @router.callback_query(F.data.startswith("cards_page:"))
