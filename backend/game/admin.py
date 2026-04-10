@@ -465,6 +465,11 @@ class PromoCodeAdmin(admin.ModelAdmin):
     list_filter = ['tier', 'reward_balance', 'is_active', 'is_visible_in_frontend', 'starts_at']
     search_fields = ['code', 'title']
 
+    def save_model(self, request, obj, form, change):
+        if obj.code:
+            obj.code = obj.code.strip().upper()
+        super().save_model(request, obj, form, change)
+
 
 @admin.register(PromoCodeRedemption)
 class PromoCodeRedemptionAdmin(admin.ModelAdmin):

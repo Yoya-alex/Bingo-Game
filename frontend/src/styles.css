@@ -324,12 +324,17 @@ body::after {
 
 .bingo-cell.clickable {
   cursor: pointer;
-  border-color: var(--accent-1);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-1) 35%, transparent);
+  border-color: color-mix(in srgb, var(--accent-2) 52%, rgba(15, 23, 42, 0.2));
+  box-shadow: none;
 }
 
 .bingo-cell.clickable:hover {
   transform: translateY(-1px);
+}
+
+.bingo-cell.clickable.current-call {
+  border-color: var(--accent-1);
+  box-shadow: none;
 }
 
 .bingo-footer {
@@ -406,13 +411,11 @@ body::after {
 
 .called-cell.called {
   background: var(--called-cell-called-bg);
-  border-color: var(--called-cell-called-border);
   color: var(--called-cell-called-ink);
 }
 
 .called-cell.called.current {
   background: var(--called-cell-current-bg);
-  border-color: var(--called-cell-current-border);
   color: var(--called-cell-current-ink);
 }
 

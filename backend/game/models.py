@@ -347,6 +347,11 @@ class PromoCode(models.Model):
         now = timezone.now()
         return bool(self.is_active and self.starts_at <= now <= self.ends_at)
 
+    def save(self, *args, **kwargs):
+        if self.code:
+            self.code = self.code.strip().upper()
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"{self.code} ({self.tier})"
 

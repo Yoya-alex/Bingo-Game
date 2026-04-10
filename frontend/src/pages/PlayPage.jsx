@@ -161,7 +161,7 @@ export default function PlayPage() {
     if (!hasCard || state.game?.state !== "playing") {
       return;
     }
-    if (Number(number) !== Number(currentCall)) {
+    if (!calledNumbers.some((called) => Number(called) === Number(number))) {
       return;
     }
     postJson("/game/api/mark-number/", {

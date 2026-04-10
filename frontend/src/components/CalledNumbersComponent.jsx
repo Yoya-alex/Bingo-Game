@@ -17,7 +17,7 @@ export default function CalledNumbersComponent({ calledNumbers, maxNumber = 400,
   }, [maxNumber]);
 
   const handleNumberClick = (num) => {
-    if (interactive && num === currentNumber && onNumberClick) {
+    if (interactive && calledSet.has(num) && onNumberClick) {
       onNumberClick(num);
     }
   };
@@ -33,7 +33,7 @@ export default function CalledNumbersComponent({ calledNumbers, maxNumber = 400,
               {column.numbers.map((num) => {
                 const isCalled = calledSet.has(num);
                 const isCurrent = num === currentNumber;
-                const isClickable = interactive && isCurrent;
+                const isClickable = interactive && isCalled;
                 
                 return (
                   <div
@@ -41,7 +41,7 @@ export default function CalledNumbersComponent({ calledNumbers, maxNumber = 400,
                     className={`called-cell${isCalled ? " called" : ""}${isCurrent ? " current" : ""}${isClickable ? " clickable" : ""}`}
                     onClick={() => handleNumberClick(num)}
                     style={{ cursor: isClickable ? 'pointer' : 'default' }}
-                    title={isClickable ? `Click to mark ${num} on your card` : ''}
+                    title={isClickable ? `Called ${num} (click to mark)` : ''}
                   >
                     {num}
                   </div>

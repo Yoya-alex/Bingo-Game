@@ -1229,7 +1229,7 @@ def redeem_promo_code_api(request):
             return JsonResponse({'error': 'Promo code is required.'}, status=400)
 
         user = User.objects.get(telegram_id=telegram_id)
-        promo = PromoCode.objects.filter(code=promo_code).first()
+        promo = PromoCode.objects.filter(code__iexact=promo_code).first()
         if not promo:
             return JsonResponse({'error': 'Promo code not found.'}, status=404)
 
@@ -1333,7 +1333,7 @@ def promo_codes_api(request, telegram_id):
 @rate_limit(key_prefix='mark-number', max_requests=30, window_seconds=60)
 @require_valid_web_token
 def mark_number_api(request):
-    """Mark only the current called number on the player's bingo card."""
+    """Mark any number that has already been called on the player's bingo card."""
     try:
         data = json.loads(request.body)
         telegram_id = int(data.get('telegram_id'))
@@ -1353,9 +1353,9 @@ def mark_number_api(request):
         if not called_number_entries:
             return JsonResponse({'error': 'No numbers have been called yet.'}, status=400)
 
-        current_called_number = called_number_entries[-1]['number']
-        if number != current_called_number:
-            return JsonResponse({'error': 'You can only mark the current called number.'}, status=400)
+        called_number_set = {int(entry['number']) for entry in called_number_entries if 'number' in entry}
+        if number not in called_number_set:
+            return JsonResponse({'error': 'You can only mark numbers that have been called.'}, status=400)
 
         # Check if the number is on the player's card
         grid_values = {value for row in card.get_grid() for value in row if value is not None}

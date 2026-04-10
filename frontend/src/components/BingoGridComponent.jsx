@@ -37,6 +37,7 @@ export default function BingoGridComponent({
         {flatGrid.map((cell, index) => {
           const isFree = cell === null;
           const isMarked = isFree || (markSource === "marked" ? markedSet.has(cell) : calledSet.has(cell));
+          const isCurrentCall = !isFree && Number(cell) === Number(clickableNumber);
 
           const canSelect =
             interactive &&
@@ -48,12 +49,12 @@ export default function BingoGridComponent({
           return (
             <div
               key={index}
-              className={`bingo-cell${isFree ? " free" : ""}${isMarked && !isFree ? " marked" : ""}${canSelect ? " clickable" : ""}`}
+              className={`bingo-cell${isFree ? " free" : ""}${isMarked && !isFree ? " marked" : ""}${canSelect ? " clickable" : ""}${canSelect && isCurrentCall ? " current-call" : ""}`}
               clickable={canSelect ? "true" : "false"}
               data-clickable={canSelect ? "true" : "false"}
               onClick={canSelect ? () => handleSelect(cell, canSelect) : undefined}
               style={{ cursor: canSelect ? 'pointer' : 'default' }}
-              title={canSelect ? `Click to mark ${cell}` : ''}>
+              title={canSelect ? (isCurrentCall ? `Current call ${cell} (click to mark)` : `Called ${cell} (click to mark)`) : ''}>
               {isFree ? "FREE" : cell}
             </div>
           );
