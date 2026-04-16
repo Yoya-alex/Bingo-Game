@@ -19,9 +19,11 @@ from game.models import (
     MissionTemplate,
     PromoCode,
     PromoCodeRedemption,
+    PromoVerificationRequest,
     Season,
     UserMissionProgress,
 )
+from game.business_rules import get_business_rules, get_derash_multiplier, get_system_multiplier
 from game.engagement import claim_mission, credit_user_reward, increment_missions, touch_user_streak, RewardSafetyError
 from wallet.models import Wallet, Transaction
 from game.security import (
@@ -33,11 +35,73 @@ from game.security import (
 )
 import json
 import logging
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 
 
 BOT_TELEGRAM_ID_THRESHOLD = 9000000000
 MIN_REAL_USERS_TO_START = 2
 logger = logging.getLogger(__name__)
+
+
+def _calculate_derash(total_players, stake_amount):
+    return Decimal(total_players) * Decimal(stake_amount) * get_derash_multiplier()
+
+
+def _calculate_system_share(total_players, stake_amount):
+    return Decimal(total_players) * Decimal(stake_amount) * get_system_multiplier()
+
+
+def _serialize_promo_claim(claim):
+    return {
+        'id': claim.id,
+        'promo_code': claim.promo_code.code,
+        'submitted_at': claim.submitted_at.isoformat(),
+        'status': claim.status,
+        'admin_reviewer': claim.admin_reviewer.first_name if claim.admin_reviewer else None,
+        'review_reason': claim.review_reason,
+        'decision_time': claim.decision_time.isoformat() if claim.decision_time else None,
+        'credited_amount': float(claim.credited_amount),
+    }
+
+
+def _notify_admins_hidden_promo_claim(claim):
+    bot_token = (getattr(settings, 'BOT_TOKEN', '') or '').strip()
+    admin_ids = [int(admin_id) for admin_id in getattr(settings, 'ADMIN_IDS', [])]
+    if not bot_token or not admin_ids:
+        return
+
+    text = (
+        'New hidden promo verification request\n\n'
+        f'Request: #{claim.id}\n'
+        f'User: {claim.user.first_name} (@{claim.user.username or claim.user.telegram_id})\n'
+        f'Promo: {claim.promo_code.code}\n'
+        f'Submitted: {claim.submitted_at:%Y-%m-%d %H:%M:%S} UTC\n\n'
+        'Use the buttons below to approve or reject.'
+    )
+    reply_markup = {
+        'inline_keyboard': [[
+            {'text': 'Approve', 'callback_data': f'promo_verify:approve:{claim.id}'},
+            {'text': 'Reject', 'callback_data': f'promo_verify:reject:{claim.id}'},
+        ]]
+    }
+
+    for admin_id in admin_ids:
+        payload = json.dumps({
+            'chat_id': admin_id,
+            'text': text,
+            'reply_markup': reply_markup,
+        }).encode('utf-8')
+        req = urllib_request.Request(
+            url=f'https://api.telegram.org/bot{bot_token}/sendMessage',
+            data=payload,
+            headers={'Content-Type': 'application/json'},
+            method='POST',
+        )
+        try:
+            urllib_request.urlopen(req, timeout=5)
+        except (urllib_error.URLError, urllib_error.HTTPError, TimeoutError):
+            continue
 
 
 def _serialize_mission_progress(progress):
@@ -185,7 +249,7 @@ def build_lobby_game_row(game, user):
     stake_amount = get_game_stake(game)
     total_players = game.cards.count()
     real_players = game.cards.filter(user__telegram_id__lt=BOT_TELEGRAM_ID_THRESHOLD).count()
-    derash = Decimal(real_players) * Decimal(stake_amount) * Decimal('0.8')
+    derash = _calculate_derash(real_players, stake_amount)
     countdown = get_game_countdown(game)
     user_card = game.cards.filter(user=user).first()
     user_has_card = bool(user_card)
@@ -197,7 +261,7 @@ def build_lobby_game_row(game, user):
     else:
         status_key = 'WAITING'
         if total_players >= settings.GAME_MIN_PLAYERS and real_players >= MIN_REAL_USERS_TO_START and countdown > 0:
-            status_label = f'Starting in {countdown}s'
+            status_label = str(countdown)
         else:
             status_label = 'Waiting for players'
 
@@ -501,7 +565,7 @@ def game_status_api(request, game_id):
         countdown = get_game_countdown(game)
         stake_amount = get_game_stake(game)
         total_players = game.cards.count()
-        derash = Decimal(total_players) * Decimal(stake_amount) * Decimal('0.8')
+        derash = _calculate_derash(total_players, stake_amount)
         winner_card = get_winner_card_payload(game)
 
         return JsonResponse({
@@ -550,7 +614,7 @@ def lobby_state_api(request, telegram_id):
         taken_cards = list(selected_game.cards.values_list('card_number', flat=True))
         total_players = selected_game.cards.count()
         stake_amount = get_game_stake(selected_game)
-        derash = Decimal(total_players) * Decimal(stake_amount) * Decimal('0.8')
+        derash = _calculate_derash(total_players, stake_amount)
         selected_game_payload = {
             'id': selected_game.id,
             'state': selected_game.state,
@@ -603,7 +667,7 @@ def play_state_api(request, telegram_id, game_id):
     total_players = game.cards.count()
     stake_amount = get_game_stake(game)
     if game.prize_amount == 0:
-        prize_amount = Decimal(total_players) * Decimal(stake_amount) * Decimal("0.8")
+        prize_amount = _calculate_derash(total_players, stake_amount)
     else:
         prize_amount = game.prize_amount
 
@@ -710,6 +774,13 @@ def profile_state_api(request, telegram_id):
     # Fall back to tracked referral_count if detailed referral rows are absent.
     rewarded_referrals = user.referral_count
 
+    promo_claims = [
+        _serialize_promo_claim(claim)
+        for claim in PromoVerificationRequest.objects.select_related('promo_code', 'admin_reviewer')
+        .filter(user=user)
+        .order_by('-submitted_at')[:20]
+    ]
+
     return JsonResponse({
         'user': {
             'first_name': user.first_name,
@@ -740,6 +811,7 @@ def profile_state_api(request, telegram_id):
             'rewarded_referrals': rewarded_referrals,
             'referral_bonus_earned': float(referral_bonus_earned),
         },
+        'promo_claims': promo_claims,
         'recent_activity': recent_transactions,
         'game_history': game_history,
     })
@@ -750,6 +822,8 @@ def profile_state_api(request, telegram_id):
 @require_path_telegram_auth
 def wallet_state_api(request, telegram_id):
     """Return read-only wallet information for React UI."""
+    business_rules = get_business_rules()
+
     try:
         user = User.objects.select_related('wallet').get(telegram_id=telegram_id)
     except User.DoesNotExist:
@@ -909,6 +983,8 @@ def wallet_state_api(request, telegram_id):
         'informational_notes': [
             'Total balance includes main, bonus, and winnings balances.',
             'Only winnings balance is withdrawable.',
+            f"Minimum withdrawal is {business_rules.minimum_withdrawable_balance} Birr.",
+            f"Telebirr receiving number: {business_rules.telebirr_receiving_phone_number}.",
             'Net values compare wins against game entry spending.',
             'Pending transactions are informational and may still change status.',
         ],
@@ -1252,6 +1328,36 @@ def redeem_promo_code_api(request):
             if user_redemptions >= promo.per_user_limit:
                 return JsonResponse({'error': 'You already redeemed this promo code.'}, status=400)
 
+            if not promo.is_visible_in_frontend:
+                existing_pending = PromoVerificationRequest.objects.filter(
+                    user=user,
+                    promo_code=promo,
+                    status=PromoVerificationRequest.STATUS_PENDING,
+                ).first()
+                if existing_pending:
+                    return JsonResponse({
+                        'success': True,
+                        'requires_verification': True,
+                        'status': existing_pending.status,
+                        'request_id': existing_pending.id,
+                        'message': 'Your hidden promo claim is already pending verification.',
+                    })
+
+                claim = PromoVerificationRequest.objects.create(
+                    user=user,
+                    promo_code=promo,
+                    status=PromoVerificationRequest.STATUS_PENDING,
+                )
+                _notify_admins_hidden_promo_claim(claim)
+
+                return JsonResponse({
+                    'success': True,
+                    'requires_verification': True,
+                    'status': claim.status,
+                    'request_id': claim.id,
+                    'message': 'Promo submitted for admin verification.',
+                })
+
             credited_amount = credit_user_reward(
                 user=user,
                 amount=promo.reward_amount,
@@ -1303,7 +1409,49 @@ def promo_codes_api(request, telegram_id):
         is_visible_in_frontend=True,
         ends_at__gte=now,
     ).order_by('starts_at', 'id')[:40]
+
+    claims_by_promo = {}
+    claim_rows = (
+        PromoVerificationRequest.objects.select_related('promo_code')
+        .filter(user=user)
+        .order_by('promo_code_id', '-submitted_at')
+    )
+    for claim in claim_rows:
+        if claim.promo_code_id not in claims_by_promo:
+            claims_by_promo[claim.promo_code_id] = claim
+
     for promo in promos:
+        user_uses = PromoCodeRedemption.objects.filter(promo_code=promo, user=user).count()
+        global_uses = PromoCodeRedemption.objects.filter(promo_code=promo).count()
+        claim = claims_by_promo.get(promo.id)
+        rows.append({
+            'id': promo.id,
+            'code': promo.code,
+            'title': promo.title,
+            'tier': promo.tier,
+            'reward_amount': float(promo.reward_amount),
+            'reward_balance': promo.reward_balance,
+            'starts_at': promo.starts_at.isoformat(),
+            'ends_at': promo.ends_at.isoformat(),
+            'is_live': promo.starts_at <= now <= promo.ends_at,
+            'max_redemptions': promo.max_redemptions,
+            'global_redemptions': global_uses,
+            'per_user_limit': promo.per_user_limit,
+            'user_redemptions': user_uses,
+            'claim_status': claim.status if claim else None,
+            'claim_submitted_at': claim.submitted_at.isoformat() if claim else None,
+            'claim_decision_time': claim.decision_time.isoformat() if claim and claim.decision_time else None,
+            'claim_review_reason': claim.review_reason if claim else '',
+            'is_hidden_claim': False,
+        })
+
+    hidden_claim_rows = (
+        PromoVerificationRequest.objects.select_related('promo_code')
+        .filter(user=user, promo_code__is_visible_in_frontend=False)
+        .order_by('-submitted_at')[:30]
+    )
+    for claim in hidden_claim_rows:
+        promo = claim.promo_code
         user_uses = PromoCodeRedemption.objects.filter(promo_code=promo, user=user).count()
         global_uses = PromoCodeRedemption.objects.filter(promo_code=promo).count()
         rows.append({
@@ -1320,12 +1468,38 @@ def promo_codes_api(request, telegram_id):
             'global_redemptions': global_uses,
             'per_user_limit': promo.per_user_limit,
             'user_redemptions': user_uses,
+            'claim_status': claim.status,
+            'claim_submitted_at': claim.submitted_at.isoformat(),
+            'claim_decision_time': claim.decision_time.isoformat() if claim.decision_time else None,
+            'claim_review_reason': claim.review_reason,
+            'is_hidden_claim': True,
         })
+
+    rows.sort(key=lambda item: (item.get('claim_submitted_at') or item.get('starts_at') or ''), reverse=True)
 
     return JsonResponse({
         'promo_codes': rows,
         'server_time': now.isoformat(),
     })
+
+
+@never_cache
+@rate_limit(key_prefix='promo-claims', max_requests=40, window_seconds=60)
+@require_path_telegram_auth
+def promo_claims_api(request, telegram_id):
+    try:
+        user = User.objects.get(telegram_id=telegram_id)
+    except User.DoesNotExist:
+        return JsonResponse({'error': 'User not found. Please start the bot first.'}, status=404)
+
+    rows = [
+        _serialize_promo_claim(claim)
+        for claim in PromoVerificationRequest.objects.select_related('promo_code', 'admin_reviewer')
+        .filter(user=user)
+        .order_by('-submitted_at')[:50]
+    ]
+
+    return JsonResponse({'promo_claims': rows, 'server_time': timezone.now().isoformat()})
 
 
 @csrf_exempt
@@ -1433,7 +1607,9 @@ def claim_bingo_api(request):
             
             # Total prize for display (includes fake players)
             total_pool = Decimal(total_players) * Decimal(stake_amount)
-            display_prize = total_pool * Decimal("0.8")  # 80% of total pool
+            derash_multiplier = get_derash_multiplier()
+            system_multiplier = get_system_multiplier()
+            display_prize = total_pool * derash_multiplier
             
             if game.has_bots:
                 # Game has bots: winner gets only real players' contribution
@@ -1441,8 +1617,8 @@ def claim_bingo_api(request):
                 
                 # Real players' pool
                 real_pool = Decimal(real_players) * Decimal(stake_amount)
-                actual_prize = real_pool * Decimal("0.8")  # 80% to winner (actual amount)
-                real_commission = real_pool * Decimal("0.2")  # 20% commission
+                actual_prize = real_pool * derash_multiplier
+                real_commission = real_pool * system_multiplier
                 
                 # System revenue: only commission from real players (no fake pool)
                 system_revenue = real_commission
@@ -1450,7 +1626,7 @@ def claim_bingo_api(request):
             else:
                 # No bots: normal calculation with 20% commission
                 actual_prize = display_prize  # Same as display prize
-                system_revenue = Decimal(total_players) * Decimal(stake_amount) * Decimal("0.2")
+                system_revenue = _calculate_system_share(total_players, stake_amount)
                 game.system_revenue = system_revenue
             
             # Update game state
@@ -1487,7 +1663,7 @@ def claim_bingo_api(request):
                     direction='credit',
                     amount=system_revenue,
                     game=game,
-                    description=f'Game #{game.id} winner commission (20%).',
+                    description=f'Game #{game.id} winner commission ({get_business_rules().system_percentage}%).',
                     metadata={
                         'total_players': int(total_players),
                         'has_bots': bool(game.has_bots),

@@ -210,7 +210,10 @@ export default function HomePage() {
     return (
       <div className="app-shell">
         <div className="app-card">
-          <div className="subtitle">Loading lobby...</div>
+          <div className="loading-state" role="status" aria-live="polite">
+            <span className="spinner" aria-hidden="true" />
+            <div className="subtitle">Loading lobby...</div>
+          </div>
         </div>
       </div>
     );
@@ -270,7 +273,13 @@ export default function HomePage() {
                     <td className="amount-cell">{formatBirr(row.derash)}</td>
                     <td>{row.players}</td>
                     <td>
-                      <span className={`status-chip status-${row.state}`}>{row.status_label}</span>
+                      <span
+                        className={`status-chip status-${row.state}${row.state === "waiting" && Number.isFinite(Number(displayCountdowns[row.stake_amount])) && Number(displayCountdowns[row.stake_amount]) > 0 ? " countdown" : ""}`}
+                      >
+                        {row.state === "waiting" && Number.isFinite(Number(displayCountdowns[row.stake_amount])) && Number(displayCountdowns[row.stake_amount]) > 0
+                          ? Number(displayCountdowns[row.stake_amount])
+                          : row.status_label}
+                      </span>
                     </td>
                     <td>
                       <button

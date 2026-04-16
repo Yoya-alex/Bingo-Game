@@ -636,6 +636,44 @@ body::after {
   color: var(--notification-success-ink);
 }
 
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 120px;
+}
+
+.spinner {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 4px solid color-mix(in srgb, var(--accent-2) 18%, transparent);
+  border-top-color: var(--accent-2);
+  animation: spin 0.8s linear infinite;
+}
+
+.spinner.sm {
+  width: 18px;
+  height: 18px;
+  border-width: 3px;
+}
+
+.spinner-inline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .profile-section-notice {
   margin-top: 0;
   margin-bottom: 10px;
@@ -2253,6 +2291,25 @@ body.night-mode .stat-value {
   font-size: 0.78rem;
   font-weight: 700;
   border: 1px solid transparent;
+}
+
+.status-chip.countdown {
+  min-width: 44px;
+  text-align: center;
+  font-weight: 900;
+  animation: countdown-pulse 1s ease-in-out infinite;
+}
+
+@keyframes countdown-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 122, 89, 0.45);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(255, 122, 89, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 122, 89, 0);
+  }
 }
 
 .status-waiting {

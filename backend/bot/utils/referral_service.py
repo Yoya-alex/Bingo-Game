@@ -9,6 +9,7 @@ from django.utils import timezone
 
 from users.models import User, Referral, ReferralEvent
 from wallet.models import Wallet, Transaction
+from game.business_rules import get_business_rules
 
 
 def _resolve_start_param(start_param: str) -> Optional[str]:
@@ -136,7 +137,7 @@ def try_process_referral_reward_for_deposit(deposit_tx: Transaction):
             return {"rewarded": False, "reason": "daily_cap"}
 
         total_cap = int(getattr(settings, "MAX_TOTAL_REFERRAL_REWARDS_PER_USER", 0) or 0)
-        reward_amount = Decimal(str(settings.REFERRAL_REWARD))
+        reward_amount = Decimal(str(get_business_rules().referral_bonus_amount))
         if total_cap > 0:
             current_total = _inviter_total_rewarded_amount(inviter)
             if current_total + reward_amount > Decimal(str(total_cap)):

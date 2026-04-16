@@ -10,6 +10,7 @@ from game.models import Game, BingoCard
 from wallet.models import Transaction
 from bot.keyboards import main_menu_keyboard, card_selection_keyboard, bingo_button_keyboard
 from bot.utils.game_logic import check_bingo_win
+from bot.utils.url_helpers import build_react_url, can_use_telegram_button_url
 from game.security import create_user_access_token
 
 router = Router()
@@ -177,11 +178,11 @@ async def play_bingo(message: Message):
     
     # Generate web app URL
     access_token = create_user_access_token(user.telegram_id)
-    react_url = settings.REACT_APP_URL.rstrip('/')
-    web_url = f"{react_url}/?telegram_id={user.telegram_id}&token={access_token}"
+    web_url = build_react_url("/", telegram_id=user.telegram_id, token=access_token)
     
-    # Use WebApp button on HTTPS. On HTTP, still show a normal URL button.
+    # Use WebApp button on HTTPS. On HTTP, use URL button only when Telegram accepts it.
     is_https = web_url.startswith("https://")
+    can_use_button_url = can_use_telegram_button_url(web_url)
     
     if is_https:
         keyboard = InlineKeyboardMarkup(inline_keyboard=[[
@@ -200,12 +201,14 @@ async def play_bingo(message: Message):
         )
         await message.answer(game_text, reply_markup=keyboard)
     else:
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(
-                text="▶️ Play",
-                url=web_url,
-            )
-        ]])
+        keyboard = None
+        if can_use_button_url:
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(
+                    text="▶️ Play",
+                    url=web_url,
+                )
+            ]])
         game_text = (
             f"<b>🎮 BINGO GAME</b>\n\n"
             f"💰 Your Balance: {wallet.total_balance} Birr\n"
@@ -215,6 +218,8 @@ async def play_bingo(message: Message):
             f"<code>{web_url}</code>\n\n"
             f"<i>💡 Long press the URL above to copy it</i>"
         )
+        if not can_use_button_url:
+            game_text += "\n\n<i>⚠ Telegram may reject localhost URL buttons in development; use the direct link above.</i>"
         await message.answer(game_text, reply_markup=keyboard)
 
 

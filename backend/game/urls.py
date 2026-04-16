@@ -11,6 +11,7 @@ urlpatterns = [
     path('api/missions-state/<int:telegram_id>/', views.missions_state_api, name='missions_state_api'),
     path('api/live-events/<int:telegram_id>/', views.live_events_api, name='live_events_api'),
     path('api/promo-codes/<int:telegram_id>/', views.promo_codes_api, name='promo_codes_api'),
+    path('api/promo-claims/<int:telegram_id>/', views.promo_claims_api, name='promo_claims_api'),
     path('api/play-state/<int:telegram_id>/<int:game_id>/', views.play_state_api, name='play_state_api'),
     path('api/select-card/', views.select_card_api, name='select_card_api'),
     path('api/mark-number/', views.mark_number_api, name='mark_number_api'),

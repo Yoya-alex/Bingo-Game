@@ -101,7 +101,10 @@ export default function TrophyPage() {
     return (
       <div className="app-shell">
         <div className="app-card">
-          <div className="subtitle">Loading trophy board...</div>
+          <div className="loading-state" role="status" aria-live="polite">
+            <span className="spinner" aria-hidden="true" />
+            <div className="subtitle">Loading trophy board...</div>
+          </div>
         </div>
       </div>
     );

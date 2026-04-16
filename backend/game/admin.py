@@ -10,7 +10,10 @@ from django.template.response import TemplateResponse
 from django.urls import path, reverse
 from django.utils.html import format_html
 from django.utils import timezone
+from users.models import User
 from .models import (
+    BusinessRuleSettings,
+    BusinessRuleSettingsAudit,
     Game,
     GameEngineSettings,
     BingoCard,
@@ -18,6 +21,7 @@ from .models import (
     MissionTemplate,
     PromoCode,
     PromoCodeRedemption,
+    PromoVerificationRequest,
     RewardSafetyPolicy,
     Season,
     SystemBalance,
@@ -452,6 +456,67 @@ class GameEngineSettingsAdmin(admin.ModelAdmin):
     readonly_fields = ['created_at', 'updated_at']
 
 
+@admin.register(BusinessRuleSettings)
+class BusinessRuleSettingsAdmin(admin.ModelAdmin):
+    list_display = [
+        'id',
+        'minimum_withdrawable_balance',
+        'referral_bonus_amount',
+        'derash_percentage',
+        'system_percentage',
+        'telebirr_receiving_phone_number',
+        'updated_by',
+        'updated_at',
+    ]
+    readonly_fields = ['created_at', 'updated_at', 'updated_by']
+
+    def has_add_permission(self, request):
+        return not BusinessRuleSettings.objects.exists()
+
+    def save_model(self, request, obj, form, change):
+        previous = {}
+        if change and obj.pk:
+            old = BusinessRuleSettings.objects.filter(pk=obj.pk).first()
+            if old:
+                previous = {
+                    'minimum_withdrawable_balance': str(old.minimum_withdrawable_balance),
+                    'referral_bonus_amount': str(old.referral_bonus_amount),
+                    'derash_percentage': str(old.derash_percentage),
+                    'system_percentage': str(old.system_percentage),
+                    'telebirr_receiving_phone_number': old.telebirr_receiving_phone_number,
+                }
+
+        admin_user = None
+        if getattr(request, 'user', None) and request.user.is_authenticated:
+            admin_user = User.objects.filter(username=request.user.username).first()
+
+        obj.updated_by = admin_user
+        super().save_model(request, obj, form, change)
+
+        new_values = {
+            'minimum_withdrawable_balance': str(obj.minimum_withdrawable_balance),
+            'referral_bonus_amount': str(obj.referral_bonus_amount),
+            'derash_percentage': str(obj.derash_percentage),
+            'system_percentage': str(obj.system_percentage),
+            'telebirr_receiving_phone_number': obj.telebirr_receiving_phone_number,
+        }
+
+        BusinessRuleSettingsAudit.objects.create(
+            business_settings=obj,
+            changed_by=admin_user,
+            previous_values=previous,
+            new_values=new_values,
+        )
+
+
+@admin.register(BusinessRuleSettingsAudit)
+class BusinessRuleSettingsAuditAdmin(admin.ModelAdmin):
+    list_display = ['id', 'business_settings', 'changed_by', 'changed_at']
+    list_filter = ['changed_at']
+    search_fields = ['changed_by__first_name', 'changed_by__username']
+    readonly_fields = ['business_settings', 'changed_by', 'previous_values', 'new_values', 'changed_at']
+
+
 @admin.register(UserRewardWindow)
 class UserRewardWindowAdmin(admin.ModelAdmin):
     list_display = ['id', 'user', 'reward_date', 'reward_total', 'redemption_count', 'last_reward_at']
@@ -473,9 +538,32 @@ class PromoCodeAdmin(admin.ModelAdmin):
 
 @admin.register(PromoCodeRedemption)
 class PromoCodeRedemptionAdmin(admin.ModelAdmin):
-    list_display = ['id', 'promo_code', 'user', 'amount', 'created_at']
+    list_display = ['id', 'promo_code', 'user', 'verification_request', 'amount', 'created_at']
     list_filter = ['promo_code', 'created_at']
     search_fields = ['promo_code__code', 'user__first_name', 'user__username', 'user__telegram_id']
+
+
+@admin.register(PromoVerificationRequest)
+class PromoVerificationRequestAdmin(admin.ModelAdmin):
+    list_display = [
+        'id',
+        'promo_code',
+        'user',
+        'status',
+        'admin_reviewer',
+        'credited_amount',
+        'submitted_at',
+        'decision_time',
+    ]
+    list_filter = ['status', 'submitted_at', 'decision_time']
+    search_fields = [
+        'promo_code__code',
+        'user__first_name',
+        'user__username',
+        'user__telegram_id',
+        'review_reason',
+    ]
+    readonly_fields = ['submitted_at', 'decision_time', 'credited_amount']
 
 
 @admin.register(MissionTemplate)

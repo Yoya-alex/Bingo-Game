@@ -28,6 +28,9 @@ load_dotenv(BASE_DIR / '.env')
 django_env = os.getenv('DJANGO_ENV', '').strip().lower()
 if django_env in {'dev', 'development', 'local'}:
     load_dotenv(BASE_DIR / '.env.development', override=True)
+elif django_env not in {'prod', 'production'} and (BASE_DIR / '.env.development').exists():
+    # Local fallback: use development overrides unless explicitly running production.
+    load_dotenv(BASE_DIR / '.env.development', override=True)
 
 
 # Quick-start development settings - unsuitable for production
@@ -181,6 +184,8 @@ ADMIN_LOGIN_TOKEN = os.getenv('ADMIN_LOGIN_TOKEN', '').strip()
 # React UI Configuration
 USE_REACT_UI = os.getenv('USE_REACT_UI', 'True') == 'True'
 REACT_APP_URL = os.getenv('REACT_APP_URL', 'https://bingo-game-1-5kj6.onrender.com')
+ALLOW_LOCALHOST_TELEGRAM_BUTTON_URL = env_bool('ALLOW_LOCALHOST_TELEGRAM_BUTTON_URL', False)
+ALLOW_PRIVATE_IP_TELEGRAM_BUTTON_URL = env_bool('ALLOW_PRIVATE_IP_TELEGRAM_BUTTON_URL', DEBUG)
 
 web_allowed_origins_env = os.getenv('WEB_ALLOWED_ORIGINS', '')
 WEB_ALLOWED_ORIGINS = [

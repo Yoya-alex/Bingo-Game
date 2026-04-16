@@ -72,7 +72,10 @@ export default function WalletPage() {
     return (
       <div className="app-shell">
         <div className="app-card">
-          <div className="subtitle">Loading wallet insights...</div>
+          <div className="loading-state" role="status" aria-live="polite">
+            <span className="spinner" aria-hidden="true" />
+            <div className="subtitle">Loading wallet insights...</div>
+          </div>
         </div>
       </div>
     );

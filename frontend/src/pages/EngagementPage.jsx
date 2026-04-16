@@ -30,6 +30,23 @@ function formatTitle(value) {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+function promoStatusMeta(promo) {
+  const status = String(promo?.claim_status || "");
+  if (status.includes("pending")) {
+    return { label: "Pending Verification", chip: "status-waiting" };
+  }
+  if (status.includes("approved")) {
+    return { label: "Approved", chip: "status-completed" };
+  }
+  if (status.includes("rejected")) {
+    return { label: "Rejected", chip: "status-rejected" };
+  }
+  if (promo?.is_live) {
+    return { label: "Live", chip: "status-playing" };
+  }
+  return { label: "Unavailable", chip: "status-finished" };
+}
+
 export default function EngagementPage() {
   const { telegramId } = useParams();
   const navigate = useNavigate();
@@ -94,7 +111,11 @@ export default function EngagementPage() {
         telegram_id: Number(telegramId),
         code: promoCode,
       });
-      showPromoOverlay("success", `Promo redeemed: ${payload.code} • +${formatBirr(payload.credited_amount)}`);
+      if (payload.requires_verification) {
+        showPromoOverlay("success", payload.message || "Promo submitted for verification.");
+      } else {
+        showPromoOverlay("success", `Promo redeemed: ${payload.code} • +${formatBirr(payload.credited_amount)}`);
+      }
       setPromoCodeInput("");
       await loadAll();
     } catch (error) {
@@ -124,7 +145,10 @@ export default function EngagementPage() {
     return (
       <div className="app-shell">
         <div className="app-card">
-          <div className="subtitle">Loading engagement center...</div>
+          <div className="loading-state" role="status" aria-live="polite">
+            <span className="spinner" aria-hidden="true" />
+            <div className="subtitle">Loading engagement center...</div>
+          </div>
         </div>
       </div>
     );
@@ -242,6 +266,7 @@ export default function EngagementPage() {
               placeholder="Enter promo code"
             />
             <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => redeemPromo()}>
+              {busy ? <span className="spinner-inline"><span className="spinner sm" aria-hidden="true" /></span> : null}
               Redeem
             </button>
           </div>
@@ -254,6 +279,7 @@ export default function EngagementPage() {
                     <th>Code</th>
                     <th>Tier</th>
                     <th>Reward</th>
+                    <th>Status</th>
                     <th>Window</th>
                     <th>Usage</th>
                     <th>Action</th>
@@ -261,11 +287,16 @@ export default function EngagementPage() {
                 </thead>
                 <tbody>
                   {(promoData.promo_codes || []).map((promo) => {
-                    const canRedeem = promo.is_live && promo.user_redemptions < promo.per_user_limit;
+                    const blockedByClaim = ["pending_verification", "approved"].includes(String(promo.claim_status || ""));
+                    const canRedeem = promo.is_live && promo.user_redemptions < promo.per_user_limit && !blockedByClaim;
                     const usageLabel = `${promo.user_redemptions}/${promo.per_user_limit}`;
+                    const statusMeta = promoStatusMeta(promo);
                     return (
-                      <tr key={promo.id}>
-                        <td><strong>{promo.code}</strong></td>
+                      <tr key={`${promo.id}-${promo.claim_submitted_at || "none"}`}>
+                        <td>
+                          <strong>{promo.code}</strong>
+                          {promo.is_hidden_claim ? <div className="wallet-note-inline">Hidden promo claim</div> : null}
+                        </td>
                         <td>
                           <span className={`engagement-tier-chip tier-${promo.tier}`}>{formatTitle(promo.tier)}</span>
                         </td>
@@ -274,6 +305,10 @@ export default function EngagementPage() {
                           <span className={`engagement-balance-chip balance-${promo.reward_balance}`}>
                             {formatTitle(promo.reward_balance)}
                           </span>
+                        </td>
+                        <td>
+                          <span className={`status-chip ${statusMeta.chip}`}>{statusMeta.label}</span>
+                          {promo.claim_review_reason ? <div className="wallet-note-inline">{promo.claim_review_reason}</div> : null}
                         </td>
                         <td>{formatDate(promo.starts_at)} - {formatDate(promo.ends_at)}</td>
                         <td>{usageLabel}</td>
@@ -284,7 +319,7 @@ export default function EngagementPage() {
                             disabled={!canRedeem || busy}
                             onClick={() => redeemPromo(promo.code)}
                           >
-                            {canRedeem ? "Redeem" : "Unavailable"}
+                            {promo.claim_status === "pending_verification" ? "Pending" : canRedeem ? "Redeem" : "Unavailable"}
                           </button>
                         </td>
                       </tr>

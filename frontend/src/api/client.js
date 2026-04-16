@@ -17,7 +17,7 @@ export async function fetchJson(url, options = {}) {
   const baseHeaders = {
     ...(options.headers || {}),
   };
-
+  
   if (token) {
     baseHeaders["X-User-Token"] = token;
     baseHeaders.Authorization = `Bearer ${token}`;

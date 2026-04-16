@@ -1,6 +1,7 @@
 from aiogram import Router, F
 from decimal import Decimal, InvalidOperation
 from datetime import timedelta
+import html
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
@@ -18,12 +19,15 @@ from game.models import (
     MissionTemplate,
     PromoCode,
     PromoCodeRedemption,
+    PromoVerificationRequest,
     RewardSafetyPolicy,
     Season,
     SystemBalance,
     SystemBalanceLedger,
 )
+from game.engagement import credit_user_reward, RewardSafetyError
 from notifications.models import Notification, NotificationDelivery
+from notifications.models import AnnouncementLog
 from bot.keyboards import (
     admin_main_menu_keyboard,
     engagement_balance_target_keyboard,
@@ -36,6 +40,7 @@ from bot.keyboards import (
     wallet_balance_type_keyboard,
     wallet_direction_keyboard,
 )
+from bot.utils.url_helpers import build_react_url, can_use_telegram_button_url
 from bot.utils.admin_helpers import is_admin, get_admin_user
 from bot.utils.notification_service import send_admin_notification
 from bot.utils.referral_service import try_process_referral_reward_for_deposit, get_referral_overview
@@ -57,7 +62,21 @@ class DepositApprovalStates(StatesGroup):
     waiting_for_confirm = State()
 
 
+class DepositRejectStates(StatesGroup):
+    waiting_for_reason = State()
+
+
+class WithdrawalApprovalStates(StatesGroup):
+    waiting_for_confirmation_text = State()
+
+
+class WithdrawalRejectStates(StatesGroup):
+    waiting_for_reason = State()
+
+
 class AnnouncementStates(StatesGroup):
+    waiting_for_mode = State()
+    waiting_for_photo = State()
     waiting_for_message = State()
     waiting_for_confirm = State()
 
@@ -217,7 +236,7 @@ def _approve_deposit_atomic(tx_id: int, admin_telegram_id: int, amount: Decimal)
 
 
 @sync_to_async
-def _reject_deposit_atomic(tx_id: int, admin_telegram_id: int):
+def _reject_deposit_atomic(tx_id: int, admin_telegram_id: int, reason: str = ""):
     """Atomically mark a deposit as rejected without changing balances."""
     from django.db import transaction as db_transaction
 
@@ -235,6 +254,11 @@ def _reject_deposit_atomic(tx_id: int, admin_telegram_id: int):
         except User.DoesNotExist:
             admin_user = None
 
+        reason = (reason or "").strip()
+        if reason:
+            base_description = tx.description or "Deposit rejected"
+            tx.description = f"{base_description} | Rejection reason: {reason}"
+
         tx.status = "rejected"
         tx.processed_at = timezone.now()
         tx.processed_by = admin_user
@@ -244,7 +268,7 @@ def _reject_deposit_atomic(tx_id: int, admin_telegram_id: int):
 
 
 @sync_to_async
-def _approve_withdrawal_atomic(tx_id: int, admin_telegram_id: int):
+def _approve_withdrawal_atomic(tx_id: int, admin_telegram_id: int, confirmation_text: str):
     """
     Atomically approve a withdrawal:
     - lock wallet
@@ -278,6 +302,11 @@ def _approve_withdrawal_atomic(tx_id: int, admin_telegram_id: int):
         except User.DoesNotExist:
             admin_user = None
 
+        confirmation_text = (confirmation_text or "").strip()
+        if confirmation_text:
+            base_description = tx.description or "Withdrawal approved"
+            tx.description = f"{base_description} | Confirmation text: {confirmation_text}"
+
         tx.status = "approved"
         tx.processed_at = timezone.now()
         tx.processed_by = admin_user
@@ -290,7 +319,7 @@ def _approve_withdrawal_atomic(tx_id: int, admin_telegram_id: int):
 
 
 @sync_to_async
-def _reject_withdrawal_atomic(tx_id: int, admin_telegram_id: int):
+def _reject_withdrawal_atomic(tx_id: int, admin_telegram_id: int, reason: str = ""):
     """Atomically reject a withdrawal (no balance changes)."""
     from django.db import transaction as db_transaction
 
@@ -307,6 +336,11 @@ def _reject_withdrawal_atomic(tx_id: int, admin_telegram_id: int):
             admin_user = User.objects.get(telegram_id=admin_telegram_id)
         except User.DoesNotExist:
             admin_user = None
+
+        reason = (reason or "").strip()
+        if reason:
+            base_description = tx.description or "Withdrawal rejected"
+            tx.description = f"{base_description} | Rejection reason: {reason}"
 
         tx.status = "rejected"
         tx.processed_at = timezone.now()
@@ -608,6 +642,175 @@ async def _ensure_admin(message_or_callback) -> bool:
             await message_or_callback.answer(text, show_alert=True)
         return False
     return True
+
+
+@sync_to_async
+def _resolve_admin_actor(telegram_id: int):
+    return User.objects.filter(telegram_id=telegram_id).first()
+
+
+@sync_to_async
+def _approve_promo_claim_atomic(claim_id: int, admin_telegram_id: int):
+    from django.db import transaction as db_transaction
+
+    with db_transaction.atomic():
+        claim = (
+            PromoVerificationRequest.objects.select_for_update()
+            .select_related('user', 'promo_code')
+            .filter(id=claim_id)
+            .first()
+        )
+        if not claim:
+            return False, 'Promo claim not found.', None
+
+        if claim.status == PromoVerificationRequest.STATUS_APPROVED:
+            return False, 'Promo claim already approved.', claim
+        if claim.status == PromoVerificationRequest.STATUS_REJECTED:
+            return False, 'Promo claim already rejected.', claim
+
+        admin_user = User.objects.filter(telegram_id=admin_telegram_id).first()
+
+        existing_redemption = PromoCodeRedemption.objects.filter(verification_request=claim).first()
+        if existing_redemption:
+            claim.status = PromoVerificationRequest.STATUS_APPROVED
+            claim.admin_reviewer = admin_user
+            claim.decision_time = timezone.now()
+            claim.credited_amount = existing_redemption.amount
+            claim.save(update_fields=['status', 'admin_reviewer', 'decision_time', 'credited_amount'])
+            return True, 'Promo claim approved (already credited once).', claim
+
+        credited_amount = credit_user_reward(
+            user=claim.user,
+            amount=claim.promo_code.reward_amount,
+            reward_balance=claim.promo_code.reward_balance,
+            description=f'Hidden promo code {claim.promo_code.code}',
+        )
+
+        PromoCodeRedemption.objects.create(
+            promo_code=claim.promo_code,
+            user=claim.user,
+            verification_request=claim,
+            amount=credited_amount,
+        )
+
+        claim.status = PromoVerificationRequest.STATUS_APPROVED
+        claim.admin_reviewer = admin_user
+        claim.decision_time = timezone.now()
+        claim.credited_amount = credited_amount
+        claim.review_reason = (claim.review_reason or '').strip()
+        claim.save(update_fields=['status', 'admin_reviewer', 'decision_time', 'credited_amount', 'review_reason'])
+
+        return True, 'Promo claim approved and credited.', claim
+
+
+@sync_to_async
+def _reject_promo_claim_atomic(claim_id: int, admin_telegram_id: int, reason: str = ''):
+    from django.db import transaction as db_transaction
+
+    with db_transaction.atomic():
+        claim = (
+            PromoVerificationRequest.objects.select_for_update()
+            .select_related('user', 'promo_code')
+            .filter(id=claim_id)
+            .first()
+        )
+        if not claim:
+            return False, 'Promo claim not found.', None
+
+        if claim.status == PromoVerificationRequest.STATUS_APPROVED:
+            return False, 'Cannot reject an approved promo claim.', claim
+        if claim.status == PromoVerificationRequest.STATUS_REJECTED:
+            return False, 'Promo claim already rejected.', claim
+
+        admin_user = User.objects.filter(telegram_id=admin_telegram_id).first()
+        claim.status = PromoVerificationRequest.STATUS_REJECTED
+        claim.admin_reviewer = admin_user
+        claim.decision_time = timezone.now()
+        claim.review_reason = (reason or 'Rejected by admin').strip()
+        claim.save(update_fields=['status', 'admin_reviewer', 'decision_time', 'review_reason'])
+
+        return True, 'Promo claim rejected.', claim
+
+
+@router.callback_query(F.data.startswith('promo_verify:approve:'))
+async def admin_promo_verify_approve(callback: CallbackQuery):
+    if not await _ensure_admin(callback):
+        await callback.answer()
+        return
+
+    try:
+        claim_id = int(callback.data.split(':')[-1])
+    except (TypeError, ValueError):
+        await callback.answer('Invalid promo claim reference.', show_alert=True)
+        return
+
+    try:
+        ok, info, claim = await _approve_promo_claim_atomic(claim_id, callback.from_user.id)
+    except RewardSafetyError as exc:
+        await callback.message.answer(f'❌ {str(exc)}')
+        await callback.answer()
+        return
+
+    if not ok or not claim:
+        await callback.message.answer(f'❌ {info}')
+        await callback.answer()
+        return
+
+    await callback.message.answer(
+        f"✅ {info}\n"
+        f"Claim #{claim.id}\n"
+        f"Promo: {claim.promo_code.code}\n"
+        f"User: {claim.user.first_name}\n"
+        f"Amount: {claim.credited_amount} Birr"
+    )
+
+    try:
+        await callback.message.bot.send_message(
+            claim.user.telegram_id,
+            f"✅ Your promo claim for {claim.promo_code.code} was approved.\n"
+            f"Credited amount: {claim.credited_amount} Birr",
+        )
+    except Exception:
+        pass
+
+    await callback.answer('Approved')
+
+
+@router.callback_query(F.data.startswith('promo_verify:reject:'))
+async def admin_promo_verify_reject(callback: CallbackQuery):
+    if not await _ensure_admin(callback):
+        await callback.answer()
+        return
+
+    try:
+        claim_id = int(callback.data.split(':')[-1])
+    except (TypeError, ValueError):
+        await callback.answer('Invalid promo claim reference.', show_alert=True)
+        return
+
+    ok, info, claim = await _reject_promo_claim_atomic(claim_id, callback.from_user.id, 'Rejected by admin review')
+    if not ok or not claim:
+        await callback.message.answer(f'❌ {info}')
+        await callback.answer()
+        return
+
+    await callback.message.answer(
+        f"✅ {info}\n"
+        f"Claim #{claim.id}\n"
+        f"Promo: {claim.promo_code.code}\n"
+        f"User: {claim.user.first_name}"
+    )
+
+    try:
+        await callback.message.bot.send_message(
+            claim.user.telegram_id,
+            f"❌ Your promo claim for {claim.promo_code.code} was rejected.\n"
+            f"Reason: {claim.review_reason}",
+        )
+    except Exception:
+        pass
+
+    await callback.answer('Rejected')
 
 
 @router.message(Command("admin"))
@@ -1037,42 +1240,13 @@ async def admin_deposit_amount_confirm(callback: CallbackQuery, state: FSMContex
         return
 
     if action == "reject":
-        success, info = await _reject_deposit_atomic(tx_id, callback.from_user.id)
-        if not success:
-            await callback.message.answer(f"❌ {info}")
-            await state.clear()
-            await callback.answer()
-            return
-
-        tx = await _get_transaction_or_none(tx_id)
-        user = tx.user if tx else None
-
+        await state.update_data(deposit_reject_tx_id=tx_id)
+        await state.set_state(DepositRejectStates.waiting_for_reason)
         await callback.message.answer(
-            f"✅ Deposit #{tx_id} rejected.",
-            reply_markup=admin_main_menu_keyboard(),
+            f"Please enter rejection reason for deposit #{tx_id}.\n"
+            "This reason will be sent to the user.\n"
+            "Send 'cancel' to abort."
         )
-
-        if user:
-            try:
-                await callback.message.bot.send_message(
-                    user.telegram_id,
-                    f"❌ Your deposit (Transaction #{tx.id}) has been <b>rejected</b>.\n"
-                    "Please contact support if you believe this is an error.",
-                )
-            except Exception:
-                pass
-
-        await send_admin_notification(
-            callback.message.bot,
-            text=(
-                "👮 <b>Admin Action</b>\n\n"
-                f"Admin: @{callback.from_user.username or callback.from_user.id}\n"
-                f"Action: Rejected deposit #{tx_id}\n"
-                f"Time: {timezone.now():%Y-%m-%d %H:%M}"
-            ),
-        )
-
-        await state.clear()
         await callback.answer()
         return
 
@@ -1284,25 +1458,91 @@ async def admin_referral_manual_reward(message: Message):
 
 
 @router.message(F.text.regexp(r"^/adm_dep_reject_(\d+)$"))
-async def admin_deposit_reject_execute(message: Message):
-    """Reject a deposit with confirmation."""
+async def admin_deposit_reject_execute(message: Message, state: FSMContext):
+    """Start deposit rejection flow by requesting rejection reason."""
     if not await _ensure_admin(message):
         return
 
-    admin_telegram_id = message.from_user.id
     try:
         tx_id = int(message.text.split("_")[-1])
     except (TypeError, ValueError):
         await message.answer("❌ Invalid deposit reference.")
         return
 
-    success, info = await _reject_deposit_atomic(tx_id, admin_telegram_id)
-    if not success:
-        await message.answer(f"❌ {info}")
+    tx = await _get_transaction_or_none(tx_id)
+    if not tx or tx.transaction_type != "deposit":
+        await message.answer("❌ Deposit not found.")
+        return
+
+    await state.update_data(deposit_reject_tx_id=tx.id)
+    await state.set_state(DepositRejectStates.waiting_for_reason)
+    await message.answer(
+        f"Please enter rejection reason for deposit #{tx.id}.\n"
+        "This reason will be sent to the user.\n"
+        "Send 'cancel' to abort."
+    )
+
+
+@router.callback_query(F.data.startswith("adm_dep:reject:"))
+async def admin_deposit_reject_execute_inline(callback: CallbackQuery, state: FSMContext):
+    """Start deposit rejection flow via inline button by requesting reason."""
+    if not await _ensure_admin(callback):
+        await callback.answer()
+        return
+
+    try:
+        tx_id = int(callback.data.split(":")[-1])
+    except (TypeError, ValueError):
+        await callback.answer("Invalid deposit reference", show_alert=True)
         return
 
     tx = await _get_transaction_or_none(tx_id)
+    if not tx or tx.transaction_type != "deposit":
+        await callback.answer("Deposit not found", show_alert=True)
+        return
+
+    await state.update_data(deposit_reject_tx_id=tx.id)
+    await state.set_state(DepositRejectStates.waiting_for_reason)
+    await callback.message.answer(
+        f"Please enter rejection reason for deposit #{tx.id}.\n"
+        "This reason will be sent to the user.\n"
+        "Send 'cancel' to abort."
+    )
+    await callback.answer()
+
+
+@router.message(DepositRejectStates.waiting_for_reason)
+async def admin_deposit_reject_reason_submit(message: Message, state: FSMContext):
+    """Reject deposit with explicit reason and notify user with that reason."""
+    if not await _ensure_admin(message):
+        return
+
+    entered_reason = (message.text or "").strip()
+    if entered_reason.lower() in {"cancel", "stop", "exit"}:
+        await state.clear()
+        await message.answer("✅ Deposit rejection cancelled.")
+        return
+
+    if not entered_reason:
+        await message.answer("❌ Rejection reason is required.")
+        return
+
+    data = await state.get_data()
+    tx_id = data.get("deposit_reject_tx_id")
+    if not tx_id:
+        await state.clear()
+        await message.answer("❌ Rejection context expired. Please start again.")
+        return
+
+    success, info = await _reject_deposit_atomic(int(tx_id), message.from_user.id, entered_reason)
+    if not success:
+        await message.answer(f"❌ {info}")
+        await state.clear()
+        return
+
+    tx = await _get_transaction_or_none(int(tx_id))
     user = tx.user if tx else None
+    safe_reason = html.escape(entered_reason)
 
     await message.answer(
         f"✅ Deposit #{tx_id} rejected.",
@@ -1314,7 +1554,7 @@ async def admin_deposit_reject_execute(message: Message):
             await message.bot.send_message(
                 user.telegram_id,
                 f"❌ Your deposit (Transaction #{tx.id}) has been <b>rejected</b>.\n"
-                "Please contact support if you believe this is an error.",
+                f"Reason: <code>{safe_reason}</code>",
             )
         except Exception:
             pass
@@ -1325,60 +1565,12 @@ async def admin_deposit_reject_execute(message: Message):
             "👮 <b>Admin Action</b>\n\n"
             f"Admin: @{message.from_user.username or message.from_user.id}\n"
             f"Action: Rejected deposit #{tx_id}\n"
+            f"Reason: {entered_reason}\n"
             f"Time: {timezone.now():%Y-%m-%d %H:%M}"
         ),
     )
 
-
-@router.callback_query(F.data.startswith("adm_dep:reject:"))
-async def admin_deposit_reject_execute_inline(callback: CallbackQuery):
-    """Reject a deposit via inline button."""
-    if not await _ensure_admin(callback):
-        await callback.answer()
-        return
-
-    admin_telegram_id = callback.from_user.id
-    try:
-        tx_id = int(callback.data.split(":")[-1])
-    except (TypeError, ValueError):
-        await callback.answer("Invalid deposit reference", show_alert=True)
-        return
-
-    success, info = await _reject_deposit_atomic(tx_id, admin_telegram_id)
-    if not success:
-        await callback.message.answer(f"❌ {info}")
-        await callback.answer()
-        return
-
-    tx = await _get_transaction_or_none(tx_id)
-    user = tx.user if tx else None
-
-    await callback.message.answer(
-        f"✅ Deposit #{tx_id} rejected.",
-        reply_markup=admin_main_menu_keyboard(),
-    )
-
-    if user:
-        try:
-            await callback.message.bot.send_message(
-                user.telegram_id,
-                f"❌ Your deposit (Transaction #{tx.id}) has been <b>rejected</b>.\n"
-                "Please contact support if you believe this is an error.",
-            )
-        except Exception:
-            pass
-
-    await send_admin_notification(
-        callback.message.bot,
-        text=(
-            "👮 <b>Admin Action</b>\n\n"
-            f"Admin: @{callback.from_user.username or callback.from_user.id}\n"
-            f"Action: Rejected deposit #{tx_id}\n"
-            f"Time: {timezone.now():%Y-%m-%d %H:%M}"
-        ),
-    )
-
-    await callback.answer()
+    await state.clear()
 
 
 @router.callback_query(F.data.startswith("adm_dep:cancel:"))
@@ -1536,8 +1728,8 @@ async def admin_withdrawal_detail_inline(callback: CallbackQuery):
 
 
 @router.message(F.text.regexp(r"^/adm_wd_approve_(\d+)$"))
-async def admin_withdrawal_approve_confirm(message: Message):
-    """Two-step confirmation for withdrawal approval."""
+async def admin_withdrawal_approve_confirm(message: Message, state: FSMContext):
+    """Ask admin for payment confirmation text before approving a withdrawal."""
     if not await _ensure_admin(message):
         return
 
@@ -1553,22 +1745,22 @@ async def admin_withdrawal_approve_confirm(message: Message):
         return
 
     user = tx.user
+    await state.update_data(withdrawal_tx_id=tx.id)
+    await state.set_state(WithdrawalApprovalStates.waiting_for_confirmation_text)
     text = (
-        "<b>✅ Approve Withdrawal?</b>\n\n"
+        "<b>✅ Approve Withdrawal</b>\n\n"
         f"User: {user.first_name} (@{user.username or '—'})\n"
         f"Amount: {tx.amount} Birr\n"
         f"Transaction ID: #{tx.id}\n\n"
-        "Confirm ONLY after you have paid the user externally.\n\n"
-        "Reply with:\n"
-        f"/adm_wd_approve_yes_{tx.id} to CONFIRM\n"
-        f"/adm_wd_cancel_{tx.id} to cancel"
+        "After paying the user externally, paste the payment confirmation text you received.\n\n"
+        "Send 'cancel' to abort."
     )
     await message.answer(text)
 
 
 @router.callback_query(F.data.startswith("adm_wd:approve:"))
-async def admin_withdrawal_approve_confirm_inline(callback: CallbackQuery):
-    """Ask for confirmation before approving a withdrawal via inline button."""
+async def admin_withdrawal_approve_confirm_inline(callback: CallbackQuery, state: FSMContext):
+    """Ask for payment confirmation text before approving via inline button."""
     if not await _ensure_admin(callback):
         await callback.answer()
         return
@@ -1585,138 +1777,132 @@ async def admin_withdrawal_approve_confirm_inline(callback: CallbackQuery):
         return
 
     user = tx.user
+    await state.update_data(withdrawal_tx_id=tx.id)
+    await state.set_state(WithdrawalApprovalStates.waiting_for_confirmation_text)
     text = (
-        "<b>✅ Approve Withdrawal?</b>\n\n"
+        "<b>✅ Approve Withdrawal</b>\n\n"
         f"User: {user.first_name} (@{user.username or '—'})\n"
         f"Amount: {tx.amount} Birr\n"
         f"Transaction ID: #{tx.id}\n\n"
-        "Confirm ONLY after you have paid the user externally."
+        "After paying the user externally, paste the payment confirmation text you received.\n\n"
+        "Send 'cancel' to abort."
     )
 
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="✅ Yes",
-                    callback_data=f"adm_wd:approve_yes:{tx.id}",
-                ),
-                InlineKeyboardButton(
-                    text="❌ Cancel",
-                    callback_data=f"adm_wd:cancel:{tx.id}",
-                ),
-            ]
-        ]
-    )
-
-    await callback.message.answer(text, reply_markup=keyboard)
+    await callback.message.answer(text)
     await callback.answer()
 
 
 @router.message(F.text.regexp(r"^/adm_wd_approve_yes_(\d+)$"))
-async def admin_withdrawal_approve_execute(message: Message):
-    """Execute atomic withdrawal approval after confirmation."""
+async def admin_withdrawal_approve_execute(message: Message, state: FSMContext):
+    """Legacy approve command now redirects to confirmation-text flow."""
     if not await _ensure_admin(message):
         return
 
-    admin_telegram_id = message.from_user.id
     try:
         tx_id = int(message.text.split("_")[-1])
     except (TypeError, ValueError):
         await message.answer("❌ Invalid withdrawal reference.")
         return
 
-    success, info, before, after = await _approve_withdrawal_atomic(
-        tx_id, admin_telegram_id
-    )
-    if not success:
-        await message.answer(f"❌ {info}")
+    tx = await _get_transaction_or_none(tx_id)
+    if not tx or tx.transaction_type != "withdrawal":
+        await message.answer("❌ Withdrawal not found.")
         return
 
-    tx = await _get_transaction_or_none(tx_id)
-    user = tx.user if tx else None
-
+    await state.update_data(withdrawal_tx_id=tx.id)
+    await state.set_state(WithdrawalApprovalStates.waiting_for_confirmation_text)
     await message.answer(
-        f"✅ Withdrawal #{tx_id} approved.\n"
-        f"User: {user.first_name if user else 'Unknown'}\n"
-        f"Amount: {tx.amount if tx else '—'} Birr\n"
-        f"Main balance: {before[0]} → {after[0]} Birr",
-        reply_markup=admin_main_menu_keyboard(),
-    )
-
-    if user:
-        try:
-            await message.bot.send_message(
-                user.telegram_id,
-                f"🏧 Your withdrawal of {tx.amount} Birr (Transaction #{tx.id}) "
-                f"has been <b>approved</b>.",
-            )
-        except Exception:
-            pass
-
-    await send_admin_notification(
-        message.bot,
-        text=(
-            "👮 <b>Admin Action</b>\n\n"
-            f"Admin: @{message.from_user.username or message.from_user.id}\n"
-            f"Action: Approved withdrawal #{tx_id}\n"
-            f"User: @{user.username or user.telegram_id if user else 'Unknown'}\n"
-            f"Amount: {tx.amount if tx else '—'} Birr\n"
-            f"Time: {timezone.now():%Y-%m-%d %H:%M}"
-        ),
+        "Please paste the payment confirmation text to complete approval.\n"
+        "Send 'cancel' to abort."
     )
 
 
 @router.callback_query(F.data.startswith("adm_wd:approve_yes:"))
-async def admin_withdrawal_approve_execute_inline(callback: CallbackQuery):
-    """Execute atomic withdrawal approval after inline confirmation."""
+async def admin_withdrawal_approve_execute_inline(callback: CallbackQuery, state: FSMContext):
+    """Legacy inline approve now redirects to confirmation-text flow."""
     if not await _ensure_admin(callback):
         await callback.answer()
         return
 
-    admin_telegram_id = callback.from_user.id
     try:
         tx_id = int(callback.data.split(":")[-1])
     except (TypeError, ValueError):
         await callback.answer("Invalid withdrawal reference", show_alert=True)
         return
 
-    success, info, before, after = await _approve_withdrawal_atomic(
-        tx_id, admin_telegram_id
-    )
-    if not success:
-        await callback.message.answer(f"❌ {info}")
-        await callback.answer()
+    tx = await _get_transaction_or_none(tx_id)
+    if not tx or tx.transaction_type != "withdrawal":
+        await callback.answer("Withdrawal not found", show_alert=True)
         return
 
-    tx = await _get_transaction_or_none(tx_id)
-    user = tx.user if tx else None
+    await state.update_data(withdrawal_tx_id=tx.id)
+    await state.set_state(WithdrawalApprovalStates.waiting_for_confirmation_text)
+    await callback.message.answer(
+        "Please paste the payment confirmation text to complete approval.\n"
+        "Send 'cancel' to abort."
+    )
+    await callback.answer()
 
-    await callback.message.edit_text(
+
+@router.message(WithdrawalApprovalStates.waiting_for_confirmation_text)
+async def admin_withdrawal_confirmation_text_submit(message: Message, state: FSMContext):
+    """Approve withdrawal after admin provides external payment confirmation text."""
+    if not await _ensure_admin(message):
+        return
+
+    entered_text = (message.text or "").strip()
+    if entered_text.lower() in {"cancel", "stop", "exit"}:
+        await state.clear()
+        await message.answer("✅ Withdrawal approval cancelled.")
+        return
+
+    if not entered_text:
+        await message.answer("❌ Please paste the confirmation text you received.")
+        return
+
+    data = await state.get_data()
+    tx_id = data.get("withdrawal_tx_id")
+    if not tx_id:
+        await state.clear()
+        await message.answer("❌ Approval context expired. Please start again.")
+        return
+
+    success, info, before, after = await _approve_withdrawal_atomic(
+        int(tx_id), message.from_user.id, entered_text
+    )
+    if not success:
+        await message.answer(f"❌ {info}")
+        await state.clear()
+        return
+
+    tx = await _get_transaction_or_none(int(tx_id))
+    user = tx.user if tx else None
+    safe_confirmation = html.escape(entered_text)
+
+    await message.answer(
         f"✅ Withdrawal #{tx_id} approved.\n"
         f"User: {user.first_name if user else 'Unknown'}\n"
         f"Amount: {tx.amount if tx else '—'} Birr\n"
         f"Main balance: {before[0]} → {after[0]} Birr",
-    )
-    await callback.message.answer(
-        "Admin menu:",
         reply_markup=admin_main_menu_keyboard(),
     )
 
     if user:
         try:
-            await callback.message.bot.send_message(
+            await message.bot.send_message(
                 user.telegram_id,
                 f"🏧 Your withdrawal of {tx.amount} Birr (Transaction #{tx.id}) "
-                f"has been <b>approved</b>.",
+                "has been <b>approved</b>.\n"
+                f"Confirmation text: <code>{safe_confirmation}</code>",
             )
         except Exception:
             pass
 
     await send_admin_notification(
-        callback.message.bot,
+        message.bot,
         text=(
             "👮 <b>Admin Action</b>\n\n"
-            f"Admin: @{callback.from_user.username or callback.from_user.id}\n"
+            f"Admin: @{message.from_user.username or message.from_user.id}\n"
             f"Action: Approved withdrawal #{tx_id}\n"
             f"User: @{user.username or user.telegram_id if user else 'Unknown'}\n"
             f"Amount: {tx.amount if tx else '—'} Birr\n"
@@ -1724,29 +1910,95 @@ async def admin_withdrawal_approve_execute_inline(callback: CallbackQuery):
         ),
     )
 
-    await callback.answer()
+    await state.clear()
 
 
 @router.message(F.text.regexp(r"^/adm_wd_reject_(\d+)$"))
-async def admin_withdrawal_reject_execute(message: Message):
-    """Reject a withdrawal request."""
+async def admin_withdrawal_reject_execute(message: Message, state: FSMContext):
+    """Start withdrawal rejection flow by requesting rejection reason."""
     if not await _ensure_admin(message):
         return
 
-    admin_telegram_id = message.from_user.id
     try:
         tx_id = int(message.text.split("_")[-1])
     except (TypeError, ValueError):
         await message.answer("❌ Invalid withdrawal reference.")
         return
 
-    success, info = await _reject_withdrawal_atomic(tx_id, admin_telegram_id)
-    if not success:
-        await message.answer(f"❌ {info}")
+    tx = await _get_transaction_or_none(tx_id)
+    if not tx or tx.transaction_type != "withdrawal":
+        await message.answer("❌ Withdrawal not found.")
+        return
+
+    await state.update_data(withdrawal_reject_tx_id=tx.id)
+    await state.set_state(WithdrawalRejectStates.waiting_for_reason)
+    await message.answer(
+        f"Please enter rejection reason for withdrawal #{tx.id}.\n"
+        "This reason will be sent to the user.\n"
+        "Send 'cancel' to abort."
+    )
+
+
+@router.callback_query(F.data.startswith("adm_wd:reject:"))
+async def admin_withdrawal_reject_execute_inline(callback: CallbackQuery, state: FSMContext):
+    """Start withdrawal rejection flow via inline button by requesting reason."""
+    if not await _ensure_admin(callback):
+        await callback.answer()
+        return
+
+    try:
+        tx_id = int(callback.data.split(":")[-1])
+    except (TypeError, ValueError):
+        await callback.answer("Invalid withdrawal reference", show_alert=True)
         return
 
     tx = await _get_transaction_or_none(tx_id)
+    if not tx or tx.transaction_type != "withdrawal":
+        await callback.answer("Withdrawal not found", show_alert=True)
+        return
+
+    await state.update_data(withdrawal_reject_tx_id=tx.id)
+    await state.set_state(WithdrawalRejectStates.waiting_for_reason)
+    await callback.message.answer(
+        f"Please enter rejection reason for withdrawal #{tx.id}.\n"
+        "This reason will be sent to the user.\n"
+        "Send 'cancel' to abort."
+    )
+    await callback.answer()
+
+
+@router.message(WithdrawalRejectStates.waiting_for_reason)
+async def admin_withdrawal_reject_reason_submit(message: Message, state: FSMContext):
+    """Reject withdrawal with explicit reason and notify user with that reason."""
+    if not await _ensure_admin(message):
+        return
+
+    entered_reason = (message.text or "").strip()
+    if entered_reason.lower() in {"cancel", "stop", "exit"}:
+        await state.clear()
+        await message.answer("✅ Withdrawal rejection cancelled.")
+        return
+
+    if not entered_reason:
+        await message.answer("❌ Rejection reason is required.")
+        return
+
+    data = await state.get_data()
+    tx_id = data.get("withdrawal_reject_tx_id")
+    if not tx_id:
+        await state.clear()
+        await message.answer("❌ Rejection context expired. Please start again.")
+        return
+
+    success, info = await _reject_withdrawal_atomic(int(tx_id), message.from_user.id, entered_reason)
+    if not success:
+        await message.answer(f"❌ {info}")
+        await state.clear()
+        return
+
+    tx = await _get_transaction_or_none(int(tx_id))
     user = tx.user if tx else None
+    safe_reason = html.escape(entered_reason)
 
     await message.answer(
         f"✅ Withdrawal #{tx_id} rejected.",
@@ -1757,9 +2009,8 @@ async def admin_withdrawal_reject_execute(message: Message):
         try:
             await message.bot.send_message(
                 user.telegram_id,
-                f"❌ Your withdrawal request (Transaction #{tx.id}) "
-                f"has been <b>rejected</b>.\n"
-                "Please contact support if you believe this is an error.",
+                f"❌ Your withdrawal request (Transaction #{tx.id}) has been <b>rejected</b>.\n"
+                f"Reason: <code>{safe_reason}</code>",
             )
         except Exception:
             pass
@@ -1770,64 +2021,12 @@ async def admin_withdrawal_reject_execute(message: Message):
             "👮 <b>Admin Action</b>\n\n"
             f"Admin: @{message.from_user.username or message.from_user.id}\n"
             f"Action: Rejected withdrawal #{tx_id}\n"
+            f"Reason: {entered_reason}\n"
             f"Time: {timezone.now():%Y-%m-%d %H:%M}"
         ),
     )
 
-
-@router.callback_query(F.data.startswith("adm_wd:reject:"))
-async def admin_withdrawal_reject_execute_inline(callback: CallbackQuery):
-    """Reject a withdrawal via inline button."""
-    if not await _ensure_admin(callback):
-        await callback.answer()
-        return
-
-    admin_telegram_id = callback.from_user.id
-    try:
-        tx_id = int(callback.data.split(":")[-1])
-    except (TypeError, ValueError):
-        await callback.answer("Invalid withdrawal reference", show_alert=True)
-        return
-
-    success, info = await _reject_withdrawal_atomic(tx_id, admin_telegram_id)
-    if not success:
-        await callback.message.answer(f"❌ {info}")
-        await callback.answer()
-        return
-
-    tx = await _get_transaction_or_none(tx_id)
-    user = tx.user if tx else None
-
-    await callback.message.edit_text(
-        f"✅ Withdrawal #{tx_id} rejected.",
-    )
-    await callback.message.answer(
-        "Admin menu:",
-        reply_markup=admin_main_menu_keyboard(),
-    )
-
-    if user:
-        try:
-            await callback.message.bot.send_message(
-                user.telegram_id,
-                f"❌ Your withdrawal request (Transaction #{tx.id}) "
-                "has been <b>rejected</b>.\n"
-                "Please contact support if you believe this is an error.",
-            )
-        except Exception:
-            pass
-
-    await send_admin_notification(
-        callback.message.bot,
-        text=(
-            "👮 <b>Admin Action</b>\n\n"
-            f"Admin: @{callback.from_user.username or callback.from_user.id}\n"
-            f"Action: Rejected withdrawal #{tx_id}\n"
-            f"Time: {timezone.now():%Y-%m-%d %H:%M}"
-        ),
-    )
-
-    await callback.answer()
+    await state.clear()
 
 
 @router.callback_query(F.data.startswith("adm_wd:cancel:"))
@@ -2040,9 +2239,51 @@ async def admin_announcement_start(message: Message, state: FSMContext):
 
     await message.answer(
         "<b>📢 Announcement</b>\n\n"
-        "Send the message you want to broadcast to all active users.\n"
+        "Choose mode:\n"
+        "1) Send <b>photo + caption</b>\n"
+        "2) Send <b>text only</b>\n\n"
+        "Reply with <b>photo</b> or <b>text</b>."
+    )
+    await state.set_state(AnnouncementStates.waiting_for_mode)
+
+
+@router.message(AnnouncementStates.waiting_for_mode)
+async def admin_announcement_mode(message: Message, state: FSMContext):
+    if not await _ensure_admin(message):
+        await state.clear()
+        return
+
+    mode = (message.text or '').strip().lower()
+    if mode not in {'photo', 'text'}:
+        await message.answer("❌ Reply with either 'photo' or 'text'.")
+        return
+
+    await state.update_data(announcement_mode=mode)
+    if mode == 'photo':
+        await message.answer("Send the photo now (as image, not file).")
+        await state.set_state(AnnouncementStates.waiting_for_photo)
+        return
+
+    await message.answer(
+        "Send the message text you want to broadcast to all active users.\n"
         "Type <b>cancel</b> to abort."
     )
+    await state.set_state(AnnouncementStates.waiting_for_message)
+
+
+@router.message(AnnouncementStates.waiting_for_photo)
+async def admin_announcement_photo(message: Message, state: FSMContext):
+    if not await _ensure_admin(message):
+        await state.clear()
+        return
+
+    if not message.photo:
+        await message.answer("❌ Please send a photo.")
+        return
+
+    photo_file_id = message.photo[-1].file_id
+    await state.update_data(announcement_photo_file_id=photo_file_id)
+    await message.answer("Now send the caption text for this photo.")
     await state.set_state(AnnouncementStates.waiting_for_message)
 
 
@@ -2067,6 +2308,9 @@ async def admin_announcement_broadcast(message: Message, state: FSMContext):
         return
 
     await state.update_data(announcement_text=announcement_text)
+    data = await state.get_data()
+    mode = data.get('announcement_mode', 'text')
+    preview_mode = 'Photo + caption' if mode == 'photo' else 'Text only'
 
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
@@ -2085,6 +2329,7 @@ async def admin_announcement_broadcast(message: Message, state: FSMContext):
 
     await message.answer(
         "<b>📢 Announcement Preview</b>\n\n"
+        f"Mode: {preview_mode}\n\n"
         f"{announcement_text}\n\n"
         "Send this to all active users?",
         reply_markup=keyboard,
@@ -2103,6 +2348,8 @@ async def admin_announcement_send(callback: CallbackQuery, state: FSMContext):
 
     data = await state.get_data()
     announcement_text = (data.get("announcement_text") or "").strip()
+    announcement_mode = data.get("announcement_mode") or "text"
+    announcement_photo_file_id = (data.get("announcement_photo_file_id") or "").strip()
     if not announcement_text:
         await callback.message.answer(
             "❌ No announcement message found. Please start again.",
@@ -2134,13 +2381,38 @@ async def admin_announcement_send(callback: CallbackQuery, state: FSMContext):
 
     sent_count = 0
     failed_count = 0
+    sample_play_url = build_react_url('/home/1')
+    can_use_play_button = can_use_telegram_button_url(sample_play_url)
+
+    admin_user = await get_admin_user(callback.from_user.id)
+    log = await sync_to_async(AnnouncementLog.objects.create)(
+        mode='photo' if announcement_mode == 'photo' else 'text',
+        message=announcement_text,
+        photo_file_id=announcement_photo_file_id,
+        created_by=admin_user,
+    )
 
     for user in users:
-        try:
-            await callback.message.bot.send_message(
-                user.telegram_id,
-                f"📢 <b>Admin Announcement</b>\n\n{announcement_text}",
+        play_url = build_react_url(f'/home/{user.telegram_id}')
+        markup = None
+        if can_use_play_button:
+            markup = InlineKeyboardMarkup(
+                inline_keyboard=[[InlineKeyboardButton(text='▶ Play', url=play_url)]]
             )
+        try:
+            if announcement_mode == 'photo' and announcement_photo_file_id:
+                await callback.message.bot.send_photo(
+                    user.telegram_id,
+                    photo=announcement_photo_file_id,
+                    caption=(announcement_text[:900] + f"\n\nPlay: {play_url}") if not can_use_play_button else announcement_text[:1024],
+                    reply_markup=markup,
+                )
+            else:
+                await callback.message.bot.send_message(
+                    user.telegram_id,
+                    f"📢 <b>Admin Announcement</b>\n\n{announcement_text}" + (f"\n\nPlay: {play_url}" if not can_use_play_button else ""),
+                    reply_markup=markup,
+                )
             await _create_notification_delivery(
                 notification.id,
                 user.id,
@@ -2160,6 +2432,11 @@ async def admin_announcement_send(callback: CallbackQuery, state: FSMContext):
         notification.id,
         sent_count,
         failed_count,
+    )
+    await sync_to_async(AnnouncementLog.objects.filter(id=log.id).update)(
+        sent_count=sent_count,
+        failed_count=failed_count,
+        completed_at=timezone.now(),
     )
 
     await callback.message.answer(
@@ -3206,11 +3483,12 @@ async def admin_eng_promo_create_frontend_visibility(callback: CallbackQuery, st
 
     promo = await _create_promo()
     if not promo:
-        await message.answer("❌ Promo code already exists.")
+        await callback.message.answer("❌ Promo code already exists.")
         await state.clear()
+        await callback.answer()
         return
 
-    await message.answer(
+    await callback.message.answer(
         f"✅ Promo created: {promo.code}\n"
         f"Tier: {promo.tier}\n"
         f"Reward: {promo.reward_amount} -> {promo.reward_balance}\n"

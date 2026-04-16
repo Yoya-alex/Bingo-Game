@@ -1,5 +1,7 @@
 from django.db import models
 from django.db import transaction
+from django.core.exceptions import ValidationError
+from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
 from django.utils import timezone
 from users.models import User
 import json
@@ -280,6 +282,113 @@ class GameEngineSettings(models.Model):
         return f"Game Engine Settings (Fake Users: {state})"
 
 
+class BusinessRuleSettings(models.Model):
+    ethiopian_phone_validator = RegexValidator(
+        regex=r'^(?:\+?2519\d{8}|09\d{8})$',
+        message='Enter a valid Ethiopian phone number (e.g. 09XXXXXXXX or +2519XXXXXXXX).',
+    )
+
+    minimum_withdrawable_balance = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('100.00'),
+        validators=[MinValueValidator(Decimal('0.00'))],
+    )
+    referral_bonus_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('10.00'),
+        validators=[MinValueValidator(Decimal('0.00'))],
+    )
+    derash_percentage = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal('80.00'),
+        validators=[MinValueValidator(Decimal('0.00')), MaxValueValidator(Decimal('100.00'))],
+    )
+    system_percentage = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal('20.00'),
+        validators=[MinValueValidator(Decimal('0.00')), MaxValueValidator(Decimal('100.00'))],
+    )
+    telebirr_receiving_phone_number = models.CharField(
+        max_length=20,
+        validators=[ethiopian_phone_validator],
+    )
+    updated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_business_rule_settings',
+    )
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'business_rule_settings'
+
+    @classmethod
+    def get_active(cls):
+        from django.conf import settings
+
+        defaults = {
+            'minimum_withdrawable_balance': Decimal(str(getattr(settings, 'MIN_WITHDRAWAL', 100))),
+            'referral_bonus_amount': Decimal(str(getattr(settings, 'REFERRAL_REWARD', 10))),
+            'derash_percentage': Decimal('80.00'),
+            'system_percentage': Decimal('20.00'),
+            'telebirr_receiving_phone_number': str(getattr(settings, 'TELEBIRR_NUMBER', '0912345678')),
+        }
+        settings_row, _ = cls.objects.get_or_create(pk=1, defaults=defaults)
+        return settings_row
+
+    def clean(self):
+        super().clean()
+        if not self.telebirr_receiving_phone_number:
+            raise ValidationError({'telebirr_receiving_phone_number': 'Telebirr receiving phone number is required.'})
+        total = (self.derash_percentage or Decimal('0')) + (self.system_percentage or Decimal('0'))
+        if total != Decimal('100'):
+            raise ValidationError({'system_percentage': 'Derash Percentage + System Percentage must equal 100.'})
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+    def __str__(self):
+        return (
+            f"Business Rules (Min Withdraw: {self.minimum_withdrawable_balance}, "
+            f"Referral: {self.referral_bonus_amount}, "
+            f"Derash/System: {self.derash_percentage}/{self.system_percentage})"
+        )
+
+
+class BusinessRuleSettingsAudit(models.Model):
+    business_settings = models.ForeignKey(
+        BusinessRuleSettings,
+        on_delete=models.CASCADE,
+        related_name='audit_entries',
+    )
+    changed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='business_rule_audit_entries',
+    )
+    previous_values = models.JSONField(default=dict, blank=True)
+    new_values = models.JSONField(default=dict, blank=True)
+    changed_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = 'business_rule_settings_audit'
+        ordering = ['-changed_at']
+
+    def __str__(self):
+        return f"BusinessRuleAudit({self.id}) by {self.changed_by_id}"
+
+
 class UserRewardWindow(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reward_windows')
     reward_date = models.DateField()
@@ -356,9 +465,54 @@ class PromoCode(models.Model):
         return f"{self.code} ({self.tier})"
 
 
+class PromoVerificationRequest(models.Model):
+    STATUS_PENDING = 'pending_verification'
+    STATUS_APPROVED = 'approved'
+    STATUS_REJECTED = 'rejected'
+    STATUS_CHOICES = [
+        (STATUS_PENDING, 'Pending Verification'),
+        (STATUS_APPROVED, 'Approved'),
+        (STATUS_REJECTED, 'Rejected'),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='promo_verification_requests')
+    promo_code = models.ForeignKey(PromoCode, on_delete=models.CASCADE, related_name='verification_requests')
+    submitted_at = models.DateTimeField(default=timezone.now)
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    admin_reviewer = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='reviewed_promo_verifications',
+    )
+    review_reason = models.TextField(blank=True)
+    decision_time = models.DateTimeField(null=True, blank=True)
+    credited_amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal('0.00'))
+
+    class Meta:
+        db_table = 'promo_verification_requests'
+        ordering = ['-submitted_at']
+        indexes = [
+            models.Index(fields=['status', 'submitted_at']),
+            models.Index(fields=['user', 'submitted_at']),
+            models.Index(fields=['promo_code', 'submitted_at']),
+        ]
+
+    def __str__(self):
+        return f"PromoVerification({self.promo_code_id}, {self.user_id}, {self.status})"
+
+
 class PromoCodeRedemption(models.Model):
     promo_code = models.ForeignKey(PromoCode, on_delete=models.CASCADE, related_name='redemptions')
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='promo_redemptions')
+    verification_request = models.OneToOneField(
+        PromoVerificationRequest,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='redemption',
+    )
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     created_at = models.DateTimeField(default=timezone.now)
 

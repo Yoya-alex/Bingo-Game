@@ -31,6 +31,18 @@ function maskTelegramId(value) {
   return `${text.slice(0, 3)}***${text.slice(-2)}`;
 }
 
+function normalizeBotUsername(raw) {
+  const value = String(raw || "").trim();
+  if (!value) {
+    return "OK_bingobot";
+  }
+  return value
+    .replace("https://t.me/", "")
+    .replace("http://t.me/", "")
+    .replace(/^@/, "")
+    .replace(/\/$/, "");
+}
+
 export default function ProfilePage() {
   const { telegramId } = useParams();
   const navigate = useNavigate();
@@ -61,6 +73,7 @@ export default function ProfilePage() {
     referrals: null,
     recent_activity: [],
     game_history: [],
+    promo_claims: [],
   });
 
   useEffect(() => {
@@ -104,8 +117,10 @@ export default function ProfilePage() {
       notifySection("referrals", "error", "Invite code not available.");
       return;
     }
-    navigator.clipboard.writeText(code)
-      .then(() => notifySection("referrals", "success", "Invite code copied."))
+    const botUsername = normalizeBotUsername(import.meta.env.VITE_BOT_USERNAME || "OK_bingobot");
+    const fullInviteLink = `https://t.me/${botUsername}?start=ref_${code}`;
+    navigator.clipboard.writeText(fullInviteLink)
+      .then(() => notifySection("referrals", "success", "Full referral link copied."))
       .catch(() => notifySection("referrals", "error", "Unable to copy invite code."));
   }
 
@@ -139,7 +154,10 @@ export default function ProfilePage() {
     return (
       <div className="app-shell">
         <div className="app-card">
-          <div className="subtitle">Loading profile...</div>
+          <div className="loading-state" role="status" aria-live="polite">
+            <span className="spinner" aria-hidden="true" />
+            <div className="subtitle">Loading profile...</div>
+          </div>
         </div>
       </div>
     );
@@ -225,6 +243,37 @@ export default function ProfilePage() {
                       <td><span className={`status-chip status-${item.status}`}>{item.status}</span></td>
                       <td>{item.amount == null ? "-" : formatBirr(item.amount)}</td>
                       <td>{formatDate(item.created_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </section>
+
+        <section className="component profile-section section-activity">
+          <h2 className="component-title">Promo Claim Status</h2>
+          <div className="profile-table-wrap">
+            {(data.promo_claims || []).length === 0 && <div className="subtitle">No promo verification claims yet.</div>}
+            {(data.promo_claims || []).length > 0 && (
+              <table className="profile-table" aria-label="Promo claim status table">
+                <thead>
+                  <tr>
+                    <th>Code</th>
+                    <th>Status</th>
+                    <th>Submitted</th>
+                    <th>Decision</th>
+                    <th>Reason</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data.promo_claims || []).map((claim) => (
+                    <tr key={claim.id}>
+                      <td>{claim.promo_code}</td>
+                      <td><span className={`status-chip status-${claim.status?.includes("approved") ? "completed" : claim.status?.includes("rejected") ? "rejected" : "waiting"}`}>{String(claim.status || "").replaceAll("_", " ")}</span></td>
+                      <td>{formatDate(claim.submitted_at)}</td>
+                      <td>{claim.decision_time ? formatDate(claim.decision_time) : "-"}</td>
+                      <td>{claim.review_reason || "-"}</td>
                     </tr>
                   ))}
                 </tbody>

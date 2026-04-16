@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Notification, NotificationDelivery
+from .models import AnnouncementLog, Notification, NotificationDelivery
 
 
 @admin.register(Notification)
@@ -24,3 +24,18 @@ class NotificationDeliveryAdmin(admin.ModelAdmin):
     list_display = ("id", "notification", "user", "status", "delivered_at", "created_at")
     list_filter = ("status", "created_at")
     search_fields = ("user__username", "user__first_name", "error_message")
+
+
+@admin.register(AnnouncementLog)
+class AnnouncementLogAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "mode",
+        "sent_count",
+        "failed_count",
+        "created_by",
+        "created_at",
+        "completed_at",
+    )
+    list_filter = ("mode", "created_at")
+    search_fields = ("message", "created_by__username", "created_by__first_name")

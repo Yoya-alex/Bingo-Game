@@ -234,11 +234,11 @@ export default function PlayPage() {
       setFinishCountdown(remaining);
       if (remaining <= 0) {
         clearInterval(timer);
-        window.location.assign(withAuthPath(`/home/${telegramId}`));
+        window.location.assign(withAuthPath(`/lobby/${telegramId}`));
       }
     }, 1000);
     const fallback = setTimeout(() => {
-      window.location.assign(withAuthPath(`/home/${telegramId}`));
+      window.location.assign(withAuthPath(`/lobby/${telegramId}`));
     }, 3500);
     return () => {
       clearInterval(timer);
@@ -285,7 +285,10 @@ export default function PlayPage() {
     return (
       <div className="app-shell">
         <div className="app-card">
-          <div className="subtitle">Loading game…</div>
+          <div className="loading-state" role="status" aria-live="polite">
+            <span className="spinner" aria-hidden="true" />
+            <div className="subtitle">Loading game...</div>
+          </div>
         </div>
       </div>
     );

@@ -81,3 +81,34 @@ class NotificationDelivery(models.Model):
             f"NotificationDelivery(notification={self.notification_id}, "
             f"user={self.user_id}, status={self.status})"
         )
+
+
+class AnnouncementLog(models.Model):
+    MODE_TEXT = "text"
+    MODE_PHOTO = "photo"
+    MODE_CHOICES = [
+        (MODE_TEXT, "Text"),
+        (MODE_PHOTO, "Photo"),
+    ]
+
+    mode = models.CharField(max_length=20, choices=MODE_CHOICES, default=MODE_TEXT)
+    message = models.TextField()
+    photo_file_id = models.CharField(max_length=255, blank=True)
+    sent_count = models.PositiveIntegerField(default=0)
+    failed_count = models.PositiveIntegerField(default=0)
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="announcement_logs",
+    )
+    created_at = models.DateTimeField(default=timezone.now)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "announcement_log"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"AnnouncementLog(mode={self.mode}, sent={self.sent_count}, failed={self.failed_count})"

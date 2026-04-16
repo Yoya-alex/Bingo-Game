@@ -9,6 +9,7 @@ from users.models import User
 from wallet.models import Wallet, Transaction, Deposit, Withdrawal
 from bot.keyboards import main_menu_keyboard, deposit_keyboard, withdrawal_keyboard, payment_method_keyboard
 from bot.utils.notification_service import send_admin_notification
+from game.business_rules import get_business_rules
 
 router = Router()
 
@@ -90,7 +91,7 @@ async def show_balance(message: Message):
 @router.message(F.text == "➕ Deposit")
 async def deposit_menu(message: Message):
     """Show deposit menu"""
-    telebirr_number = getattr(settings, 'TELEBIRR_NUMBER', '0912345678')
+    telebirr_number = get_business_rules().telebirr_receiving_phone_number
     
     deposit_text = (
         "<b>➕ DEPOSIT</b>\n\n"
@@ -184,16 +185,17 @@ async def withdrawal_menu(message: Message):
         return
     
     wallet = user.wallet
+    minimum_withdrawal = float(get_business_rules().minimum_withdrawable_balance)
     
     # Check minimum withdrawal amount - only winnings can be withdrawn
-    if wallet.winnings_balance < 100:
+    if float(wallet.winnings_balance) < minimum_withdrawal:
         await message.answer(
             f"<b>➖ WITHDRAWAL</b>\n\n"
             f"🏆 Winnings Balance: {wallet.winnings_balance} Birr\n"
             f"💵 Deposit Balance: {wallet.main_balance} Birr (cannot withdraw)\n"
             f"🎁 Bonus Balance: {wallet.bonus_balance} Birr (cannot withdraw)\n\n"
             f"❌ <b>Insufficient winnings!</b>\n"
-            f"Minimum withdrawal amount is 100 Birr.\n\n"
+            f"Minimum withdrawal amount is {minimum_withdrawal} Birr.\n\n"
             f"<i>Note: Only prize/winnings money can be withdrawn.\n"
             f"Deposit and bonus balance cannot be withdrawn.</i>",
             reply_markup=main_menu_keyboard(),
@@ -207,7 +209,7 @@ async def withdrawal_menu(message: Message):
         f"💵 Deposit Balance: {wallet.main_balance} Birr (cannot withdraw)\n"
         f"🎁 Bonus Balance: {wallet.bonus_balance} Birr (cannot withdraw)\n\n"
         f"<i>Note: Only prize/winnings money can be withdrawn.\n"
-        f"Minimum withdrawal: 100 Birr</i>\n\n"
+        f"Minimum withdrawal: {minimum_withdrawal} Birr</i>\n\n"
         f"Click below to request withdrawal:"
     )
     
@@ -217,10 +219,11 @@ async def withdrawal_menu(message: Message):
 @router.callback_query(F.data == "request_withdrawal")
 async def request_withdrawal_start(callback: CallbackQuery, state: FSMContext):
     """Start withdrawal request process"""
+    minimum_withdrawal = float(get_business_rules().minimum_withdrawable_balance)
     await callback.message.answer(
         "💸 <b>Withdrawal Request</b>\n\n"
         f"Please enter the amount you want to withdraw (in Birr).\n"
-        f"Amount must be greater than {settings.MIN_WITHDRAWAL} Birr:"
+        f"Minimum amount is {minimum_withdrawal} Birr:"
     )
     await state.set_state(WithdrawalStates.waiting_for_amount)
     await callback.answer()
@@ -232,6 +235,7 @@ async def process_withdrawal_amount(message: Message, state: FSMContext):
     try:
         amount = float(message.text)
         user = await get_user_with_wallet(message.from_user.id)
+        minimum_withdrawal = float(get_business_rules().minimum_withdrawable_balance)
         
         if not user:
             await message.answer("❌ Please start the bot first with /start")
@@ -244,16 +248,9 @@ async def process_withdrawal_amount(message: Message, state: FSMContext):
             await message.answer("❌ Amount must be greater than 0")
             return
 
-        if amount <= settings.MIN_WITHDRAWAL:
+        if amount < minimum_withdrawal:
             await message.answer(
-                f"❌ Withdrawal amount must be greater than {settings.MIN_WITHDRAWAL} Birr"
-            )
-            return
-        
-        if amount < 100:
-            await message.answer(
-                f"❌ Minimum withdrawal amount is 100 Birr!\n"
-                f"Please enter an amount of 100 Birr or more."
+                f"❌ Minimum withdrawal amount is {minimum_withdrawal} Birr"
             )
             return
         
