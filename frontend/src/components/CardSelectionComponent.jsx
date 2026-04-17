@@ -1,11 +1,12 @@
 import { memo } from "react";
+import { useI18n } from "../i18n/LanguageContext.jsx";
 
-const CardChip = memo(function CardChip({ number, isTaken, isSelected, onSelect }) {
+const CardChip = memo(function CardChip({ number, isTaken, isSelected, onSelect, t }) {
   const className = `card-chip${isTaken ? " taken" : ""}${isSelected ? " selected" : ""}`;
   return (
     <div
       className={className}
-      title={isTaken ? "Taken" : isSelected ? "Selected" : "Select card"}
+      title={isTaken ? t("cardSelection.taken") : isSelected ? t("cardSelection.selected") : t("cardSelection.selectCard")}
       onClick={() => !isTaken && onSelect(number)}>
       {number}
     </div>
@@ -13,9 +14,11 @@ const CardChip = memo(function CardChip({ number, isTaken, isSelected, onSelect 
 });
 
 export default function CardSelectionComponent({ numbers, takenSet, selectedNumber, onSelect }) {
+  const { t } = useI18n();
+
   return (
     <section className="component" id="cardSelectionComponent">
-      <div className="component-title">Select Your Card</div>
+      <div className="component-title">{t("cardSelection.selectYourCard")}</div>
       <div className="card-grid" id="cardsGrid">
         {numbers.map((num) => (
           <CardChip
@@ -24,11 +27,12 @@ export default function CardSelectionComponent({ numbers, takenSet, selectedNumb
             isTaken={takenSet.has(num)}
             isSelected={selectedNumber === num}
             onSelect={onSelect}
+            t={t}
           />
         ))}
       </div>
       <p className="subtitle" style={{ marginTop: "10px" }}>
-        Tap any available card to join.
+        {t("cardSelection.tapAnyAvailable")}
       </p>
     </section>
   );

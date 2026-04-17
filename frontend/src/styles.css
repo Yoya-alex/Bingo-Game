@@ -1,6 +1,7 @@
 @import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Space+Grotesk:wght@400;500;700&display=swap");
 
 :root {
+  --bottom-nav-height: 88px;
   --bg-1: #0f1b2d;
   --bg-2: #1c3146;
   --bg-3: #e2d9c7;
@@ -102,7 +103,7 @@ body {
   font-family: "Space Grotesk", "Segoe UI", sans-serif;
   background: radial-gradient(circle at 20% 20%, var(--page-grad-1) 0%, var(--page-grad-2) 45%, var(--page-grad-3) 100%);
   min-height: 100vh;
-  padding: 28px 18px 60px;
+  padding: 28px 18px calc(var(--bottom-nav-height) + 22px);
   color: var(--ink-1);
 }
 
@@ -732,8 +733,19 @@ body::after {
   box-shadow: 0 12px 24px rgba(15, 23, 42, 0.24);
 }
 
+.language-toggle {
+  top: 16px;
+  right: 16px;
+}
+
+.mode-toggle {
+  top: 62px;
+  right: 16px;
+}
+
 .voice-toggle {
-  right: 170px;
+  top: 108px;
+  right: 16px;
 }
 
 .voice-icon-btn {
@@ -823,7 +835,7 @@ body::after {
 
 @media (max-width: 640px) {
   body {
-    padding: 20px 14px 50px;
+    padding: 20px 14px calc(var(--bottom-nav-height) + 18px);
   }
 
   .app-card {
@@ -876,7 +888,7 @@ body::after {
   }
 
   .voice-toggle {
-    top: 62px;
+    top: 108px;
     right: 16px;
   }
 
@@ -2418,16 +2430,278 @@ body.night-mode .stat-value {
   line-height: 1.4;
 }
 
+.game-info-live-grid {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+.game-info-panel {
+  border: 1px solid color-mix(in srgb, var(--border-soft) 82%, transparent);
+  border-radius: 16px;
+  padding: 12px;
+  background:
+    radial-gradient(120% 110% at 100% 0%, color-mix(in srgb, var(--accent-2) 14%, transparent), transparent 62%),
+    linear-gradient(145deg, color-mix(in srgb, var(--surface-1) 95%, transparent), color-mix(in srgb, var(--surface-2) 95%, transparent));
+  box-shadow: 0 10px 22px color-mix(in srgb, var(--page-grad-3) 20%, transparent);
+}
+
+.game-info-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.game-info-live-pill {
+  min-height: 22px;
+  padding: 0 10px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: color-mix(in srgb, #f8fafc 86%, var(--accent-2) 14%);
+  background: linear-gradient(130deg, color-mix(in srgb, #0ea5e9 60%, var(--accent-2)), color-mix(in srgb, #2563eb 64%, var(--accent-1)));
+}
+
+.game-info-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.game-info-metric-card {
+  border: 1px solid color-mix(in srgb, var(--accent-2) 26%, transparent);
+  border-radius: 12px;
+  min-height: 64px;
+  padding: 8px 10px;
+  display: grid;
+  gap: 5px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--surface-1) 96%, transparent), color-mix(in srgb, var(--surface-2) 94%, transparent));
+}
+
+.game-info-metric-card span {
+  font-size: 0.68rem;
+  color: var(--ink-2);
+  text-transform: uppercase;
+  letter-spacing: 0.45px;
+}
+
+.game-info-metric-card strong {
+  font-size: 0.94rem;
+  color: var(--ink-1);
+}
+
+.game-info-metric-card.wide {
+  grid-column: 1 / -1;
+}
+
+.game-info-rules {
+  margin-top: 10px;
+}
+
+.game-info-rules p {
+  margin: 0;
+}
+
+.card-panel {
+  position: relative;
+  overflow: hidden;
+}
+
+.bingo-preview-header h3 {
+  margin: 0;
+  font-size: 0.96rem;
+}
+
+.bingo-preview-header p {
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  color: var(--ink-2);
+}
+
+.bingo-preview-card-wrap {
+  margin-top: 10px;
+  display: flex;
+  justify-content: center;
+}
+
+.bingo-preview-card {
+  position: relative;
+  width: min(100%, 320px);
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--accent-2) 36%, transparent);
+  padding: 10px;
+  background:
+    radial-gradient(100% 130% at 90% 0%, color-mix(in srgb, var(--accent-1) 12%, transparent), transparent 64%),
+    linear-gradient(145deg, color-mix(in srgb, #081326 88%, var(--surface-1)), color-mix(in srgb, #0f172a 92%, var(--surface-2)));
+  box-shadow: 0 14px 30px color-mix(in srgb, var(--page-grad-3) 34%, transparent);
+}
+
+.bingo-preview-labels {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.bingo-preview-labels span {
+  min-height: 24px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  letter-spacing: 0.45px;
+  color: #f8fafc;
+  background: linear-gradient(125deg, color-mix(in srgb, #0ea5e9 74%, var(--accent-2)), color-mix(in srgb, #22d3ee 54%, #2563eb));
+}
+
+.bingo-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.bingo-preview-cell {
+  min-height: 44px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.84rem;
+  font-weight: 800;
+  color: #e2e8f0;
+  border: 1px solid color-mix(in srgb, #93c5fd 32%, transparent);
+  background: linear-gradient(140deg, color-mix(in srgb, #1e293b 92%, transparent), color-mix(in srgb, #0f172a 94%, transparent));
+}
+
+.bingo-preview-cell.free {
+  color: #062126;
+  border-color: color-mix(in srgb, #2dd4bf 62%, transparent);
+  background: linear-gradient(140deg, color-mix(in srgb, #2dd4bf 76%, #67e8f9), color-mix(in srgb, #22d3ee 68%, #34d399));
+  box-shadow: 0 8px 16px color-mix(in srgb, #14b8a6 35%, transparent);
+}
+
+.bingo-preview-cell.win-guide-active {
+  color: #04251a;
+  border-color: color-mix(in srgb, #22c55e 74%, transparent);
+  background: linear-gradient(140deg, color-mix(in srgb, #86efac 78%, #22c55e), color-mix(in srgb, #4ade80 78%, #16a34a));
+  box-shadow: 0 0 0 1px color-mix(in srgb, #22c55e 66%, transparent), 0 10px 18px color-mix(in srgb, #22c55e 38%, transparent);
+  animation: winner-cell-pulse 0.9s ease-in-out;
+}
+
+.bingo-guide-lines {
+  display: none;
+}
+
+.guide-line {
+  position: absolute;
+  opacity: 0;
+  border-radius: 999px;
+  transform: scale(0.92);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  box-shadow: 0 0 0 1px color-mix(in srgb, #22d3ee 54%, transparent), 0 0 22px color-mix(in srgb, #22d3ee 44%, transparent);
+  background: linear-gradient(130deg, color-mix(in srgb, #22d3ee 84%, #0ea5e9), color-mix(in srgb, #38bdf8 80%, #6366f1));
+}
+
+.guide-line.active {
+  opacity: 0.95;
+  transform: scale(1);
+  animation: guide-line-pulse 0.9s ease-in-out;
+}
+
+.guide-row {
+  left: 3%;
+  width: 94%;
+  height: 4px;
+}
+
+.guide-col {
+  top: 3%;
+  width: 4px;
+  height: 94%;
+}
+
+.guide-index-0.guide-row { top: 8%; }
+.guide-index-1.guide-row { top: 28%; }
+.guide-index-2.guide-row { top: 48%; }
+.guide-index-3.guide-row { top: 68%; }
+.guide-index-4.guide-row { top: 88%; }
+
+.guide-index-0.guide-col { left: 8%; }
+.guide-index-1.guide-col { left: 28%; }
+.guide-index-2.guide-col { left: 48%; }
+.guide-index-3.guide-col { left: 68%; }
+.guide-index-4.guide-col { left: 88%; }
+
+.guide-diag {
+  top: 49%;
+  left: 49%;
+  width: 132%;
+  height: 4px;
+  transform-origin: center;
+}
+
+.guide-diag.guide-index-0 {
+  transform: translate(-50%, -50%) rotate(35deg);
+}
+
+.guide-diag.guide-index-1 {
+  transform: translate(-50%, -50%) rotate(-35deg);
+}
+
+.guide-diag.active.guide-index-0 {
+  transform: translate(-50%, -50%) rotate(35deg) scale(1.02);
+}
+
+.guide-diag.active.guide-index-1 {
+  transform: translate(-50%, -50%) rotate(-35deg) scale(1.02);
+}
+
+@keyframes guide-line-pulse {
+  0% {
+    filter: brightness(0.95);
+  }
+  50% {
+    filter: brightness(1.25);
+  }
+  100% {
+    filter: brightness(1);
+  }
+}
+
+@keyframes winner-cell-pulse {
+  0% {
+    transform: scale(0.94);
+    filter: brightness(0.95);
+  }
+  50% {
+    transform: scale(1.03);
+    filter: brightness(1.08);
+  }
+  100% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+}
+
 .bottom-nav {
-  position: fixed;
+  position: fixed !important;
   left: 0;
   right: 0;
   bottom: 0;
+  width: 100%;
   min-height: 72px;
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 4px;
-  padding: 8px;
+  padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
   background: color-mix(in srgb, var(--page-grad-3) 72%, var(--surface-1) 28%);
   border-top: 1px solid color-mix(in srgb, var(--accent-2) 34%, var(--border-soft));
   backdrop-filter: blur(8px);
@@ -2944,6 +3218,23 @@ body.night-mode .stat-value {
 
   .lobby-sync-note {
     text-align: center;
+  }
+
+  .game-info-live-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .game-info-metrics {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .bingo-preview-card {
+    width: min(100%, 290px);
+  }
+
+  .bingo-preview-cell {
+    min-height: 40px;
+    font-size: 0.78rem;
   }
 
   .profile-grid-4,

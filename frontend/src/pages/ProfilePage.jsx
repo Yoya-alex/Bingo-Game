@@ -4,6 +4,7 @@ import { fetchJson } from "../api/client.js";
 import { withAuthPath } from "../utils/auth.js";
 import NotificationComponent from "../components/NotificationComponent.jsx";
 import BottomNavIcon from "../components/BottomNavIcon.jsx";
+import { useI18n } from "../i18n/LanguageContext.jsx";
 
 const EMPTY_NOTIFICATION = { type: "", message: "" };
 
@@ -46,6 +47,7 @@ function normalizeBotUsername(raw) {
 export default function ProfilePage() {
   const { telegramId } = useParams();
   const navigate = useNavigate();
+  const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState(EMPTY_NOTIFICATION);
   const [sectionNotifications, setSectionNotifications] = useState({
@@ -114,14 +116,14 @@ export default function ProfilePage() {
   function copyInviteCode() {
     const code = data.referrals?.invite_code;
     if (!code) {
-      notifySection("referrals", "error", "Invite code not available.");
+      notifySection("referrals", "error", t("profile.inviteCodeNotAvailable"));
       return;
     }
     const botUsername = normalizeBotUsername(import.meta.env.VITE_BOT_USERNAME || "OK_bingobot");
     const fullInviteLink = `https://t.me/${botUsername}?start=ref_${code}`;
     navigator.clipboard.writeText(fullInviteLink)
-      .then(() => notifySection("referrals", "success", "Full referral link copied."))
-      .catch(() => notifySection("referrals", "error", "Unable to copy invite code."));
+      .then(() => notifySection("referrals", "success", t("profile.fullReferralCopied")))
+      .catch(() => notifySection("referrals", "error", t("profile.unableToCopyInvite")));
   }
 
   const achievements = useMemo(() => {
@@ -130,23 +132,23 @@ export default function ProfilePage() {
     const items = [];
 
     if ((stats.wins || 0) >= 1) {
-      items.push("First Win");
+      items.push(t("profile.achievements.firstWin"));
     }
     if ((stats.wins || 0) >= 10) {
-      items.push("10 Wins Club");
+      items.push(t("profile.achievements.tenWinsClub"));
     }
     if ((stats.biggest_win || 0) >= 1000) {
-      items.push("Big Winner");
+      items.push(t("profile.achievements.bigWinner"));
     }
     if ((referrals.referred_count || 0) >= 5) {
-      items.push("Referral Starter");
+      items.push(t("profile.achievements.referralStarter"));
     }
     if ((stats.games_joined || 0) >= 50) {
-      items.push("Bingo Veteran");
+      items.push(t("profile.achievements.bingoVeteran"));
     }
 
-    return items.length ? items : ["No badges yet"];
-  }, [data.stats, data.referrals]);
+    return items.length ? items : [t("profile.achievements.noBadges")];
+  }, [data.stats, data.referrals, t]);
 
   const historyRows = preferences.compactHistory ? (data.game_history || []).slice(0, 8) : (data.game_history || []);
 
@@ -156,7 +158,7 @@ export default function ProfilePage() {
         <div className="app-card">
           <div className="loading-state" role="status" aria-live="polite">
             <span className="spinner" aria-hidden="true" />
-            <div className="subtitle">Loading profile...</div>
+            <div className="subtitle">{t("profile.loading")}</div>
           </div>
         </div>
       </div>
@@ -167,71 +169,71 @@ export default function ProfilePage() {
     <div className="app-shell profile-shell">
       <div className="app-card profile-card">
         <header className="profile-header component">
-          <h1 className="title profile-title">Profile</h1>
+          <h1 className="title profile-title">{t("profile.title")}</h1>
           <p className="subtitle profile-subtitle">
-            {data.user?.first_name || "Player"} ({data.user?.username ? `@${data.user.username}` : "no username"})
+            {data.user?.first_name || t("common.player")} ({data.user?.username ? `@${data.user.username}` : t("profile.noUsername")})
           </p>
           <div className="profile-meta-row">
-            <span className="profile-meta-chip">Telegram: {maskTelegramId(data.user?.telegram_id)}</span>
-            <span className="profile-meta-chip">Joined: {formatDate(data.user?.registration_date)}</span>
+            <span className="profile-meta-chip">{t("profile.telegram")}: {maskTelegramId(data.user?.telegram_id)}</span>
+            <span className="profile-meta-chip">{t("profile.joined")}: {formatDate(data.user?.registration_date)}</span>
           </div>
         </header>
 
         <NotificationComponent notification={notification} />
 
         <section className="component profile-section section-wallet">
-          <h2 className="component-title">Wallet Summary</h2>
+          <h2 className="component-title">{t("profile.walletSummary")}</h2>
           <div className="profile-grid profile-grid-5">
-            <div className="profile-metric metric-wallet-total"><span>Total</span><strong>{formatBirr(data.wallet?.total_balance)}</strong></div>
-            <div className="profile-metric metric-wallet-main"><span>Main</span><strong>{formatBirr(data.wallet?.main_balance)}</strong></div>
-            <div className="profile-metric metric-wallet-bonus"><span>Bonus</span><strong>{formatBirr(data.wallet?.bonus_balance)}</strong></div>
-            <div className="profile-metric metric-wallet-winnings"><span>Winnings</span><strong>{formatBirr(data.wallet?.winnings_balance)}</strong></div>
-            <div className="profile-metric metric-wallet-withdrawable"><span>Withdrawable</span><strong>{formatBirr(data.wallet?.withdrawable_balance)}</strong></div>
+            <div className="profile-metric metric-wallet-total"><span>{t("wallet.total")}</span><strong>{formatBirr(data.wallet?.total_balance)}</strong></div>
+            <div className="profile-metric metric-wallet-main"><span>{t("wallet.main")}</span><strong>{formatBirr(data.wallet?.main_balance)}</strong></div>
+            <div className="profile-metric metric-wallet-bonus"><span>{t("wallet.bonus")}</span><strong>{formatBirr(data.wallet?.bonus_balance)}</strong></div>
+            <div className="profile-metric metric-wallet-winnings"><span>{t("wallet.winnings")}</span><strong>{formatBirr(data.wallet?.winnings_balance)}</strong></div>
+            <div className="profile-metric metric-wallet-withdrawable"><span>{t("wallet.withdrawable")}</span><strong>{formatBirr(data.wallet?.withdrawable_balance)}</strong></div>
           </div>
         </section>
 
         <section className="component profile-section section-stats">
-          <h2 className="component-title">Game Stats</h2>
+          <h2 className="component-title">{t("profile.gameStats")}</h2>
           <div className="profile-grid profile-grid-6">
-            <div className="profile-metric metric-stat-joined"><span>Games Joined</span><strong>{data.stats?.games_joined || 0}</strong></div>
-            <div className="profile-metric metric-stat-wins"><span>Wins</span><strong>{data.stats?.wins || 0}</strong></div>
-            <div className="profile-metric metric-stat-rate"><span>Win Rate</span><strong>{Number(data.stats?.win_rate || 0).toFixed(2)}%</strong></div>
-            <div className="profile-metric metric-stat-spent"><span>Total Spent</span><strong>{formatBirr(data.stats?.total_entry_spent)}</strong></div>
-            <div className="profile-metric metric-stat-won"><span>Total Won</span><strong>{formatBirr(data.stats?.total_won)}</strong></div>
-            <div className="profile-metric metric-stat-biggest"><span>Biggest Win</span><strong>{formatBirr(data.stats?.biggest_win)}</strong></div>
+            <div className="profile-metric metric-stat-joined"><span>{t("profile.gamesJoined")}</span><strong>{data.stats?.games_joined || 0}</strong></div>
+            <div className="profile-metric metric-stat-wins"><span>{t("profile.wins")}</span><strong>{data.stats?.wins || 0}</strong></div>
+            <div className="profile-metric metric-stat-rate"><span>{t("profile.winRate")}</span><strong>{Number(data.stats?.win_rate || 0).toFixed(2)}%</strong></div>
+            <div className="profile-metric metric-stat-spent"><span>{t("profile.totalSpent")}</span><strong>{formatBirr(data.stats?.total_entry_spent)}</strong></div>
+            <div className="profile-metric metric-stat-won"><span>{t("profile.totalWon")}</span><strong>{formatBirr(data.stats?.total_won)}</strong></div>
+            <div className="profile-metric metric-stat-biggest"><span>{t("profile.biggestWin")}</span><strong>{formatBirr(data.stats?.biggest_win)}</strong></div>
           </div>
         </section>
 
         <section className="component profile-section section-referrals">
-          <h2 className="component-title">Referrals</h2>
+          <h2 className="component-title">{t("profile.referrals")}</h2>
           {sectionNotifications.referrals?.message && (
             <div className={`notification show ${sectionNotifications.referrals.type} profile-section-notice`}>
               {sectionNotifications.referrals.message}
             </div>
           )}
           <div className="profile-grid profile-grid-4">
-            <div className="profile-metric metric-ref-code"><span>Invite Code</span><strong>{data.referrals?.invite_code || "-"}</strong></div>
-            <div className="profile-metric metric-ref-total"><span>Total Referred</span><strong>{data.referrals?.referred_count || 0}</strong></div>
-            <div className="profile-metric metric-ref-rewarded"><span>Rewarded Referrals</span><strong>{data.referrals?.rewarded_referrals || 0}</strong></div>
-            <div className="profile-metric metric-ref-earned"><span>Referral Earned</span><strong>{formatBirr(data.referrals?.referral_bonus_earned)}</strong></div>
+            <div className="profile-metric metric-ref-code"><span>{t("profile.inviteCode")}</span><strong>{data.referrals?.invite_code || "-"}</strong></div>
+            <div className="profile-metric metric-ref-total"><span>{t("profile.totalReferred")}</span><strong>{data.referrals?.referred_count || 0}</strong></div>
+            <div className="profile-metric metric-ref-rewarded"><span>{t("profile.rewardedReferrals")}</span><strong>{data.referrals?.rewarded_referrals || 0}</strong></div>
+            <div className="profile-metric metric-ref-earned"><span>{t("profile.referralEarned")}</span><strong>{formatBirr(data.referrals?.referral_bonus_earned)}</strong></div>
           </div>
           <div className="page-actions">
-            <button type="button" className="btn btn-secondary" onClick={copyInviteCode}>Copy Invite Code</button>
+            <button type="button" className="btn btn-secondary" onClick={copyInviteCode}>{t("profile.copyInviteCode")}</button>
           </div>
         </section>
 
         <section className="component profile-section section-activity">
-          <h2 className="component-title">Recent Activity</h2>
+          <h2 className="component-title">{t("profile.recentActivity")}</h2>
           <div className="profile-table-wrap">
-            {(data.recent_activity || []).length === 0 && <div className="subtitle">No transactions yet.</div>}
+            {(data.recent_activity || []).length === 0 && <div className="subtitle">{t("profile.noTransactionsYet")}</div>}
             {(data.recent_activity || []).length > 0 && (
-              <table className="profile-table" aria-label="Recent activity table">
+              <table className="profile-table" aria-label={t("profile.recentActivityAria") }>
                 <thead>
                   <tr>
-                    <th>Type</th>
-                    <th>Status</th>
-                    <th>Amount</th>
-                    <th>Date</th>
+                    <th>{t("wallet.type")}</th>
+                    <th>{t("wallet.status")}</th>
+                    <th>{t("wallet.amount")}</th>
+                    <th>{t("wallet.date")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -252,18 +254,18 @@ export default function ProfilePage() {
         </section>
 
         <section className="component profile-section section-activity">
-          <h2 className="component-title">Promo Claim Status</h2>
+          <h2 className="component-title">{t("profile.promoClaimStatus")}</h2>
           <div className="profile-table-wrap">
-            {(data.promo_claims || []).length === 0 && <div className="subtitle">No promo verification claims yet.</div>}
+            {(data.promo_claims || []).length === 0 && <div className="subtitle">{t("profile.noPromoClaims")}</div>}
             {(data.promo_claims || []).length > 0 && (
-              <table className="profile-table" aria-label="Promo claim status table">
+              <table className="profile-table" aria-label={t("profile.promoClaimAria")}>
                 <thead>
                   <tr>
-                    <th>Code</th>
-                    <th>Status</th>
-                    <th>Submitted</th>
-                    <th>Decision</th>
-                    <th>Reason</th>
+                    <th>{t("profile.code")}</th>
+                    <th>{t("wallet.status")}</th>
+                    <th>{t("profile.submitted")}</th>
+                    <th>{t("profile.decision")}</th>
+                    <th>{t("profile.reason")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -283,19 +285,19 @@ export default function ProfilePage() {
         </section>
 
         <section className="component profile-section section-history">
-          <h2 className="component-title">Game History</h2>
+          <h2 className="component-title">{t("profile.gameHistory")}</h2>
           <div className="profile-table-wrap">
-            {historyRows.length === 0 && <div className="subtitle">No completed games yet.</div>}
+            {historyRows.length === 0 && <div className="subtitle">{t("profile.noCompletedGames")}</div>}
             {historyRows.length > 0 && (
-              <table className="profile-table" aria-label="Game history table">
+              <table className="profile-table" aria-label={t("profile.gameHistoryAria")}>
                 <thead>
                   <tr>
-                    <th>Game</th>
-                    <th>Stake</th>
-                    <th>Card</th>
-                    <th>Result</th>
-                    <th>Prize</th>
-                    <th>Date</th>
+                    <th>{t("common.game")}</th>
+                    <th>{t("profile.stake")}</th>
+                    <th>{t("common.card")}</th>
+                    <th>{t("profile.result")}</th>
+                    <th>{t("common.prize")}</th>
+                    <th>{t("wallet.date")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -307,7 +309,7 @@ export default function ProfilePage() {
                       <td>
                         <span className={`history-result history-result-${item.result}`}>{item.result.toUpperCase()}</span>
                       </td>
-                      <td>{item.result === "won" ? formatBirr(item.prize) : "0.00 Br"}</td>
+                      <td>{item.result === "won" ? formatBirr(item.prize) : t("profile.zeroBirr")}</td>
                       <td>{formatDate(item.finished_at)}</td>
                     </tr>
                   ))}
@@ -318,7 +320,7 @@ export default function ProfilePage() {
         </section>
 
         <section className="component profile-section section-achievements">
-          <h2 className="component-title">Achievements</h2>
+          <h2 className="component-title">{t("profile.achievements.title")}</h2>
           <div className="badge-row">
             {achievements.map((item) => (
               <span key={item} className="medb-badge profile-badge">{item}</span>
@@ -327,21 +329,21 @@ export default function ProfilePage() {
         </section>
 
         <section className="component profile-section section-preferences">
-          <h2 className="component-title">Preferences</h2>
+          <h2 className="component-title">{t("profile.preferences")}</h2>
           <div className="profile-toggle-row">
             <label className="profile-toggle-item">
-              <span>Voice announcements</span>
+              <span>{t("profile.voiceAnnouncements")}</span>
               <input type="checkbox" checked={Boolean(preferences.voiceAnnouncements)} onChange={() => togglePreference("voiceAnnouncements")} />
             </label>
             <label className="profile-toggle-item">
-              <span>Compact history mode</span>
+              <span>{t("profile.compactHistoryMode")}</span>
               <input type="checkbox" checked={Boolean(preferences.compactHistory)} onChange={() => togglePreference("compactHistory")} />
             </label>
           </div>
         </section>
 
         <section className="component profile-section section-support">
-          <h2 className="component-title">Support</h2>
+          <h2 className="component-title">{t("profile.support")}</h2>
           {sectionNotifications.support?.message && (
             <div className={`notification show ${sectionNotifications.support.type} profile-section-notice`}>
               {sectionNotifications.support.message}
@@ -353,38 +355,38 @@ export default function ProfilePage() {
               className="btn btn-secondary"
               onClick={() => window.open("https://t.me", "_blank", "noopener,noreferrer")}
             >
-              Contact Support
+              {t("profile.contactSupport")}
             </button>
             <button
               type="button"
               className="btn btn-secondary"
-              onClick={() => notifySection("support", "success", "Issue report noted. Please contact support with details.")}
+              onClick={() => notifySection("support", "success", t("profile.issueReportNoted"))}
             >
-              Report Issue
+              {t("profile.reportIssue")}
             </button>
           </div>
         </section>
 
-        <nav className="bottom-nav" aria-label="Bottom navigation">
+        <nav className="bottom-nav" aria-label={t("profile.bottomNavigationAria")}>
           <button type="button" className="bottom-nav-item" onClick={() => navigate(withAuthPath(`/home/${telegramId}`))}>
             <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="home" /></span>
-            <span className="bottom-nav-label">Home</span>
+            <span className="bottom-nav-label">{t("common.home")}</span>
           </button>
           <button type="button" className="bottom-nav-item active">
             <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="profile" /></span>
-            <span className="bottom-nav-label">Profile</span>
+            <span className="bottom-nav-label">{t("common.profile")}</span>
           </button>
           <button type="button" className="bottom-nav-item" onClick={() => navigate(withAuthPath(`/trophy/${telegramId}`))}>
             <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="trophy" /></span>
-            <span className="bottom-nav-label">Top Winners</span>
+            <span className="bottom-nav-label">{t("common.topWinners")}</span>
           </button>
           <button type="button" className="bottom-nav-item" onClick={() => navigate(withAuthPath(`/wallet/${telegramId}`))}>
             <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="wallet" /></span>
-            <span className="bottom-nav-label">Wallet</span>
+            <span className="bottom-nav-label">{t("common.wallet")}</span>
           </button>
           <button type="button" className="bottom-nav-item" onClick={() => navigate(withAuthPath(`/engagement/${telegramId}`))}>
             <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="engagement" /></span>
-            <span className="bottom-nav-label">Engage</span>
+            <span className="bottom-nav-label">{t("common.engage")}</span>
           </button>
         </nav>
       </div>

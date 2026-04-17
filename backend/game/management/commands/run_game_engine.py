@@ -6,6 +6,7 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 from django.conf import settings
 from game.models import Game, BingoCard, GameEngineSettings, SystemBalanceLedger
+from game.business_rules import get_countdown_seconds
 from users.models import User
 from wallet.models import Wallet
 from bot.utils.game_logic import get_next_number, check_bingo_win, generate_winning_grid_from_called_numbers
@@ -269,6 +270,7 @@ class Command(BaseCommand):
 
                 # Check for games in waiting state that should start
                 waiting_games = Game.objects.filter(state='waiting')
+                countdown_seconds = get_countdown_seconds()
                 
                 for game in waiting_games:
                     # Check if waiting period has passed since creation
@@ -307,7 +309,7 @@ class Command(BaseCommand):
                         continue
                     
                     # Add bot users when countdown reaches 10 seconds and less than 5 players
-                    remaining_time = settings.WAITING_TIME - time_elapsed
+                    remaining_time = countdown_seconds - time_elapsed
                     
                     if (
                         engine_settings.enable_fake_users
@@ -337,7 +339,7 @@ class Command(BaseCommand):
                         
                         player_count = game.cards.count()  # Update count
                     
-                    if time_elapsed >= settings.WAITING_TIME:
+                    if time_elapsed >= countdown_seconds:
                         if player_count >= settings.GAME_MIN_PLAYERS and real_player_count >= self.MIN_REAL_USERS_TO_START:
                             # Start the game
                             game.state = 'playing'

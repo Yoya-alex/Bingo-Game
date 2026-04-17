@@ -1,6 +1,8 @@
 import { useMemo } from "react";
+import { useI18n } from "../i18n/LanguageContext.jsx";
 
 export default function CalledNumbersComponent({ calledNumbers, maxNumber = 400, onNumberClick, interactive = true }) {
+  const { t } = useI18n();
   const calledSet = useMemo(() => new Set(calledNumbers || []), [calledNumbers]);
   const currentNumber = calledNumbers?.length ? Number(calledNumbers[calledNumbers.length - 1]) : null;
   const columns = useMemo(() => {
@@ -24,7 +26,7 @@ export default function CalledNumbersComponent({ calledNumbers, maxNumber = 400,
 
   return (
     <section className="component" id="calledNumbersComponent">
-      <div className="component-title">Called Numbers</div>
+      <div className="component-title">{t("calledNumbers.title")}</div>
       <div className="called-board">
         {columns.map((column) => (
           <div key={column.letter} className="called-column">
@@ -41,7 +43,7 @@ export default function CalledNumbersComponent({ calledNumbers, maxNumber = 400,
                     className={`called-cell${isCalled ? " called" : ""}${isCurrent ? " current" : ""}${isClickable ? " clickable" : ""}`}
                     onClick={() => handleNumberClick(num)}
                     style={{ cursor: isClickable ? 'pointer' : 'default' }}
-                    title={isClickable ? `Called ${num} (click to mark)` : ''}
+                    title={isClickable ? t("calledNumbers.calledClickToMark", { number: num }) : ""}
                   >
                     {num}
                   </div>

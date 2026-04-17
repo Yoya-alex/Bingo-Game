@@ -13,6 +13,7 @@ from bot.keyboards import main_menu_keyboard, admin_main_menu_keyboard
 from bot.utils.db_helpers import get_or_create_user, create_wallet, save_model
 from bot.utils.admin_helpers import is_admin
 from bot.utils.referral_service import register_referral_for_new_user, get_user_referral_stats
+from game.business_rules import get_countdown_seconds
 
 router = Router()
 
@@ -117,12 +118,13 @@ async def cmd_start(message: Message):
 @router.message(F.text == "📜 Rules")
 async def show_rules(message: Message):
     """Show game rules"""
+    countdown_seconds = await sync_to_async(get_countdown_seconds)()
     rules_text = (
         "<b>📜 BINGO GAME RULES</b>\n\n"
         "<b>How to Play:</b>\n"
         "1️⃣ Select a card (1-400) from the waiting screen\n"
         "2️⃣ Each card costs 10 Birr\n"
-        "3️⃣ Wait for the game to start (25 seconds countdown)\n"
+        f"3️⃣ Wait for the game to start ({countdown_seconds} seconds countdown)\n"
         f"4️⃣ Numbers will be called randomly (1-{settings.BINGO_NUMBER_MAX})\n"
         "5️⃣ Mark numbers on your 5×5 grid\n"
         "6️⃣ Complete a line (horizontal, vertical, or diagonal)\n"

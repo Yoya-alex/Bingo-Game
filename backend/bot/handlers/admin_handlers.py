@@ -2394,23 +2394,26 @@ async def admin_announcement_send(callback: CallbackQuery, state: FSMContext):
 
     for user in users:
         play_url = build_react_url(f'/home/{user.telegram_id}')
-        markup = None
         if can_use_play_button:
             markup = InlineKeyboardMarkup(
                 inline_keyboard=[[InlineKeyboardButton(text='▶ Play', url=play_url)]]
+            )
+        else:
+            markup = InlineKeyboardMarkup(
+                inline_keyboard=[[InlineKeyboardButton(text='▶ Play', callback_data=f"adm_announce_play:{user.telegram_id}")]]
             )
         try:
             if announcement_mode == 'photo' and announcement_photo_file_id:
                 await callback.message.bot.send_photo(
                     user.telegram_id,
                     photo=announcement_photo_file_id,
-                    caption=(announcement_text[:900] + f"\n\nPlay: {play_url}") if not can_use_play_button else announcement_text[:1024],
+                    caption=announcement_text[:1024],
                     reply_markup=markup,
                 )
             else:
                 await callback.message.bot.send_message(
                     user.telegram_id,
-                    f"📢 <b>Admin Announcement</b>\n\n{announcement_text}" + (f"\n\nPlay: {play_url}" if not can_use_play_button else ""),
+                    f"📢 <b>Admin Announcement</b>\n\n{announcement_text}",
                     reply_markup=markup,
                 )
             await _create_notification_delivery(
@@ -2478,6 +2481,30 @@ async def admin_announcement_cancel(callback: CallbackQuery, state: FSMContext):
         reply_markup=admin_main_menu_keyboard(),
     )
     await callback.answer("Cancelled")
+
+
+@router.callback_query(F.data.startswith("adm_announce_play:"))
+async def admin_announcement_play_fallback(callback: CallbackQuery):
+    """Fallback for environments where Telegram URL buttons are not accepted (e.g., localhost)."""
+    if not callback.from_user:
+        await callback.answer("Play link unavailable", show_alert=True)
+        return
+
+    try:
+        target_telegram_id = int((callback.data or "").split(":", 1)[1])
+    except Exception:
+        await callback.answer("Invalid play link", show_alert=True)
+        return
+
+    if int(target_telegram_id) != int(callback.from_user.id):
+        target_telegram_id = int(callback.from_user.id)
+
+    play_url = build_react_url(f"/home/{target_telegram_id}")
+    await callback.message.answer(
+        f"▶ Play link:\n{play_url}",
+        disable_web_page_preview=True,
+    )
+    await callback.answer()
 
 
 @router.message(Command("wallet_stats"))

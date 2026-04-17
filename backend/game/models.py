@@ -300,6 +300,10 @@ class BusinessRuleSettings(models.Model):
         default=Decimal('10.00'),
         validators=[MinValueValidator(Decimal('0.00'))],
     )
+    countdown_seconds = models.PositiveIntegerField(
+        default=25,
+        validators=[MinValueValidator(5), MaxValueValidator(600)],
+    )
     derash_percentage = models.DecimalField(
         max_digits=5,
         decimal_places=2,
@@ -336,6 +340,7 @@ class BusinessRuleSettings(models.Model):
         defaults = {
             'minimum_withdrawable_balance': Decimal(str(getattr(settings, 'MIN_WITHDRAWAL', 100))),
             'referral_bonus_amount': Decimal(str(getattr(settings, 'REFERRAL_REWARD', 10))),
+            'countdown_seconds': int(getattr(settings, 'WAITING_TIME', 25)),
             'derash_percentage': Decimal('80.00'),
             'system_percentage': Decimal('20.00'),
             'telebirr_receiving_phone_number': str(getattr(settings, 'TELEBIRR_NUMBER', '0912345678')),
@@ -360,6 +365,7 @@ class BusinessRuleSettings(models.Model):
         return (
             f"Business Rules (Min Withdraw: {self.minimum_withdrawable_balance}, "
             f"Referral: {self.referral_bonus_amount}, "
+            f"Countdown: {self.countdown_seconds}s, "
             f"Derash/System: {self.derash_percentage}/{self.system_percentage})"
         )
 

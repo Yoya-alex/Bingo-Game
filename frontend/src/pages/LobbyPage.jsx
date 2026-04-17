@@ -10,6 +10,7 @@ import SpectatorViewComponent from "../components/SpectatorViewComponent.jsx";
 import WinnerAnnouncementComponent from "../components/WinnerAnnouncementComponent.jsx";
 import ActionButtonsComponent from "../components/ActionButtonsComponent.jsx";
 import NotificationComponent from "../components/NotificationComponent.jsx";
+import { useI18n } from "../i18n/LanguageContext.jsx";
 
 const EMPTY_NOTIFICATION = { type: "", message: "" };
 
@@ -93,6 +94,7 @@ export default function LobbyPage() {
     winner_card: null,
     user_card: null,
   });
+  const { t } = useI18n();
 
 
 
@@ -157,11 +159,11 @@ export default function LobbyPage() {
   useEffect(() => {
     lobbyPollRef.current = setInterval(() => {
       syncLobbyState()
-        .catch(() => notify("error", "Unable to sync lobby state."));
+        .catch(() => notify("error", t("lobby.syncFailed")));
     }, 2500);
 
     return () => clearInterval(lobbyPollRef.current);
-  }, [syncLobbyState]);
+  }, [syncLobbyState, t]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -193,14 +195,14 @@ export default function LobbyPage() {
 
   function selectCard(cardNumber) {
     if (data.game?.state === "playing") {
-      notify("error", "Card selection is closed for this round.");
+      notify("error", t("lobby.cardSelectionClosed"));
       return;
     }
     
     // Check if user has sufficient balance
     const requiredBalance = data.stake || preferredStake;
     if (data.wallet_balance < requiredBalance) {
-      notify("error", `Insufficient balance! You need ${requiredBalance} Birr to play. Please deposit first.`);
+      notify("error", t("lobby.insufficientBalance", { amount: requiredBalance }));
       return;
     }
     
@@ -220,7 +222,7 @@ export default function LobbyPage() {
 
   function handleBackToHome() {
     if (shouldConfirmQuit) {
-      const confirmed = window.confirm("Are you sure you want to quit this game and go back to home?");
+      const confirmed = window.confirm(t("lobby.quitConfirm"));
       if (!confirmed) {
         return;
       }
@@ -259,10 +261,10 @@ export default function LobbyPage() {
   }, [data.game?.state, telegramId]);
 
   const stats = [
-    { label: "State", value: displayState.toUpperCase() },
-    { label: "Count", value: displayState === "waiting" && displayCountdown > 0 ? displayCountdown : "-" },
-    { label: "Players", value: data.total_players },
-    { label: "Medeb", value: `${data.stake || preferredStake} Birr` },
+    { label: t("common.state"), value: displayState.toUpperCase() },
+    { label: t("common.count"), value: displayState === "waiting" && displayCountdown > 0 ? displayCountdown : "-" },
+    { label: t("common.players"), value: data.total_players },
+    { label: t("common.medeb"), value: `${data.stake || preferredStake} Birr` },
   ];
 
   if (loading) {
@@ -271,7 +273,7 @@ export default function LobbyPage() {
         <div className="app-card">
           <div className="loading-state" role="status" aria-live="polite">
             <span className="spinner" aria-hidden="true" />
-            <div className="subtitle">Loading lobby...</div>
+            <div className="subtitle">{t("common.loadingLobby")}</div>
           </div>
         </div>
       </div>
@@ -282,8 +284,12 @@ export default function LobbyPage() {
     <div className="app-shell">
       <div className="app-card">
         <HeaderComponent
-          title="Bingo Lobby"
-          subtitle={`Game #${data.game?.id ?? "-"} - ${data.user?.first_name ?? "Player"} - Balance ${data.wallet_balance} Birr`}
+          title={t("lobby.title")}
+          subtitle={t("lobby.subtitle", {
+            id: data.game?.id ?? "-",
+            name: data.user?.first_name ?? t("common.player"),
+            balance: data.wallet_balance,
+          })}
           stats={stats}
         />
 
@@ -291,7 +297,7 @@ export default function LobbyPage() {
 
         <div className="page-actions">
           <button type="button" className="btn btn-secondary" onClick={handleBackToHome}>
-            Back to Home
+            {t("common.backToHome")}
           </button>
         </div>
 

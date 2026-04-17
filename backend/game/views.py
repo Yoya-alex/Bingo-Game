@@ -23,7 +23,7 @@ from game.models import (
     Season,
     UserMissionProgress,
 )
-from game.business_rules import get_business_rules, get_derash_multiplier, get_system_multiplier
+from game.business_rules import get_business_rules, get_countdown_seconds, get_derash_multiplier, get_system_multiplier
 from game.engagement import claim_mission, credit_user_reward, increment_missions, touch_user_streak, RewardSafetyError
 from wallet.models import Wallet, Transaction
 from game.security import (
@@ -138,7 +138,7 @@ def get_game_countdown(game):
     if game.state != 'waiting':
         return 0
     time_elapsed = (timezone.now() - game.created_at).total_seconds()
-    return max(0, int(settings.WAITING_TIME - time_elapsed))
+    return max(0, int(get_countdown_seconds() - time_elapsed))
 
 
 def cleanup_bot_only_waiting_game(game):
@@ -368,7 +368,7 @@ def ensure_game_started(game_id):
 
         time_elapsed = (timezone.now() - game.created_at).total_seconds()
         if (
-            time_elapsed >= settings.WAITING_TIME
+            time_elapsed >= get_countdown_seconds()
             and total_players >= settings.GAME_MIN_PLAYERS
             and real_players >= MIN_REAL_USERS_TO_START
         ):

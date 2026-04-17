@@ -4,6 +4,7 @@ import { fetchJson, postJson } from "../api/client.js";
 import { withAuthPath } from "../utils/auth.js";
 import NotificationComponent from "../components/NotificationComponent.jsx";
 import BottomNavIcon from "../components/BottomNavIcon.jsx";
+import { useI18n } from "../i18n/LanguageContext.jsx";
 
 const EMPTY_NOTIFICATION = { type: "", message: "" };
 const EMPTY_PROMO_OVERLAY = { show: false, type: "", message: "" };
@@ -30,26 +31,27 @@ function formatTitle(value) {
     .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
-function promoStatusMeta(promo) {
+function promoStatusMeta(promo, t) {
   const status = String(promo?.claim_status || "");
   if (status.includes("pending")) {
-    return { label: "Pending Verification", chip: "status-waiting" };
+    return { label: t("engagement.pendingVerification"), chip: "status-waiting" };
   }
   if (status.includes("approved")) {
-    return { label: "Approved", chip: "status-completed" };
+    return { label: t("engagement.approved"), chip: "status-completed" };
   }
   if (status.includes("rejected")) {
-    return { label: "Rejected", chip: "status-rejected" };
+    return { label: t("engagement.rejected"), chip: "status-rejected" };
   }
   if (promo?.is_live) {
-    return { label: "Live", chip: "status-playing" };
+    return { label: t("engagement.live"), chip: "status-playing" };
   }
-  return { label: "Unavailable", chip: "status-finished" };
+  return { label: t("engagement.unavailable"), chip: "status-finished" };
 }
 
 export default function EngagementPage() {
   const { telegramId } = useParams();
   const navigate = useNavigate();
+  const { t } = useI18n();
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -101,7 +103,7 @@ export default function EngagementPage() {
   async function redeemPromo(code) {
     const promoCode = (code || promoCodeInput || "").trim().toUpperCase();
     if (!promoCode) {
-      notify("error", "Enter a promo code first.");
+      notify("error", t("engagement.enterPromoFirst"));
       return;
     }
 
@@ -112,9 +114,9 @@ export default function EngagementPage() {
         code: promoCode,
       });
       if (payload.requires_verification) {
-        showPromoOverlay("success", payload.message || "Promo submitted for verification.");
+        showPromoOverlay("success", payload.message || t("engagement.promoSubmitted"));
       } else {
-        showPromoOverlay("success", `Promo redeemed: ${payload.code} • +${formatBirr(payload.credited_amount)}`);
+        showPromoOverlay("success", t("engagement.promoRedeemed", { code: payload.code, amount: formatBirr(payload.credited_amount) }));
       }
       setPromoCodeInput("");
       await loadAll();
@@ -132,7 +134,7 @@ export default function EngagementPage() {
         telegram_id: Number(telegramId),
         progress_id: progressId,
       });
-      notify("success", `Mission claimed: +${formatBirr(payload.reward_amount)}`);
+      notify("success", t("engagement.missionClaimed", { amount: formatBirr(payload.reward_amount) }));
       await loadAll();
     } catch (error) {
       notify("error", error.message);
@@ -147,7 +149,7 @@ export default function EngagementPage() {
         <div className="app-card">
           <div className="loading-state" role="status" aria-live="polite">
             <span className="spinner" aria-hidden="true" />
-            <div className="subtitle">Loading engagement center...</div>
+            <div className="subtitle">{t("engagement.loading")}</div>
           </div>
         </div>
       </div>
@@ -158,9 +160,9 @@ export default function EngagementPage() {
     <div className="app-shell profile-shell">
       <div className="app-card profile-card engagement-card">
         <header className="component profile-header engagement-header">
-          <h1 className="title profile-title">Engagement Center</h1>
+          <h1 className="title profile-title">{t("engagement.title")}</h1>
           <p className="subtitle profile-subtitle">
-            Missions, promo rewards, and live events in one place.
+            {t("engagement.subtitle")}
           </p>
         </header>
 
@@ -169,39 +171,39 @@ export default function EngagementPage() {
         {promoOverlay.show && (
           <div className="engagement-overlay" role="status" aria-live="polite" onClick={hidePromoOverlay}>
             <div className={`engagement-overlay-card ${promoOverlay.type}`} onClick={(event) => event.stopPropagation()}>
-              <h3>{promoOverlay.type === "success" ? "Promo Applied" : "Promo Unavailable"}</h3>
+              <h3>{promoOverlay.type === "success" ? t("engagement.promoApplied") : t("engagement.promoUnavailable")}</h3>
               <p>{promoOverlay.message}</p>
             </div>
           </div>
         )}
 
         <section className="component profile-section section-engagement-streak">
-          <h2 className="component-title">Daily Streak</h2>
+          <h2 className="component-title">{t("engagement.dailyStreak")}</h2>
           <div className="profile-grid profile-grid-4">
-            <div className="profile-metric"><span>Current Streak</span><strong>{missionData.streak?.current_streak || 0}</strong></div>
-            <div className="profile-metric"><span>Best Streak</span><strong>{missionData.streak?.best_streak || 0}</strong></div>
-            <div className="profile-metric"><span>Streak Protect</span><strong>{missionData.streak?.streak_protect_tokens || 0}</strong></div>
-            <div className="profile-metric"><span>Last Active</span><strong>{missionData.streak?.last_active_date || "-"}</strong></div>
+            <div className="profile-metric"><span>{t("engagement.currentStreak")}</span><strong>{missionData.streak?.current_streak || 0}</strong></div>
+            <div className="profile-metric"><span>{t("engagement.bestStreak")}</span><strong>{missionData.streak?.best_streak || 0}</strong></div>
+            <div className="profile-metric"><span>{t("engagement.streakProtect")}</span><strong>{missionData.streak?.streak_protect_tokens || 0}</strong></div>
+            <div className="profile-metric"><span>{t("engagement.lastActive")}</span><strong>{missionData.streak?.last_active_date || "-"}</strong></div>
           </div>
         </section>
 
         <section className="component profile-section section-engagement-missions">
-          <h2 className="component-title">Missions</h2>
+          <h2 className="component-title">{t("engagement.missions")}</h2>
           {claimableMissions.length > 0 && (
             <div className="engagement-claim-banner">
-              {claimableMissions.length} mission reward(s) ready to claim
+              {t("engagement.claimReady", { count: claimableMissions.length })}
             </div>
           )}
           <div className="profile-table-wrap">
-            {(missionData.missions || []).length === 0 && <div className="subtitle">No active missions yet.</div>}
+            {(missionData.missions || []).length === 0 && <div className="subtitle">{t("engagement.noActiveMissions")}</div>}
             {(missionData.missions || []).length > 0 && (
-              <table className="profile-table" aria-label="Missions table">
+              <table className="profile-table" aria-label={t("engagement.missionsAria")}>
                 <thead>
                   <tr>
-                    <th>Mission</th>
-                    <th>Period / Progress</th>
-                    <th>Reward / Status</th>
-                    <th>Action</th>
+                    <th>{t("engagement.mission")}</th>
+                    <th>{t("engagement.periodProgress")}</th>
+                    <th>{t("engagement.rewardStatus")}</th>
+                    <th>{t("home.action")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -227,11 +229,11 @@ export default function EngagementPage() {
                           </div>
                           <div className="wallet-note-inline">
                             {mission.is_claimed ? (
-                              <span className="status-chip status-completed">Claimed</span>
+                              <span className="status-chip status-completed">{t("engagement.claimed")}</span>
                             ) : mission.is_completed ? (
-                              <span className="status-chip status-playing">Complete</span>
+                              <span className="status-chip status-playing">{t("engagement.complete")}</span>
                             ) : (
-                              <span className="status-chip status-waiting">In Progress</span>
+                              <span className="status-chip status-waiting">{t("engagement.inProgress")}</span>
                             )}
                           </div>
                         </td>
@@ -242,7 +244,7 @@ export default function EngagementPage() {
                             disabled={!canClaim || busy}
                             onClick={() => claimMission(mission.progress_id)}
                           >
-                            {mission.is_claimed ? "Claimed" : "Claim"}
+                            {mission.is_claimed ? t("engagement.claimed") : t("engagement.claim")}
                           </button>
                         </td>
                       </tr>
@@ -255,7 +257,7 @@ export default function EngagementPage() {
         </section>
 
         <section className="component profile-section section-engagement-promos">
-          <h2 className="component-title">Promo Codes</h2>
+          <h2 className="component-title">{t("engagement.promoCodes")}</h2>
           <div className="engagement-promo-row">
             <input
               className="engagement-promo-input"
@@ -263,26 +265,26 @@ export default function EngagementPage() {
               value={promoCodeInput}
               maxLength={40}
               onChange={(event) => setPromoCodeInput(event.target.value.toUpperCase())}
-              placeholder="Enter promo code"
+              placeholder={t("engagement.enterPromoCode")}
             />
             <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => redeemPromo()}>
               {busy ? <span className="spinner-inline"><span className="spinner sm" aria-hidden="true" /></span> : null}
-              Redeem
+              {t("engagement.redeem")}
             </button>
           </div>
           <div className="profile-table-wrap">
-            {(promoData.promo_codes || []).length === 0 && <div className="subtitle">No promo campaigns found.</div>}
+            {(promoData.promo_codes || []).length === 0 && <div className="subtitle">{t("engagement.noPromoCampaigns")}</div>}
             {(promoData.promo_codes || []).length > 0 && (
-              <table className="profile-table" aria-label="Promo codes table">
+              <table className="profile-table" aria-label={t("engagement.promoCodesAria")}>
                 <thead>
                   <tr>
-                    <th>Code</th>
-                    <th>Tier</th>
-                    <th>Reward</th>
-                    <th>Status</th>
-                    <th>Window</th>
-                    <th>Usage</th>
-                    <th>Action</th>
+                    <th>{t("profile.code")}</th>
+                    <th>{t("engagement.tier")}</th>
+                    <th>{t("engagement.reward")}</th>
+                    <th>{t("wallet.status")}</th>
+                    <th>{t("engagement.window")}</th>
+                    <th>{t("engagement.usage")}</th>
+                    <th>{t("home.action")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -290,12 +292,12 @@ export default function EngagementPage() {
                     const blockedByClaim = ["pending_verification", "approved"].includes(String(promo.claim_status || ""));
                     const canRedeem = promo.is_live && promo.user_redemptions < promo.per_user_limit && !blockedByClaim;
                     const usageLabel = `${promo.user_redemptions}/${promo.per_user_limit}`;
-                    const statusMeta = promoStatusMeta(promo);
+                    const statusMeta = promoStatusMeta(promo, t);
                     return (
                       <tr key={`${promo.id}-${promo.claim_submitted_at || "none"}`}>
                         <td>
                           <strong>{promo.code}</strong>
-                          {promo.is_hidden_claim ? <div className="wallet-note-inline">Hidden promo claim</div> : null}
+                          {promo.is_hidden_claim ? <div className="wallet-note-inline">{t("engagement.hiddenPromoClaim")}</div> : null}
                         </td>
                         <td>
                           <span className={`engagement-tier-chip tier-${promo.tier}`}>{formatTitle(promo.tier)}</span>
@@ -319,7 +321,7 @@ export default function EngagementPage() {
                             disabled={!canRedeem || busy}
                             onClick={() => redeemPromo(promo.code)}
                           >
-                            {promo.claim_status === "pending_verification" ? "Pending" : canRedeem ? "Redeem" : "Unavailable"}
+                            {promo.claim_status === "pending_verification" ? t("engagement.pending") : canRedeem ? t("engagement.redeem") : t("engagement.unavailable")}
                           </button>
                         </td>
                       </tr>
@@ -332,55 +334,55 @@ export default function EngagementPage() {
         </section>
 
         <section className="component profile-section section-engagement-events">
-          <h2 className="component-title">Live Events</h2>
+          <h2 className="component-title">{t("engagement.liveEvents")}</h2>
           <div className="engagement-event-grid">
             <div className="engagement-event-col">
-              <h3>Active Events</h3>
-              {(eventData.active_events || []).length === 0 && <p className="subtitle">No active events right now.</p>}
+              <h3>{t("engagement.activeEvents")}</h3>
+              {(eventData.active_events || []).length === 0 && <p className="subtitle">{t("engagement.noActiveEvents")}</p>}
               {(eventData.active_events || []).map((event) => (
                 <article key={event.id} className={`engagement-event-card live event-${event.event_type}`}>
                   <div className="engagement-event-title">{event.name}</div>
                   <div className="engagement-event-meta">{formatTitle(event.event_type)}</div>
-                  <div className="engagement-event-meta">{event.bonus_multiplier}x multiplier</div>
-                  <div className="engagement-event-meta">Ends: {formatDate(event.ends_at)}</div>
+                  <div className="engagement-event-meta">{t("engagement.multiplier", { count: event.bonus_multiplier })}</div>
+                  <div className="engagement-event-meta">{t("engagement.ends")}: {formatDate(event.ends_at)}</div>
                 </article>
               ))}
             </div>
             <div className="engagement-event-col">
-              <h3>Upcoming Events</h3>
-              {(eventData.upcoming_events || []).length === 0 && <p className="subtitle">No upcoming events.</p>}
+              <h3>{t("engagement.upcomingEvents")}</h3>
+              {(eventData.upcoming_events || []).length === 0 && <p className="subtitle">{t("engagement.noUpcomingEvents")}</p>}
               {(eventData.upcoming_events || []).map((event) => (
                 <article key={event.id} className={`engagement-event-card event-${event.event_type}`}>
                   <div className="engagement-event-title">{event.name}</div>
                   <div className="engagement-event-meta">{formatTitle(event.event_type)}</div>
-                  <div className="engagement-event-meta">{event.bonus_multiplier}x multiplier</div>
-                  <div className="engagement-event-meta">Starts: {formatDate(event.starts_at)}</div>
+                  <div className="engagement-event-meta">{t("engagement.multiplier", { count: event.bonus_multiplier })}</div>
+                  <div className="engagement-event-meta">{t("engagement.starts")}: {formatDate(event.starts_at)}</div>
                 </article>
               ))}
             </div>
           </div>
         </section>
 
-        <nav className="bottom-nav" aria-label="Bottom navigation">
+        <nav className="bottom-nav" aria-label={t("profile.bottomNavigationAria")}>
           <button type="button" className="bottom-nav-item" onClick={() => navigate(withAuthPath(`/home/${telegramId}`))}>
             <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="home" /></span>
-            <span className="bottom-nav-label">Home</span>
+            <span className="bottom-nav-label">{t("common.home")}</span>
           </button>
           <button type="button" className="bottom-nav-item" onClick={() => navigate(withAuthPath(`/profile/${telegramId}`))}>
             <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="profile" /></span>
-            <span className="bottom-nav-label">Profile</span>
+            <span className="bottom-nav-label">{t("common.profile")}</span>
           </button>
           <button type="button" className="bottom-nav-item" onClick={() => navigate(withAuthPath(`/trophy/${telegramId}`))}>
             <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="trophy" /></span>
-            <span className="bottom-nav-label">Top Winners</span>
+            <span className="bottom-nav-label">{t("common.topWinners")}</span>
           </button>
           <button type="button" className="bottom-nav-item" onClick={() => navigate(withAuthPath(`/wallet/${telegramId}`))}>
             <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="wallet" /></span>
-            <span className="bottom-nav-label">Wallet</span>
+            <span className="bottom-nav-label">{t("common.wallet")}</span>
           </button>
           <button type="button" className="bottom-nav-item active">
             <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="engagement" /></span>
-            <span className="bottom-nav-label">Engage</span>
+            <span className="bottom-nav-label">{t("common.engage")}</span>
           </button>
         </nav>
       </div>

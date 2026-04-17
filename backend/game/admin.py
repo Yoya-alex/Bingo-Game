@@ -462,6 +462,7 @@ class BusinessRuleSettingsAdmin(admin.ModelAdmin):
         'id',
         'minimum_withdrawable_balance',
         'referral_bonus_amount',
+        'countdown_seconds',
         'derash_percentage',
         'system_percentage',
         'telebirr_receiving_phone_number',
@@ -481,6 +482,7 @@ class BusinessRuleSettingsAdmin(admin.ModelAdmin):
                 previous = {
                     'minimum_withdrawable_balance': str(old.minimum_withdrawable_balance),
                     'referral_bonus_amount': str(old.referral_bonus_amount),
+                    'countdown_seconds': old.countdown_seconds,
                     'derash_percentage': str(old.derash_percentage),
                     'system_percentage': str(old.system_percentage),
                     'telebirr_receiving_phone_number': old.telebirr_receiving_phone_number,
@@ -496,6 +498,7 @@ class BusinessRuleSettingsAdmin(admin.ModelAdmin):
         new_values = {
             'minimum_withdrawable_balance': str(obj.minimum_withdrawable_balance),
             'referral_bonus_amount': str(obj.referral_bonus_amount),
+            'countdown_seconds': obj.countdown_seconds,
             'derash_percentage': str(obj.derash_percentage),
             'system_percentage': str(obj.system_percentage),
             'telebirr_receiving_phone_number': obj.telebirr_receiving_phone_number,

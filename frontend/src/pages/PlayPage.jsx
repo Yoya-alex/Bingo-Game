@@ -10,6 +10,7 @@ import WinnerAnnouncementComponent from "../components/WinnerAnnouncementCompone
 import ActionButtonsComponent from "../components/ActionButtonsComponent.jsx";
 import NotificationComponent from "../components/NotificationComponent.jsx";
 import VoiceSyncManager from "../utils/voiceSyncManager.js";
+import { useI18n } from "../i18n/LanguageContext.jsx";
 
 const EMPTY_NOTIFICATION = { type: "", message: "" };
 
@@ -38,6 +39,7 @@ export default function PlayPage() {
     winner_card: null,
     countdown: 0,
   });
+  const { t } = useI18n();
 
   const calledNumberEntries = state.called_numbers || [];
   const calledNumbers = useMemo(
@@ -113,11 +115,11 @@ export default function PlayPage() {
     pollRef.current = setInterval(() => {
       fetchJson(`/game/api/play-state/${telegramId}/${gameId}/`)
         .then((payload) => setState(payload))
-        .catch(() => notify("error", "Unable to sync game state."));
+        .catch(() => notify("error", t("play.syncFailed")));
     }, 2500);
 
     return () => clearInterval(pollRef.current);
-  }, [state.game?.id, telegramId, gameId]);
+  }, [state.game?.id, telegramId, gameId, t]);
 
   function notify(type, message) {
     setNotification({ type, message });
@@ -126,7 +128,7 @@ export default function PlayPage() {
 
   function toggleVoiceAssistant() {
     if (!voiceSupported) {
-      notify("error", "Voice assistant is not supported on this device.");
+      notify("error", t("play.voiceUnsupported"));
       return;
     }
     setVoiceEnabled((prev) => !prev);
@@ -180,7 +182,7 @@ export default function PlayPage() {
 
   function handleBackToHome() {
     if (shouldConfirmQuit) {
-      const confirmed = window.confirm("Are you sure you want to quit this game and go back to home?");
+      const confirmed = window.confirm(t("play.quitConfirm"));
       if (!confirmed) {
         return;
       }
@@ -252,7 +254,7 @@ export default function PlayPage() {
     }
 
     const handlePopState = () => {
-      const confirmed = window.confirm("Are you sure you want to quit this game and go back to home?");
+      const confirmed = window.confirm(t("play.quitConfirm"));
       if (confirmed) {
         window.location.assign(withAuthPath(`/home/${telegramId}`));
         return;
@@ -266,20 +268,21 @@ export default function PlayPage() {
     return () => {
       window.removeEventListener("popstate", handlePopState);
     };
-  }, [shouldConfirmQuit, telegramId]);
+  }, [shouldConfirmQuit, telegramId, t]);
 
   const stats = useMemo(() => {
     return [
-      { label: "State", value: displayState?.toUpperCase() || "—" },
-      { label: "Players", value: state.total_players },
-      {label:"Medeb", value: `${state.game?.stake_amount || 10} Birr`},
-      { label: "Derash", value: derashAmount },
-      {label:"called", value: calledNumbers.length ? `${calledNumbers.length}/75` : "-"},
+      { label: t("common.state"), value: displayState?.toUpperCase() || "—" },
+      { label: t("common.players"), value: state.total_players },
+      {label:t("common.medeb"), value: `${state.game?.stake_amount || 10} Birr`},
+      { label: t("common.derash"), value: derashAmount },
+      {label:t("common.called"), value: calledNumbers.length ? `${calledNumbers.length}/75` : "-"},
     ];
-  }, [calledNumbers, displayState, state.total_players, derashAmount]);
+  }, [calledNumbers, displayState, state.total_players, derashAmount, t, state.game?.stake_amount]);
 
   const voiceStateClass = !voiceSupported ? "voice-unsupported" : voiceEnabled ? "voice-on" : "voice-off";
-  const voiceButtonTitle = !voiceSupported ? "Voice unsupported" : voiceEnabled ? "Voice assistant on" : "Voice assistant off";
+  const voiceButtonTitle = !voiceSupported ? t("play.voiceUnsupportedShort") : voiceEnabled ? t("play.voiceOn") : t("play.voiceOff");
+  const showVoiceToggle = voiceSupported && state.game?.state === "playing";
 
   if (loading) {
     return (
@@ -287,7 +290,7 @@ export default function PlayPage() {
         <div className="app-card">
           <div className="loading-state" role="status" aria-live="polite">
             <span className="spinner" aria-hidden="true" />
-            <div className="subtitle">Loading game...</div>
+            <div className="subtitle">{t("common.loadingGame")}</div>
           </div>
         </div>
       </div>
@@ -296,26 +299,27 @@ export default function PlayPage() {
 
   return (
     <div className="app-shell">
-      <button
-        className={`theme-toggle voice-toggle voice-icon-btn ${voiceStateClass}`}
-        onClick={toggleVoiceAssistant}
-        disabled={!voiceSupported || state.game?.state !== "playing"}
-        aria-label={voiceButtonTitle}
-        title={voiceButtonTitle}
-      >
-        <span className="voice-icon" aria-hidden="true">🔊</span>
-      </button>
+      {showVoiceToggle && (
+        <button
+          className={`theme-toggle voice-toggle voice-icon-btn ${voiceStateClass}`}
+          onClick={toggleVoiceAssistant}
+          aria-label={voiceButtonTitle}
+          title={voiceButtonTitle}
+        >
+          <span className="voice-icon" aria-hidden="true">🔊</span>
+        </button>
+      )}
       <div className="app-card">
         <HeaderComponent
-          title="Bingo "
-          subtitle={`Game #${state.game?.id ?? "-"} • ${hasCard ? `Card #${state.card.card_number} • ` : "Spectator • "}${state.user?.first_name ?? "Player"}`}
+          title={t("play.title")}
+          subtitle={`${t("common.game")} #${state.game?.id ?? "-"} • ${hasCard ? `${t("common.card")} #${state.card.card_number} • ` : `${t("common.spectator")} • `}${state.user?.first_name ?? t("common.player")}`}
           stats={stats}
         />
 
         {state.game?.state !== "finished" && (
           <div className="stat-strip current-call" style={{ marginTop: "10px" }}>
             <div className="stat-item current-call-item">
-              <span className="current-call-label">Current Call</span>
+              <span className="current-call-label">{t("common.currentCall")}</span>
               <div className="stat-value current-call-value">{renderCallBadge(currentCall, "current")}</div>
             </div>
           </div>
@@ -323,7 +327,7 @@ export default function PlayPage() {
         <NotificationComponent notification={notification} />
         <div className="page-actions">
           <button type="button" className="btn btn-secondary" onClick={handleBackToHome}>
-            Back to Home
+            {t("common.backToHome")}
           </button>
         </div>
         <div className="grid-layout">
@@ -344,7 +348,7 @@ export default function PlayPage() {
           )
           }
           {!hasCard && state.game?.state === "playing" && (
-            <SpectatorViewComponent id="bingoGridComponent" title="Your Bingo Grid" />
+            <SpectatorViewComponent id="bingoGridComponent" title={t("play.yourBingoGrid")} />
           )}
           <CalledNumbersComponent 
             calledNumbers={calledNumbers} 

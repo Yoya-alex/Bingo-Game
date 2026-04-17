@@ -8,6 +8,7 @@ import TrophyPage from "./pages/TrophyPage.jsx";
 import WalletPage from "./pages/WalletPage.jsx";
 import EngagementPage from "./pages/EngagementPage.jsx";
 import { bootstrapAuthToken } from "./utils/auth.js";
+import { useI18n } from "./i18n/LanguageContext.jsx";
 
 const THEME_KEY = "bingo-theme";
 
@@ -42,6 +43,9 @@ function buildHomeTargetFromQuery() {
 
 export default function App() {
   const [theme, setTheme] = useState(getInitialTheme);
+  const { language, toggleLanguage, t } = useI18n();
+  const nextLanguage = language === "en" ? "am" : language === "am" ? "om" : "en";
+  const nextLanguageLabel = nextLanguage === "en" ? t("app.englishShort") : nextLanguage === "am" ? t("app.amharicShort") : t("app.oromoShort");
 
   useEffect(() => {
     bootstrapAuthToken();
@@ -58,8 +62,11 @@ export default function App() {
 
   return (
     <>
-      <button className="theme-toggle" type="button" onClick={toggleTheme} aria-label="Toggle night mode">
-        {theme === "dark" ? "☀️ Light" : "🌙 Night"}
+      <button className="theme-toggle language-toggle" type="button" onClick={toggleLanguage} aria-label={t("app.languageToggle")}>
+        🌐 {nextLanguageLabel}
+      </button>
+      <button className="theme-toggle mode-toggle" type="button" onClick={toggleTheme} aria-label={t("app.toggleNightMode")}>
+        {theme === "dark" ? `☀️ ${t("app.light")}` : `🌙 ${t("app.night")}`}
       </button>
       <Routes>
         <Route path="/" element={<Navigate to={buildHomeTargetFromQuery()} replace />} />

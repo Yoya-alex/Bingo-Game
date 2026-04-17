@@ -9,6 +9,7 @@ from users.models import User
 from game.models import Game, BingoCard
 from wallet.models import Transaction
 from bot.keyboards import main_menu_keyboard, card_selection_keyboard, bingo_button_keyboard
+from bot.utils.admin_helpers import is_admin
 from bot.utils.game_logic import check_bingo_win
 from bot.utils.url_helpers import build_react_url, can_use_telegram_button_url
 from game.security import create_user_access_token
@@ -158,6 +159,7 @@ def mark_winner_and_distribute_prize(game, user_card):
 async def play_bingo(message: Message):
     """Send web app link to play bingo"""
     user = await get_user_with_wallet(message.from_user.id)
+    admin_user = await is_admin(message.from_user.id)
     
     if not user:
         await message.answer("❌ Please start the bot first with /start")
@@ -195,10 +197,10 @@ async def play_bingo(message: Message):
             f"<b>🎮 BINGO GAME</b>\n\n"
             f"💰 Your Balance: {wallet.total_balance} Birr\n"
             f"💵 Card Price: {settings.CARD_PRICE} Birr\n\n"
-            f"Tap the button below to open the game!\n\n"
-            f"<b>🔗 Direct Link:</b>\n"
-            f"<code>{web_url}</code>"
+            f"Tap the button below to open the game!"
         )
+        if admin_user:
+            game_text += f"\n\n<b>🔗 Direct Link:</b>\n<code>{web_url}</code>"
         await message.answer(game_text, reply_markup=keyboard)
     else:
         keyboard = None
@@ -213,13 +215,19 @@ async def play_bingo(message: Message):
             f"<b>🎮 BINGO GAME</b>\n\n"
             f"💰 Your Balance: {wallet.total_balance} Birr\n"
             f"💵 Card Price: {settings.CARD_PRICE} Birr\n\n"
-            f"Tap the Play button below to open the game.\n\n"
-            f"<b>📋 Direct Link:</b>\n"
-            f"<code>{web_url}</code>\n\n"
-            f"<i>💡 Long press the URL above to copy it</i>"
+            f"Tap the Play button below to open the game."
         )
+        if admin_user:
+            game_text += (
+                f"\n\n<b>📋 Direct Link:</b>\n"
+                f"<code>{web_url}</code>\n\n"
+                f"<i>💡 Long press the URL above to copy it</i>"
+            )
         if not can_use_button_url:
-            game_text += "\n\n<i>⚠ Telegram may reject localhost URL buttons in development; use the direct link above.</i>"
+            if admin_user:
+                game_text += "\n\n<i>⚠ Telegram may reject localhost URL buttons in development; use the direct link above.</i>"
+            else:
+                game_text += "\n\n<i>⚠ Play button is unavailable with the current development URL. Please contact the admin.</i>"
         await message.answer(game_text, reply_markup=keyboard)
 
 
