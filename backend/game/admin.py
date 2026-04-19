@@ -8,7 +8,7 @@ from django.db.models import Q, Sum
 from django.http import HttpResponse
 from django.template.response import TemplateResponse
 from django.urls import path, reverse
-from django.utils.html import format_html
+from django.utils.html import format_html, format_html_join
 from django.utils import timezone
 from users.models import User
 from .models import (
@@ -39,6 +39,7 @@ class GameAdmin(admin.ModelAdmin):
         'stake_amount',
         'state', 
         'get_player_info', 
+        'get_active_users',
         'get_winner_info',
         'get_prize_info',
         'has_bots_display',
@@ -74,6 +75,28 @@ class GameAdmin(admin.ModelAdmin):
             winner_type
         )
     get_winner_info.short_description = 'Winner'
+
+    def get_active_users(self, obj):
+        if obj.state not in ('waiting', 'playing'):
+            return '-'
+
+        cards = list(
+            obj.cards.select_related('user').order_by('created_at')[:9]
+        )
+        if not cards:
+            return 'No active users'
+
+        entries = []
+        for card in cards[:8]:
+            user = card.user
+            username = f" (@{user.username})" if user and user.username else ''
+            entries.append(f"#{card.card_number} - {user.first_name}{username}")
+
+        if len(cards) > 8:
+            entries.append('...')
+
+        return format_html_join('<br/>', '{}', ((entry,) for entry in entries))
+    get_active_users.short_description = 'Active Users'
     
     def get_prize_info(self, obj):
         if obj.has_bots:
@@ -463,9 +486,11 @@ class BusinessRuleSettingsAdmin(admin.ModelAdmin):
         'minimum_withdrawable_balance',
         'referral_bonus_amount',
         'countdown_seconds',
+        'rejoin_start_delay_minutes',
         'derash_percentage',
         'system_percentage',
         'telebirr_receiving_phone_number',
+        'telebirr_receiving_account_name',
         'updated_by',
         'updated_at',
     ]
@@ -483,9 +508,11 @@ class BusinessRuleSettingsAdmin(admin.ModelAdmin):
                     'minimum_withdrawable_balance': str(old.minimum_withdrawable_balance),
                     'referral_bonus_amount': str(old.referral_bonus_amount),
                     'countdown_seconds': old.countdown_seconds,
+                    'rejoin_start_delay_minutes': old.rejoin_start_delay_minutes,
                     'derash_percentage': str(old.derash_percentage),
                     'system_percentage': str(old.system_percentage),
                     'telebirr_receiving_phone_number': old.telebirr_receiving_phone_number,
+                    'telebirr_receiving_account_name': old.telebirr_receiving_account_name,
                 }
 
         admin_user = None
@@ -499,9 +526,11 @@ class BusinessRuleSettingsAdmin(admin.ModelAdmin):
             'minimum_withdrawable_balance': str(obj.minimum_withdrawable_balance),
             'referral_bonus_amount': str(obj.referral_bonus_amount),
             'countdown_seconds': obj.countdown_seconds,
+            'rejoin_start_delay_minutes': obj.rejoin_start_delay_minutes,
             'derash_percentage': str(obj.derash_percentage),
             'system_percentage': str(obj.system_percentage),
             'telebirr_receiving_phone_number': obj.telebirr_receiving_phone_number,
+            'telebirr_receiving_account_name': obj.telebirr_receiving_account_name,
         }
 
         BusinessRuleSettingsAudit.objects.create(

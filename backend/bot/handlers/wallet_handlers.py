@@ -62,6 +62,20 @@ def create_withdrawal(transaction, method, account):
     )
 
 
+@sync_to_async
+def get_telebirr_details():
+    rules = get_business_rules()
+    return {
+        'number': rules.telebirr_receiving_phone_number,
+        'name': getattr(rules, 'telebirr_receiving_account_name', 'Bingo Bot'),
+    }
+
+
+@sync_to_async
+def get_minimum_withdrawal_amount():
+    return float(get_business_rules().minimum_withdrawable_balance)
+
+
 @router.message(F.text == "💰 Balance")
 async def show_balance(message: Message):
     """Show user balance"""
@@ -91,14 +105,16 @@ async def show_balance(message: Message):
 @router.message(F.text == "➕ Deposit")
 async def deposit_menu(message: Message):
     """Show deposit menu"""
-    telebirr_number = get_business_rules().telebirr_receiving_phone_number
+    telebirr = await get_telebirr_details()
+    telebirr_number = telebirr['number']
+    telebirr_name = telebirr['name']
     
     deposit_text = (
         "<b>➕ DEPOSIT</b>\n\n"
         "To deposit money:\n\n"
         "1️⃣ Transfer money to:\n"
         f"   <b>Telebirr:</b> <code>{telebirr_number}</code>\n"
-        "   <b>Name:</b> Bingo Bot\n\n"
+        f"   <b>Name:</b> {telebirr_name}\n\n"
         "   <i>Tap the number above to copy it</i>\n\n"
         "2️⃣ Wait for the payment confirmation text\n"
         "3️⃣ Click 'Submit Deposit Proof' below and send that text\n\n"
@@ -185,7 +201,7 @@ async def withdrawal_menu(message: Message):
         return
     
     wallet = user.wallet
-    minimum_withdrawal = float(get_business_rules().minimum_withdrawable_balance)
+    minimum_withdrawal = await get_minimum_withdrawal_amount()
     
     # Check minimum withdrawal amount - only winnings can be withdrawn
     if float(wallet.winnings_balance) < minimum_withdrawal:
@@ -219,7 +235,7 @@ async def withdrawal_menu(message: Message):
 @router.callback_query(F.data == "request_withdrawal")
 async def request_withdrawal_start(callback: CallbackQuery, state: FSMContext):
     """Start withdrawal request process"""
-    minimum_withdrawal = float(get_business_rules().minimum_withdrawable_balance)
+    minimum_withdrawal = await get_minimum_withdrawal_amount()
     await callback.message.answer(
         "💸 <b>Withdrawal Request</b>\n\n"
         f"Please enter the amount you want to withdraw (in Birr).\n"
@@ -235,7 +251,7 @@ async def process_withdrawal_amount(message: Message, state: FSMContext):
     try:
         amount = float(message.text)
         user = await get_user_with_wallet(message.from_user.id)
-        minimum_withdrawal = float(get_business_rules().minimum_withdrawable_balance)
+        minimum_withdrawal = await get_minimum_withdrawal_amount()
         
         if not user:
             await message.answer("❌ Please start the bot first with /start")

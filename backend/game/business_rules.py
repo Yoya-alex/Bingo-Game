@@ -20,3 +20,8 @@ def get_system_multiplier():
 def get_countdown_seconds():
     rules = get_business_rules()
     return int(rules.countdown_seconds)
+
+
+def get_rejoin_start_delay_minutes():
+    rules = get_business_rules()
+    return int(getattr(rules, 'rejoin_start_delay_minutes', 0) or 0)

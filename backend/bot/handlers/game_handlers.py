@@ -160,6 +160,7 @@ async def play_bingo(message: Message):
     """Send web app link to play bingo"""
     user = await get_user_with_wallet(message.from_user.id)
     admin_user = await is_admin(message.from_user.id)
+    show_direct_link = bool(admin_user or getattr(settings, 'DEBUG', False))
     
     if not user:
         await message.answer("❌ Please start the bot first with /start")
@@ -199,7 +200,7 @@ async def play_bingo(message: Message):
             f"💵 Card Price: {settings.CARD_PRICE} Birr\n\n"
             f"Tap the button below to open the game!"
         )
-        if admin_user:
+        if show_direct_link:
             game_text += f"\n\n<b>🔗 Direct Link:</b>\n<code>{web_url}</code>"
         await message.answer(game_text, reply_markup=keyboard)
     else:
@@ -217,14 +218,14 @@ async def play_bingo(message: Message):
             f"💵 Card Price: {settings.CARD_PRICE} Birr\n\n"
             f"Tap the Play button below to open the game."
         )
-        if admin_user:
+        if show_direct_link:
             game_text += (
                 f"\n\n<b>📋 Direct Link:</b>\n"
                 f"<code>{web_url}</code>\n\n"
                 f"<i>💡 Long press the URL above to copy it</i>"
             )
         if not can_use_button_url:
-            if admin_user:
+            if show_direct_link:
                 game_text += "\n\n<i>⚠ Telegram may reject localhost URL buttons in development; use the direct link above.</i>"
             else:
                 game_text += "\n\n<i>⚠ Play button is unavailable with the current development URL. Please contact the admin.</i>"

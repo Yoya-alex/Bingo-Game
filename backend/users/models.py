@@ -18,6 +18,7 @@ class User(models.Model):
     )
     referral_count = models.PositiveIntegerField(default=0)
     registration_date = models.DateTimeField(default=timezone.now)
+    last_site_seen_at = models.DateTimeField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
     is_admin = models.BooleanField(default=False)
     

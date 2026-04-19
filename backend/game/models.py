@@ -320,6 +320,15 @@ class BusinessRuleSettings(models.Model):
         max_length=20,
         validators=[ethiopian_phone_validator],
     )
+    telebirr_receiving_account_name = models.CharField(
+        max_length=120,
+        default='Bingo Bot',
+    )
+    rejoin_start_delay_minutes = models.PositiveIntegerField(
+        default=0,
+        validators=[MaxValueValidator(120)],
+        help_text='Additional delay before game start when players return to a previously lonely lobby.',
+    )
     updated_by = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,
@@ -344,6 +353,8 @@ class BusinessRuleSettings(models.Model):
             'derash_percentage': Decimal('80.00'),
             'system_percentage': Decimal('20.00'),
             'telebirr_receiving_phone_number': str(getattr(settings, 'TELEBIRR_NUMBER', '0912345678')),
+            'telebirr_receiving_account_name': str(getattr(settings, 'TELEBIRR_ACCOUNT_NAME', 'Bingo Bot')),
+            'rejoin_start_delay_minutes': int(getattr(settings, 'REJOIN_START_DELAY_MINUTES', 0)),
         }
         settings_row, _ = cls.objects.get_or_create(pk=1, defaults=defaults)
         return settings_row
@@ -352,6 +363,8 @@ class BusinessRuleSettings(models.Model):
         super().clean()
         if not self.telebirr_receiving_phone_number:
             raise ValidationError({'telebirr_receiving_phone_number': 'Telebirr receiving phone number is required.'})
+        if not self.telebirr_receiving_account_name:
+            raise ValidationError({'telebirr_receiving_account_name': 'Telebirr account name is required.'})
         total = (self.derash_percentage or Decimal('0')) + (self.system_percentage or Decimal('0'))
         if total != Decimal('100'):
             raise ValidationError({'system_percentage': 'Derash Percentage + System Percentage must equal 100.'})
