@@ -35,6 +35,7 @@ from game.security import (
     verify_user_access_token,
 )
 from bot.utils.url_helpers import build_react_url, can_use_telegram_button_url
+from bot.utils.i18n import normalize_language
 import json
 import logging
 from urllib import error as urllib_error
@@ -156,10 +157,10 @@ def notify_lonely_waiting_players(game, joined_user, delay_minutes):
         User.objects.filter(
             id__in=game.cards.exclude(user_id=joined_user.id).values_list('user_id', flat=True),
             telegram_id__lt=BOT_TELEGRAM_ID_THRESHOLD,
-        ).only('telegram_id', 'last_site_seen_at')
+        ).only('telegram_id', 'last_site_seen_at', 'language')
     )
-    recipient_ids = [recipient.telegram_id for recipient in recipients if not is_user_online_on_site(recipient)]
-    if not recipient_ids:
+    recipients_to_notify = [recipient for recipient in recipients if not is_user_online_on_site(recipient)]
+    if not recipients_to_notify:
         return
 
     countdown_seconds = int(get_countdown_seconds())
@@ -171,9 +172,15 @@ def notify_lonely_waiting_players(game, joined_user, delay_minutes):
         f"Please rejoin now. The game can start in about {total_wait_seconds} seconds."
     )
 
-    def _send_notification(chat_id):
+    def _send_notification(recipient):
+        chat_id = recipient.telegram_id
         access_token = create_user_access_token(chat_id)
-        play_url = build_react_url('/', telegram_id=chat_id, token=access_token)
+        play_url = build_react_url(
+            '/',
+            telegram_id=chat_id,
+            token=access_token,
+            lang=normalize_language(getattr(recipient, 'language', None)),
+        )
         reply_markup = None
         if can_use_telegram_button_url(play_url):
             reply_markup = {
@@ -185,8 +192,8 @@ def notify_lonely_waiting_players(game, joined_user, delay_minutes):
 
     transaction.on_commit(
         lambda: [
-            _send_notification(chat_id)
-            for chat_id in recipient_ids
+            _send_notification(recipient)
+            for recipient in recipients_to_notify
         ]
     )
 
@@ -486,7 +493,8 @@ def game_lobby(request, telegram_id):
             'error': 'User not found. Please start the bot first.'
         })
 
-    return redirect(f"{settings.REACT_APP_URL}/home/{telegram_id}?token={token}")
+    language = normalize_language(getattr(user, 'language', None))
+    return redirect(f"{settings.REACT_APP_URL}/home/{telegram_id}?token={token}&lang={language}")
 
 
 def game_play(request, telegram_id, game_id):
@@ -510,7 +518,8 @@ def game_play(request, telegram_id, game_id):
             'error': 'User not found.'
         })
 
-    return redirect(f"{settings.REACT_APP_URL}/play/{telegram_id}/{game_id}?token={token}")
+    language = normalize_language(getattr(user, 'language', None))
+    return redirect(f"{settings.REACT_APP_URL}/play/{telegram_id}/{game_id}?token={token}&lang={language}")
 
 
 @csrf_exempt

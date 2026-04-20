@@ -185,7 +185,7 @@ async def play_bingo(message: Message):
     
     # Generate web app URL
     access_token = create_user_access_token(user.telegram_id)
-    web_url = build_react_url("/", telegram_id=user.telegram_id, token=access_token)
+    web_url = build_react_url("/", telegram_id=user.telegram_id, token=access_token, lang=language)
     
     # Use WebApp button on HTTPS. On HTTP, use URL button only when Telegram accepts it.
     is_https = web_url.startswith("https://")

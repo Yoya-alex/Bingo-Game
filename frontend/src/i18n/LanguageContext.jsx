@@ -4,12 +4,24 @@ import { translations } from "./translations.js";
 const STORAGE_KEY = "bingo-language";
 const SUPPORTED_LANGUAGES = ["en", "am", "om"];
 
+function normalizeLanguage(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  return SUPPORTED_LANGUAGES.includes(raw) ? raw : "";
+}
+
 function getInitialLanguage() {
   if (typeof window === "undefined") {
     return "en";
   }
+
+  const params = new URLSearchParams(window.location.search || "");
+  const fromUrl = normalizeLanguage(params.get("lang") || params.get("language"));
+  if (fromUrl) {
+    return fromUrl;
+  }
+
   const saved = (window.localStorage.getItem(STORAGE_KEY) || "").trim();
-  return SUPPORTED_LANGUAGES.includes(saved) ? saved : "en";
+  return normalizeLanguage(saved) || "en";
 }
 
 function resolvePath(obj, path) {
@@ -47,6 +59,9 @@ export function LanguageProvider({ children }) {
   useEffect(() => {
     if (typeof document !== "undefined") {
       document.documentElement.lang = language;
+    }
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(STORAGE_KEY, language);
     }
   }, [language]);
 
