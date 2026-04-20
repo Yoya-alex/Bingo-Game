@@ -41,12 +41,35 @@ from bot.keyboards import (
     wallet_direction_keyboard,
 )
 from bot.utils.url_helpers import build_react_url, can_use_telegram_button_url
+from bot.utils.i18n import is_menu_text, normalize_language, tr
 from bot.utils.admin_helpers import is_admin, get_admin_user
 from bot.utils.notification_service import send_admin_notification
 from bot.utils.referral_service import try_process_referral_reward_for_deposit, get_referral_overview
 
 
 router = Router()
+
+
+@sync_to_async
+def _get_admin_ui_language(telegram_id: int):
+    user = User.objects.filter(telegram_id=telegram_id).first()
+    return normalize_language(getattr(user, 'language', None))
+
+
+async def _admin_lang(message_or_callback):
+    from_user = getattr(message_or_callback, 'from_user', None)
+    if not from_user:
+        return 'en'
+    return await _get_admin_ui_language(from_user.id)
+
+
+def _t3(language: str, en: str, am: str, om: str) -> str:
+    code = normalize_language(language)
+    if code == 'am':
+        return am
+    if code == 'om':
+        return om
+    return en
 
 
 class WalletAdjustStates(StatesGroup):
@@ -738,10 +761,11 @@ async def admin_promo_verify_approve(callback: CallbackQuery):
         await callback.answer()
         return
 
+    language = await _admin_lang(callback)
     try:
         claim_id = int(callback.data.split(':')[-1])
     except (TypeError, ValueError):
-        await callback.answer('Invalid promo claim reference.', show_alert=True)
+        await callback.answer(_t3(language, 'Invalid promo claim reference.', 'የፕሮሞ ማመልከቻ መለያ ልክ አይደለም።', 'Wabiin promo sirrii miti.'), show_alert=True)
         return
 
     try:
@@ -773,7 +797,7 @@ async def admin_promo_verify_approve(callback: CallbackQuery):
     except Exception:
         pass
 
-    await callback.answer('Approved')
+    await callback.answer(_t3(language, 'Approved', 'ጸድቋል', 'Eeyyamameera'))
 
 
 @router.callback_query(F.data.startswith('promo_verify:reject:'))
@@ -782,10 +806,11 @@ async def admin_promo_verify_reject(callback: CallbackQuery):
         await callback.answer()
         return
 
+    language = await _admin_lang(callback)
     try:
         claim_id = int(callback.data.split(':')[-1])
     except (TypeError, ValueError):
-        await callback.answer('Invalid promo claim reference.', show_alert=True)
+        await callback.answer(_t3(language, 'Invalid promo claim reference.', 'የፕሮሞ ማመልከቻ መለያ ልክ አይደለም።', 'Wabiin promo sirrii miti.'), show_alert=True)
         return
 
     ok, info, claim = await _reject_promo_claim_atomic(claim_id, callback.from_user.id, 'Rejected by admin review')
@@ -810,7 +835,7 @@ async def admin_promo_verify_reject(callback: CallbackQuery):
     except Exception:
         pass
 
-    await callback.answer('Rejected')
+    await callback.answer(_t3(language, 'Rejected', 'ተቀባይነት አልተሰጠም', 'Didameera'))
 
 
 @router.message(Command("admin"))
@@ -840,17 +865,18 @@ async def admin_entry(message: Message):
     await message.answer(text, reply_markup=admin_main_menu_keyboard())
 
 
-@router.message(F.text == "📊 Dashboard")
+@router.message(lambda message: is_menu_text(message.text, 'admin_menu_dashboard'))
 async def admin_dashboard(message: Message):
     """Show dashboard summary with bot game information."""
     if not await _ensure_admin(message):
         return
 
+    language = await _admin_lang(message)
     stats = await _get_dashboard_stats()
     active_game = stats["active_game"]
     last_game = stats["last_game"]
 
-    active_text = "None"
+    active_text = tr(language, 'admin_none')
     if active_game:
         total_players = stats['active_game_player_count']
         if active_game.has_bots:
@@ -866,7 +892,7 @@ async def admin_dashboard(message: Message):
                 f"Players: {total_players}"
             )
 
-    last_text = "None"
+    last_text = tr(language, 'admin_none')
     if last_game:
         winner_type = "🤖 Bot" if last_game.winner and last_game.winner.telegram_id >= 9000000000 else "👤 Real User"
         winner_name = last_game.winner.first_name if last_game.winner else "No winner"
@@ -887,7 +913,7 @@ async def admin_dashboard(message: Message):
             )
 
     text = (
-        "<b>📊 ADMIN DASHBOARD</b>\n\n"
+        f"{tr(language, 'admin_title')}\n\n"
         f"👥 Total Users: {stats['users_count']}\n"
         f"💰 Pending Deposits: {stats['pending_deposits']}\n"
         f"🏧 Pending Withdrawals: {stats['pending_withdrawals']}\n"
@@ -896,25 +922,26 @@ async def admin_dashboard(message: Message):
         f"🎮 Active Game:\n{active_text}\n\n"
         f"🕹 Last Game:\n{last_text}"
     )
-    await message.answer(text, reply_markup=admin_main_menu_keyboard(), parse_mode="HTML")
+    await message.answer(text, reply_markup=admin_main_menu_keyboard(language), parse_mode="HTML")
 
 
-@router.message(F.text == "💰 Deposits")
+@router.message(lambda message: is_menu_text(message.text, 'admin_menu_deposits'))
 async def admin_deposits_menu(message: Message):
     """Show summary of pending deposits."""
     if not await _ensure_admin(message):
         return
 
+    language = await _admin_lang(message)
     pending = await _get_pending_deposits()
 
     if not pending:
         await message.answer(
-            "✅ No pending deposits.\nAll deposit requests have been processed.",
-            reply_markup=admin_main_menu_keyboard(),
+            tr(language, 'admin_no_pending_deposits'),
+            reply_markup=admin_main_menu_keyboard(language),
         )
         return
 
-    lines = ["<b>💰 Pending Deposits (latest)</b>\n"]
+    lines = [tr(language, 'admin_pending_deposits_title')]
     buttons = []
     for tx in pending:
         u = tx.user
@@ -926,7 +953,7 @@ async def admin_deposits_menu(message: Message):
         buttons.append(
             [
                 InlineKeyboardButton(
-                    text=f"Review #{tx.id}", callback_data=f"adm_dep:view:{tx.id}"
+                    text=tr(language, 'admin_review_btn', tx_id=tx.id), callback_data=f"adm_dep:view:{tx.id}"
                 )
             ]
         )
@@ -941,15 +968,16 @@ async def admin_deposit_detail(message: Message):
     if not await _ensure_admin(message):
         return
 
+    language = await _admin_lang(message)
     try:
         tx_id = int(message.text.split("_")[-1])
     except (TypeError, ValueError):
-        await message.answer("❌ Invalid deposit reference.")
+        await message.answer(_t3(language, "❌ Invalid deposit reference.", "❌ የተቀማጭ መለያ ልክ አይደለም።", "❌ Wabiin galchaa sirrii miti."))
         return
 
     tx = await _get_transaction_or_none(tx_id)
     if not tx or tx.transaction_type != "deposit":
-        await message.answer("❌ Deposit not found.")
+        await message.answer(_t3(language, "❌ Deposit not found.", "❌ ተቀማጭ አልተገኘም።", "❌ Galchi hin argamne."))
         return
 
     user = tx.user
@@ -971,7 +999,7 @@ async def admin_deposit_detail(message: Message):
         f"/adm_dep_approve_{tx.id}\n"
         f"/adm_dep_reject_{tx.id}"
     )
-    await message.answer(text, reply_markup=admin_main_menu_keyboard())
+    await message.answer(text, reply_markup=admin_main_menu_keyboard(language))
 
 
 @router.callback_query(F.data.startswith("adm_dep:view:"))
@@ -981,15 +1009,16 @@ async def admin_deposit_detail_inline(callback: CallbackQuery):
         await callback.answer()
         return
 
+    language = await _admin_lang(callback)
     try:
         tx_id = int(callback.data.split(":")[-1])
     except (TypeError, ValueError):
-        await callback.answer("Invalid deposit reference", show_alert=True)
+        await callback.answer(_t3(language, "Invalid deposit reference", "የተቀማጭ መለያ ልክ አይደለም", "Wabiin galchaa sirrii miti"), show_alert=True)
         return
 
     tx = await _get_transaction_or_none(tx_id)
     if not tx or tx.transaction_type != "deposit":
-        await callback.answer("Deposit not found", show_alert=True)
+        await callback.answer(_t3(language, "Deposit not found", "ተቀማጭ አልተገኘም", "Galchi hin argamne"), show_alert=True)
         return
 
     user = tx.user
@@ -1034,15 +1063,16 @@ async def admin_deposit_approve_confirm(message: Message, state: FSMContext):
     if not await _ensure_admin(message):
         return
 
+    language = await _admin_lang(message)
     try:
         tx_id = int(message.text.split("_")[-1])
     except (TypeError, ValueError):
-        await message.answer("❌ Invalid deposit reference.")
+        await message.answer(_t3(language, "❌ Invalid deposit reference.", "❌ የተቀማጭ መለያ ልክ አይደለም።", "❌ Wabiin galchaa sirrii miti."))
         return
 
     tx = await _get_transaction_or_none(tx_id)
     if not tx or tx.transaction_type != "deposit":
-        await message.answer("❌ Deposit not found.")
+        await message.answer(_t3(language, "❌ Deposit not found.", "❌ ተቀማጭ አልተገኘም።", "❌ Galchi hin argamne."))
         return
 
     user = tx.user
@@ -1144,20 +1174,21 @@ async def admin_deposit_amount_submit(message: Message, state: FSMContext):
     if not await _ensure_admin(message):
         return
 
+    language = await _admin_lang(message)
     text = (message.text or "").strip().lower()
     if text in {"cancel", "stop", "exit"}:
         await state.clear()
-        await message.answer("✅ Deposit approval cancelled.")
+        await message.answer(_t3(language, "✅ Deposit approval cancelled.", "✅ የተቀማጭ ማጽደቅ ተሰርዟል።", "✅ Eeyyama galchaa haqameera."))
         return
 
     try:
         amount = Decimal(message.text)
     except (TypeError, InvalidOperation):
-        await message.answer("❌ Please enter a valid amount in Birr.")
+        await message.answer(_t3(language, "❌ Please enter a valid amount in Birr.", "❌ እባክዎ ትክክለኛ መጠን በብር ያስገቡ።", "❌ Hamma sirrii Birriin galchi."))
         return
 
     if amount <= 0:
-        await message.answer("❌ Amount must be greater than 0.")
+        await message.answer(_t3(language, "❌ Amount must be greater than 0.", "❌ መጠኑ ከ0 በላይ መሆን አለበት።", "❌ Hammaan 0 ol ta'uu qaba."))
         return
 
     if amount < settings.MIN_DEPOSIT:
@@ -1170,7 +1201,7 @@ async def admin_deposit_amount_submit(message: Message, state: FSMContext):
     data = await state.get_data()
     tx_id = data.get("tx_id")
     if not tx_id:
-        await message.answer("❌ Deposit reference missing. Please retry the approval.")
+        await message.answer(_t3(language, "❌ Deposit reference missing. Please retry the approval.", "❌ የተቀማጭ መለያ ጠፍቷል። ድጋሚ ይሞክሩ።", "❌ Wabiin galchaa badeera. Irra deebi'ii yaali."))
         await state.clear()
         return
 
@@ -1584,22 +1615,23 @@ async def admin_deposit_cancel_inline(callback: CallbackQuery):
     await callback.answer()
 
 
-@router.message(F.text == "🏧 Withdrawals")
+@router.message(lambda message: is_menu_text(message.text, 'admin_menu_withdrawals'))
 async def admin_withdrawals_menu(message: Message):
     """Show summary of pending withdrawals."""
     if not await _ensure_admin(message):
         return
 
+    language = await _admin_lang(message)
     pending = await _get_pending_withdrawals()
 
     if not pending:
         await message.answer(
-            "✅ No pending withdrawals.\nAll withdrawal requests have been processed.",
-            reply_markup=admin_main_menu_keyboard(),
+            tr(language, 'admin_no_pending_withdrawals'),
+            reply_markup=admin_main_menu_keyboard(language),
         )
         return
 
-    lines = ["<b>🏧 Pending Withdrawals (latest)</b>\n"]
+    lines = [tr(language, 'admin_pending_withdrawals_title')]
     buttons = []
     for tx in pending:
         u = tx.user
@@ -1610,7 +1642,7 @@ async def admin_withdrawals_menu(message: Message):
         buttons.append(
             [
                 InlineKeyboardButton(
-                    text=f"Review #{tx.id}", callback_data=f"adm_wd:view:{tx.id}"
+                    text=tr(language, 'admin_review_btn', tx_id=tx.id), callback_data=f"adm_wd:view:{tx.id}"
                 )
             ]
         )
@@ -1625,15 +1657,16 @@ async def admin_withdrawal_detail(message: Message):
     if not await _ensure_admin(message):
         return
 
+    language = await _admin_lang(message)
     try:
         tx_id = int(message.text.split("_")[-1])
     except (TypeError, ValueError):
-        await message.answer("❌ Invalid withdrawal reference.")
+        await message.answer(_t3(language, "❌ Invalid withdrawal reference.", "❌ የማውጫ መለያ ልክ አይደለም።", "❌ Wabiin baasii sirrii miti."))
         return
 
     tx = await _get_transaction_or_none(tx_id)
     if not tx or tx.transaction_type != "withdrawal":
-        await message.answer("❌ Withdrawal not found.")
+        await message.answer(_t3(language, "❌ Withdrawal not found.", "❌ ማውጫ አልተገኘም።", "❌ Baasiin hin argamne."))
         return
 
     user = tx.user
@@ -1663,7 +1696,7 @@ async def admin_withdrawal_detail(message: Message):
         f"/adm_wd_approve_{tx.id}\n"
         f"/adm_wd_reject_{tx.id}"
     )
-    await message.answer(text, reply_markup=admin_main_menu_keyboard())
+    await message.answer(text, reply_markup=admin_main_menu_keyboard(language))
 
 
 @router.callback_query(F.data.startswith("adm_wd:view:"))
@@ -1673,15 +1706,16 @@ async def admin_withdrawal_detail_inline(callback: CallbackQuery):
         await callback.answer()
         return
 
+    language = await _admin_lang(callback)
     try:
         tx_id = int(callback.data.split(":")[-1])
     except (TypeError, ValueError):
-        await callback.answer("Invalid withdrawal reference", show_alert=True)
+        await callback.answer(_t3(language, "Invalid withdrawal reference", "የማውጫ መለያ ልክ አይደለም", "Wabiin baasii sirrii miti"), show_alert=True)
         return
 
     tx = await _get_transaction_or_none(tx_id)
     if not tx or tx.transaction_type != "withdrawal":
-        await callback.answer("Withdrawal not found", show_alert=True)
+        await callback.answer(_t3(language, "Withdrawal not found", "ማውጫ አልተገኘም", "Baasiin hin argamne"), show_alert=True)
         return
 
     user = tx.user
@@ -2040,7 +2074,7 @@ async def admin_withdrawal_cancel_inline(callback: CallbackQuery):
     await callback.answer()
 
 
-@router.message(F.text == "🎮 Game Management")
+@router.message(lambda message: is_menu_text(message.text, 'admin_menu_game'))
 async def admin_game_management(message: Message):
     """Basic game monitoring for admins."""
     if not await _ensure_admin(message):
@@ -2070,7 +2104,7 @@ async def admin_game_management(message: Message):
     await message.answer(text, reply_markup=admin_main_menu_keyboard())
 
 
-@router.message(F.text == "💼 System Balance")
+@router.message(lambda message: is_menu_text(message.text, 'admin_menu_system_balance'))
 async def admin_system_balance(message: Message):
     """Show system balance overview with inline cash in/out actions."""
     if not await _ensure_admin(message):
@@ -2200,7 +2234,7 @@ async def admin_system_balance_reason(message: Message, state: FSMContext):
     await state.clear()
 
 
-@router.message(F.text == "📜 Transaction Logs")
+@router.message(lambda message: is_menu_text(message.text, 'admin_menu_transactions'))
 async def admin_transaction_logs(message: Message):
     """Show last few transactions for quick audit."""
     if not await _ensure_admin(message):
@@ -2213,10 +2247,11 @@ async def admin_transaction_logs(message: Message):
             .order_by("-created_at")[:limit]
         )
 
+    language = await _admin_lang(message)
     txs = await _get_latest_transactions()
     if not txs:
         await message.answer(
-            "No transactions found.", reply_markup=admin_main_menu_keyboard()
+            _t3(language, "No transactions found.", "ምንም ግብይት አልተገኘም።", "Daldalli hin argamne."), reply_markup=admin_main_menu_keyboard(language)
         )
         return
 
@@ -2228,21 +2263,23 @@ async def admin_transaction_logs(message: Message):
             f"{tx.created_at:%Y-%m-%d %H:%M}\n"
         )
 
-    await message.answer("\n".join(lines), reply_markup=admin_main_menu_keyboard())
+    await message.answer("\n".join(lines), reply_markup=admin_main_menu_keyboard(language))
 
 
-@router.message(F.text == "📢 Announcement")
+@router.message(lambda message: is_menu_text(message.text, 'admin_menu_announcement'))
 async def admin_announcement_start(message: Message, state: FSMContext):
     """Start announcement flow for broadcasting a message to all users."""
     if not await _ensure_admin(message):
         return
 
+    language = await _admin_lang(message)
     await message.answer(
-        "<b>📢 Announcement</b>\n\n"
-        "Choose mode:\n"
-        "1) Send <b>photo + caption</b>\n"
-        "2) Send <b>text only</b>\n\n"
-        "Reply with <b>photo</b> or <b>text</b>."
+        _t3(
+            language,
+            "<b>📢 Announcement</b>\n\nChoose mode:\n1) Send <b>photo + caption</b>\n2) Send <b>text only</b>\n\nReply with <b>photo</b> or <b>text</b>.",
+            "<b>📢 ማስታወቂያ</b>\n\nሁነታ ይምረጡ:\n1) ፎቶ + መግለጫ\n2) ጽሑፍ ብቻ\n\nፎቶ ወይም ጽሑፍ ይላኩ።",
+            "<b>📢 Beeksisa</b>\n\nHaala filadhu:\n1) Suuraa + ibsa\n2) Barruu qofa\n\nSuuraa yookaan barruu ergi."
+        )
     )
     await state.set_state(AnnouncementStates.waiting_for_mode)
 
@@ -2527,7 +2564,7 @@ async def admin_wallet_stats(message: Message):
     await message.answer(text, reply_markup=admin_main_menu_keyboard())
 
 
-@router.message(F.text == "👛 Wallet Management")
+@router.message(lambda message: is_menu_text(message.text, 'admin_menu_wallet'))
 async def admin_wallet_management(message: Message, state: FSMContext):
     """Start wallet management flow for a specific user."""
     if not await _ensure_admin(message):
@@ -2744,26 +2781,28 @@ async def admin_wallet_reason(message: Message, state: FSMContext):
     await state.clear()
 
 
-@router.message(F.text == "🏠 User Menu")
+@router.message(lambda message: is_menu_text(message.text, 'menu_user'))
 async def admin_back_to_user_menu(message: Message):
     """Switch back to normal user menu."""
     # No admin check here – allow anyone to return to user menu safely.
+    user = await sync_to_async(User.objects.filter(telegram_id=message.from_user.id).first)()
+    language = normalize_language(getattr(user, 'language', None))
     await message.answer(
-        "🏠 Switched back to user menu.",
-        reply_markup=main_menu_keyboard(),
+        tr(language, 'main_menu_title'),
+        reply_markup=main_menu_keyboard(language),
     )
 
 
-@router.message(F.text.in_({"👤 User Management", "⚙️ Settings", "🔍 Search"}))
+@router.message(lambda message: is_menu_text(message.text, 'admin_menu_users') or is_menu_text(message.text, 'admin_menu_settings') or is_menu_text(message.text, 'admin_menu_search'))
 async def admin_not_implemented(message: Message):
     """Placeholders for future admin features."""
     if not await _ensure_admin(message):
         return
 
+    language = await _admin_lang(message)
     await message.answer(
-        "This admin feature is planned but not implemented yet in the bot UI.\n"
-        "Use the Django admin panel for full control.",
-        reply_markup=admin_main_menu_keyboard(),
+        tr(language, 'admin_feature_planned'),
+        reply_markup=admin_main_menu_keyboard(language),
     )
 
 
@@ -2798,7 +2837,7 @@ def _get_engagement_overview():
     }
 
 
-@router.message(F.text == "🚀 Engagement Management")
+@router.message(lambda message: is_menu_text(message.text, 'admin_menu_engagement'))
 async def admin_engagement_management(message: Message):
     if not await _ensure_admin(message):
         return

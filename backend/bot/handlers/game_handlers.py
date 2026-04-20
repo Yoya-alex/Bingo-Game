@@ -11,6 +11,7 @@ from wallet.models import Transaction
 from bot.keyboards import main_menu_keyboard, card_selection_keyboard, bingo_button_keyboard
 from bot.utils.admin_helpers import is_admin
 from bot.utils.game_logic import check_bingo_win
+from bot.utils.i18n import is_menu_text, normalize_language, tr
 from bot.utils.url_helpers import build_react_url, can_use_telegram_button_url
 from game.security import create_user_access_token
 
@@ -155,7 +156,7 @@ def mark_winner_and_distribute_prize(game, user_card):
     return prize
 
 
-@router.message(F.text == "🎮 Play Bingo")
+@router.message(lambda message: is_menu_text(message.text, 'menu_play'))
 async def play_bingo(message: Message):
     """Send web app link to play bingo"""
     user = await get_user_with_wallet(message.from_user.id)
@@ -163,19 +164,22 @@ async def play_bingo(message: Message):
     show_direct_link = bool(admin_user or getattr(settings, 'DEBUG', False))
     
     if not user:
-        await message.answer("❌ Please start the bot first with /start")
+        await message.answer(tr('en', 'please_start'))
         return
     
     wallet = user.wallet
+    language = normalize_language(user.language)
     
     # Check balance
     if wallet.total_balance < settings.CARD_PRICE:
         await message.answer(
-            f"❌ <b>Insufficient Balance!</b>\n\n"
-            f"You need at least {settings.CARD_PRICE} Birr to play.\n"
-            f"Your balance: {wallet.total_balance} Birr\n\n"
-            f"Please deposit to continue.",
-            reply_markup=main_menu_keyboard()
+            tr(
+                language,
+                'game_insufficient_balance',
+                card_price=settings.CARD_PRICE,
+                total_balance=wallet.total_balance,
+            ),
+            reply_markup=main_menu_keyboard(language)
         )
         return
     
@@ -190,45 +194,41 @@ async def play_bingo(message: Message):
     if is_https:
         keyboard = InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(
-                text="▶️ Play",
+                text=tr(language, 'btn_play_now'),
                 web_app=WebAppInfo(url=web_url)
             )
         ]])
         game_text = (
-            f"<b>🎮 BINGO GAME</b>\n\n"
-            f"💰 Your Balance: {wallet.total_balance} Birr\n"
-            f"💵 Card Price: {settings.CARD_PRICE} Birr\n\n"
-            f"Tap the button below to open the game!"
+            f"{tr(language, 'game_card_title')}\n\n"
+            f"{tr(language, 'game_balance_line', total_balance=wallet.total_balance)}\n"
+            f"{tr(language, 'game_card_price_line', card_price=settings.CARD_PRICE)}\n\n"
+            f"{tr(language, 'game_open_hint')}"
         )
         if show_direct_link:
-            game_text += f"\n\n<b>🔗 Direct Link:</b>\n<code>{web_url}</code>"
+            game_text += f"\n\n{tr(language, 'game_direct_link', web_url=web_url)}"
         await message.answer(game_text, reply_markup=keyboard)
     else:
         keyboard = None
         if can_use_button_url:
             keyboard = InlineKeyboardMarkup(inline_keyboard=[[
                 InlineKeyboardButton(
-                    text="▶️ Play",
+                    text=tr(language, 'btn_play_now'),
                     url=web_url,
                 )
             ]])
         game_text = (
-            f"<b>🎮 BINGO GAME</b>\n\n"
-            f"💰 Your Balance: {wallet.total_balance} Birr\n"
-            f"💵 Card Price: {settings.CARD_PRICE} Birr\n\n"
-            f"Tap the Play button below to open the game."
+            f"{tr(language, 'game_card_title')}\n\n"
+            f"{tr(language, 'game_balance_line', total_balance=wallet.total_balance)}\n"
+            f"{tr(language, 'game_card_price_line', card_price=settings.CARD_PRICE)}\n\n"
+            f"{tr(language, 'game_open_hint_http')}"
         )
         if show_direct_link:
-            game_text += (
-                f"\n\n<b>📋 Direct Link:</b>\n"
-                f"<code>{web_url}</code>\n\n"
-                f"<i>💡 Long press the URL above to copy it</i>"
-            )
+            game_text += f"\n\n{tr(language, 'game_direct_link_copy', web_url=web_url)}"
         if not can_use_button_url:
             if show_direct_link:
-                game_text += "\n\n<i>⚠ Telegram may reject localhost URL buttons in development; use the direct link above.</i>"
+                game_text += f"\n\n{tr(language, 'game_localhost_warn_admin')}"
             else:
-                game_text += "\n\n<i>⚠ Play button is unavailable with the current development URL. Please contact the admin.</i>"
+                game_text += f"\n\n{tr(language, 'game_localhost_warn_user')}"
         await message.answer(game_text, reply_markup=keyboard)
 
 
@@ -238,9 +238,10 @@ async def change_cards_page(callback: CallbackQuery):
     try:
         page = int(callback.data.split(":")[1])
         user = await get_user_with_wallet(callback.from_user.id)
+        language = normalize_language(getattr(user, 'language', None))
         
         if not user:
-            await callback.answer("❌ Please start the bot first!", show_alert=True)
+            await callback.answer(tr('en', 'cb_start_first'), show_alert=True)
             return
         
         wallet = user.wallet
@@ -249,7 +250,7 @@ async def change_cards_page(callback: CallbackQuery):
         game = await get_or_create_active_game()
         
         if game.state != 'waiting':
-            await callback.answer("❌ Game already started!", show_alert=True)
+            await callback.answer(tr(language, 'cb_game_started'), show_alert=True)
             return
         
         # Get available cards
@@ -258,7 +259,7 @@ async def change_cards_page(callback: CallbackQuery):
         available_cards = [i for i in range(1, 401) if i not in taken_cards]
         
         if not available_cards:
-            await callback.answer("❌ No cards available!", show_alert=True)
+            await callback.answer(tr(language, 'cb_no_cards'), show_alert=True)
             return
         
         game_text = (
@@ -279,13 +280,15 @@ async def change_cards_page(callback: CallbackQuery):
         await callback.answer()
         
     except Exception as e:
-        await callback.answer(f"❌ Error: {str(e)}", show_alert=True)
+        await callback.answer(tr('en', 'cb_error', error=str(e)), show_alert=True)
 
 
 @router.callback_query(F.data == "page_info")
 async def page_info(callback: CallbackQuery):
     """Handle page info button click"""
-    await callback.answer("Use Next/Previous buttons to browse cards", show_alert=False)
+    user = await get_user_with_wallet(callback.from_user.id)
+    language = normalize_language(getattr(user, 'language', None))
+    await callback.answer(tr(language, 'cb_page_info'), show_alert=False)
 
 
 @router.callback_query(F.data.startswith("select_card:"))
@@ -294,9 +297,10 @@ async def select_card(callback: CallbackQuery):
     try:
         card_number = int(callback.data.split(":")[1])
         user = await get_user_with_wallet(callback.from_user.id)
+        language = normalize_language(getattr(user, 'language', None))
         
         if not user:
-            await callback.answer("❌ Please start the bot first!", show_alert=True)
+            await callback.answer(tr('en', 'cb_start_first'), show_alert=True)
             return
         
         wallet = user.wallet
@@ -305,24 +309,24 @@ async def select_card(callback: CallbackQuery):
         game = await get_or_create_active_game()
         
         if game.state != 'waiting':
-            await callback.answer("❌ Game already started!", show_alert=True)
+            await callback.answer(tr(language, 'cb_game_started'), show_alert=True)
             return
         
         # Check if card is available
         is_available = await check_card_available(game, card_number)
         if not is_available:
-            await callback.answer("❌ Card already taken!", show_alert=True)
+            await callback.answer(tr(language, 'cb_card_taken'), show_alert=True)
             return
         
         # Check if user already has a card
         existing_card = await get_user_card_in_game(game, user)
         if existing_card:
-            await callback.answer("❌ You already have a card!", show_alert=True)
+            await callback.answer(tr(language, 'cb_already_have_card'), show_alert=True)
             return
         
         # Check balance
         if wallet.total_balance < settings.CARD_PRICE:
-            await callback.answer("❌ Insufficient balance!", show_alert=True)
+            await callback.answer(tr(language, 'cb_insufficient_balance'), show_alert=True)
             return
         
         # Deduct balance
@@ -338,11 +342,11 @@ async def select_card(callback: CallbackQuery):
         # Create card
         card = await create_bingo_card(game, user, card_number)
         
-        await callback.answer("✅ Card selected!", show_alert=True)
+        await callback.answer(tr(language, 'cb_card_selected'), show_alert=True)
         await show_waiting_screen(callback.message, game, card)
         
     except Exception as e:
-        await callback.answer(f"❌ Error: {str(e)}", show_alert=True)
+        await callback.answer(tr('en', 'cb_error', error=str(e)), show_alert=True)
 
 
 async def show_waiting_screen(message: Message, game, user_card):
@@ -363,17 +367,18 @@ async def show_waiting_screen(message: Message, game, user_card):
     
     cards = await get_game_cards(game)
     
-    waiting_text = (
-        f"<b>🎮 GAME #{game.id} - WAITING</b>\n\n"
-        f"✅ Your Card: #{user_card.card_number}\n"
-        f"👥 Players: {len(cards)}/400\n"
-        f"⏱ Status: Waiting for more players...\n\n"
-        f"<pre>{grid_text}</pre>\n"
-        f"<i>Game will start automatically when ready.\n"
-        f"(Auto-start feature coming soon!)</i>"
+    user = await get_user_with_wallet(message.chat.id)
+    language = normalize_language(getattr(user, 'language', None))
+    waiting_text = tr(
+        language,
+        'game_waiting_text',
+        game_id=game.id,
+        card_number=user_card.card_number,
+        players=len(cards),
+        grid_text=grid_text,
     )
     
-    await message.answer(waiting_text, reply_markup=main_menu_keyboard())
+    await message.answer(waiting_text, reply_markup=main_menu_keyboard(language))
 
 
 async def show_playing_screen(message: Message, game, user_card):
@@ -392,12 +397,9 @@ async def show_playing_screen(message: Message, game, user_card):
                 row_text += f"{num:3d}"
         grid_text += row_text + "\n"
     
-    playing_text = (
-        f"<b>🎮 GAME #{game.id} - PLAYING</b>\n\n"
-        f"<pre>{grid_text}</pre>\n"
-        f"<i>Number calling feature coming soon!\n"
-        f"Full game automation in development.</i>"
-    )
+    user = await get_user_with_wallet(message.chat.id)
+    language = normalize_language(getattr(user, 'language', None))
+    playing_text = tr(language, 'game_playing_text', game_id=game.id, grid_text=grid_text)
     
     await message.answer(playing_text, reply_markup=bingo_button_keyboard())
 
@@ -408,18 +410,19 @@ async def claim_bingo(callback: CallbackQuery):
     try:
         user = await get_user_with_wallet(callback.from_user.id)
         if not user:
-            await callback.answer("❌ User not found!", show_alert=True)
+            await callback.answer(tr('en', 'cb_user_not_found'), show_alert=True)
             return
+        language = normalize_language(user.language)
         
         # Get user's active card
         game = await sync_to_async(Game.objects.filter(state__in=['waiting', 'playing']).first)()
         if not game:
-            await callback.answer("❌ No active game!", show_alert=True)
+            await callback.answer(tr(language, 'cb_no_active_game'), show_alert=True)
             return
         
         user_card = await get_user_card_in_game(game, user)
         if not user_card:
-            await callback.answer("❌ You don't have a card in this game!", show_alert=True)
+            await callback.answer(tr(language, 'cb_no_card_in_game'), show_alert=True)
             return
         
         # Validate BINGO
@@ -435,26 +438,27 @@ async def claim_bingo(callback: CallbackQuery):
             await sync_to_async(user.wallet.refresh_from_db)()
             
             await callback.answer(
-                f"🎉 BINGO! You won {prize} Birr!\n"
-                f"Pattern: {pattern}",
+                tr(language, 'cb_bingo_win_alert', prize=prize, pattern=pattern),
                 show_alert=True
             )
             
             # Show win message
             await callback.message.answer(
-                f"<b>🏆 CONGRATULATIONS! 🏆</b>\n\n"
-                f"You won Game #{game.id}!\n"
-                f"Pattern: {pattern}\n"
-                f"Prize: {prize} Birr\n\n"
-                f"💰 Your new balance: {user.wallet.total_balance} Birr",
-                reply_markup=main_menu_keyboard()
+                tr(
+                    language,
+                    'game_win_message',
+                    game_id=game.id,
+                    pattern=pattern,
+                    prize=prize,
+                    total_balance=user.wallet.total_balance,
+                ),
+                reply_markup=main_menu_keyboard(normalize_language(user.language))
             )
         else:
             await callback.answer(
-                "❌ Not a valid BINGO yet!\n"
-                "Keep playing and wait for more numbers.",
+                tr(language, 'cb_bingo_invalid'),
                 show_alert=True
             )
     
     except Exception as e:
-        await callback.answer(f"❌ Error: {str(e)}", show_alert=True)
+        await callback.answer(tr('en', 'cb_error', error=str(e)), show_alert=True)

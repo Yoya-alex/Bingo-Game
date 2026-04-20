@@ -27,12 +27,14 @@ from game.business_rules import get_business_rules, get_countdown_seconds, get_d
 from game.engagement import claim_mission, credit_user_reward, increment_missions, touch_user_streak, RewardSafetyError
 from wallet.models import Wallet, Transaction
 from game.security import (
+    create_user_access_token,
     get_request_access_token,
     rate_limit,
     require_path_telegram_auth,
     require_valid_web_token,
     verify_user_access_token,
 )
+from bot.utils.url_helpers import build_react_url, can_use_telegram_button_url
 import json
 import logging
 from urllib import error as urllib_error
@@ -104,15 +106,19 @@ def _notify_admins_hidden_promo_claim(claim):
             continue
 
 
-def _send_telegram_text_message(chat_id, text):
+def _send_telegram_text_message(chat_id, text, reply_markup=None):
     bot_token = (getattr(settings, 'BOT_TOKEN', '') or '').strip()
     if not bot_token or not chat_id or not text:
         return False
 
-    payload = json.dumps({
+    payload_data = {
         'chat_id': int(chat_id),
         'text': text,
-    }).encode('utf-8')
+    }
+    if reply_markup:
+        payload_data['reply_markup'] = reply_markup
+
+    payload = json.dumps(payload_data).encode('utf-8')
     req = urllib_request.Request(
         url=f'https://api.telegram.org/bot{bot_token}/sendMessage',
         data=payload,
@@ -165,9 +171,21 @@ def notify_lonely_waiting_players(game, joined_user, delay_minutes):
         f"Please rejoin now. The game can start in about {total_wait_seconds} seconds."
     )
 
+    def _send_notification(chat_id):
+        access_token = create_user_access_token(chat_id)
+        play_url = build_react_url('/', telegram_id=chat_id, token=access_token)
+        reply_markup = None
+        if can_use_telegram_button_url(play_url):
+            reply_markup = {
+                'inline_keyboard': [[
+                    {'text': '▶️ Play Now', 'url': play_url},
+                ]]
+            }
+        _send_telegram_text_message(chat_id, message, reply_markup=reply_markup)
+
     transaction.on_commit(
         lambda: [
-            _send_telegram_text_message(chat_id, message)
+            _send_notification(chat_id)
             for chat_id in recipient_ids
         ]
     )
