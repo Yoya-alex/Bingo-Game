@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import HomePage from "./pages/HomePage.jsx";
 import LobbyPage from "./pages/LobbyPage.jsx";
@@ -8,22 +8,7 @@ import TrophyPage from "./pages/TrophyPage.jsx";
 import WalletPage from "./pages/WalletPage.jsx";
 import EngagementPage from "./pages/EngagementPage.jsx";
 import { bootstrapAuthToken } from "./utils/auth.js";
-import { useI18n } from "./i18n/LanguageContext.jsx";
-
-const THEME_KEY = "bingo-theme";
-
-function getInitialTheme() {
-  if (typeof window === "undefined") {
-    return "dark";
-  }
-
-  const savedTheme = window.localStorage.getItem(THEME_KEY);
-  if (savedTheme === "light" || savedTheme === "dark") {
-    return savedTheme;
-  }
-
-  return "dark";
-}
+import SettingsButton from "./components/SettingsButton.jsx";
 
 function buildHomeTargetFromQuery() {
   if (typeof window === "undefined") {
@@ -42,32 +27,13 @@ function buildHomeTargetFromQuery() {
 }
 
 export default function App() {
-  const [theme, setTheme] = useState(getInitialTheme);
-  const { language, toggleLanguage, t } = useI18n();
-  const nextLanguage = language === "en" ? "am" : language === "am" ? "om" : "en";
-  const nextLanguageLabel = nextLanguage === "en" ? t("app.englishShort") : nextLanguage === "am" ? t("app.amharicShort") : t("app.oromoShort");
-
   useEffect(() => {
     bootstrapAuthToken();
   }, []);
 
-  useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
-    window.localStorage.setItem(THEME_KEY, theme);
-  }, [theme]);
-
-  function toggleTheme() {
-    setTheme((prevTheme) => (prevTheme === "dark" ? "light" : "dark"));
-  }
-
   return (
     <>
-      <button className="theme-toggle language-toggle" type="button" onClick={toggleLanguage} aria-label={t("app.languageToggle")}>
-        🌐 {nextLanguageLabel}
-      </button>
-      <button className="theme-toggle mode-toggle" type="button" onClick={toggleTheme} aria-label={t("app.toggleNightMode")}>
-        {theme === "dark" ? `☀️ ${t("app.light")}` : `🌙 ${t("app.night")}`}
-      </button>
+      <SettingsButton />
       <Routes>
         <Route path="/" element={<Navigate to={buildHomeTargetFromQuery()} replace />} />
         <Route path="/home/:telegramId" element={<HomePage />} />

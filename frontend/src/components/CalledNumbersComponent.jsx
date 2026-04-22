@@ -5,6 +5,21 @@ export default function CalledNumbersComponent({ calledNumbers, maxNumber = 400,
   const { t } = useI18n();
   const calledSet = useMemo(() => new Set(calledNumbers || []), [calledNumbers]);
   const currentNumber = calledNumbers?.length ? Number(calledNumbers[calledNumbers.length - 1]) : null;
+  const currentCallParts = useMemo(() => {
+    if (!Number.isFinite(currentNumber)) {
+      return null;
+    }
+
+    const limit = Math.max(5, Number(maxNumber) || 400);
+    const step = Math.max(1, Math.floor(limit / 5));
+    const letters = ["B", "I", "N", "G", "O"];
+    const index = Math.min(4, Math.max(0, Math.floor((currentNumber - 1) / step)));
+    return {
+      letter: letters[index],
+      number: currentNumber,
+    };
+  }, [currentNumber, maxNumber]);
+
   const columns = useMemo(() => {
     const limit = Math.max(1, Number(maxNumber) || 400);
     const step = Math.floor(limit / 5);
@@ -27,6 +42,21 @@ export default function CalledNumbersComponent({ calledNumbers, maxNumber = 400,
   return (
     <section className="component" id="calledNumbersComponent">
       <div className="component-title">{t("calledNumbers.title")}</div>
+      <div className="stat-strip current-call called-current-strip">
+        <div className="stat-item current-call-item">
+          <span className="current-call-label">{t("common.currentCall")}</span>
+          <div className="stat-value current-call-value">
+            {currentCallParts ? (
+              <span className="call-badge">
+                <span className="call-letter">{currentCallParts.letter}</span>
+                <span className="call-value">{currentCallParts.number}</span>
+              </span>
+            ) : (
+              "-"
+            )}
+          </div>
+        </div>
+      </div>
       <div className="called-board">
         {columns.map((column) => (
           <div key={column.letter} className="called-column">

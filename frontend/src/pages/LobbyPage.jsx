@@ -2,13 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { fetchJson, postJson } from "../api/client.js";
 import { withAuthPath } from "../utils/auth.js";
-import HeaderComponent from "../components/HeaderComponent.jsx";
 import CardSelectionComponent from "../components/CardSelectionComponent.jsx";
 import BingoGridComponent from "../components/BingoGridComponent.jsx";
 import CalledNumbersComponent from "../components/CalledNumbersComponent.jsx";
 import SpectatorViewComponent from "../components/SpectatorViewComponent.jsx";
 import WinnerAnnouncementComponent from "../components/WinnerAnnouncementComponent.jsx";
-import ActionButtonsComponent from "../components/ActionButtonsComponent.jsx";
 import NotificationComponent from "../components/NotificationComponent.jsx";
 import { useI18n } from "../i18n/LanguageContext.jsx";
 
@@ -260,9 +258,12 @@ export default function LobbyPage() {
     };
   }, [data.game?.state, telegramId]);
 
+  const countdownValue = displayState === "waiting" && displayCountdown > 0 ? displayCountdown : "-";
+  const showCountdownBox = Boolean(data.user_card?.grid) && displayState === "waiting" && displayCountdown > 0;
+
   const stats = [
-    { label: t("common.state"), value: displayState.toUpperCase() },
-    { label: t("common.count"), value: displayState === "waiting" && displayCountdown > 0 ? displayCountdown : "-" },
+    { label: "Derash", value: `${data.stake || preferredStake} Birr` },
+    { label: t("common.walletBalance"), value: `${data.wallet_balance || 0} Birr` },
     { label: t("common.players"), value: data.total_players },
     { label: t("common.medeb"), value: `${data.stake || preferredStake} Birr` },
   ];
@@ -281,28 +282,41 @@ export default function LobbyPage() {
   }
 
   return (
-    <div className="app-shell">
+    <div className="app-shell lobby-page">
       <div className="app-card">
-        <HeaderComponent
-          title={t("lobby.title")}
-          subtitle={t("lobby.subtitle", {
-            id: data.game?.id ?? "-",
-            name: data.user?.first_name ?? t("common.player"),
-            balance: data.wallet_balance,
-          })}
-          stats={stats}
-        />
-
-        <NotificationComponent notification={notification} />
-
         <div className="page-actions">
-          <button type="button" className="btn btn-secondary" onClick={handleBackToHome}>
-            {t("common.backToHome")}
+          <button type="button" className="btn btn-secondary lobby-back-btn" onClick={handleBackToHome}>
+            Back
           </button>
         </div>
 
+        <div className="component stat-strip">
+          {stats.map((stat) => (
+            <div className="stat-item" key={stat.label}>
+              <span>{stat.label}</span>
+              <div className="stat-value">{stat.value}</div>
+            </div>
+          ))}
+        </div>
+
+        <NotificationComponent notification={notification} />
+
         <div className="grid-layout">
-          {data.user_card?.grid && <BingoGridComponent grid={data.user_card.grid} interactive={false} />}
+          {data.user_card?.grid && (
+            <>
+              {showCountdownBox && (
+                <section className="component lobby-countdown-box is-active" aria-live="polite" aria-atomic="true">
+                  <div className="lobby-countdown-message" key={countdownValue}>
+                    <span className="lobby-countdown-text">The game starting in</span>
+                    <span className="lobby-countdown-clock" aria-hidden="true">⏰</span>
+                    <span className="lobby-countdown-seconds">{countdownValue}</span>
+                    <span className="lobby-countdown-text">seconds</span>
+                  </div>
+                </section>
+              )}
+              <BingoGridComponent grid={data.user_card.grid} interactive={false} />
+            </>
+          )}
           {data.game?.state !== "playing" && (
             <CardSelectionComponent
               numbers={data.all_numbers}
@@ -314,12 +328,6 @@ export default function LobbyPage() {
           {data.game?.state === "playing" && <CalledNumbersComponent calledNumbers={calledNumbers} maxNumber={400} />}
           {data.game?.state === "playing" && <SpectatorViewComponent />}
         </div>
-
-        <ActionButtonsComponent
-          state={displayState}
-          hasCard={hasCard}
-          onSelectCard={() => document.getElementById("cardSelectionComponent")?.scrollIntoView({ behavior: "smooth" })}
-        />
 
         <NotificationComponent notification={notification} />
       </div>
