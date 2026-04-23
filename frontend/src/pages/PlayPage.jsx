@@ -22,7 +22,9 @@ export default function PlayPage() {
   const [notification, setNotification] = useState(EMPTY_NOTIFICATION);
   const [finishCountdown, setFinishCountdown] = useState(null);
   const [voiceSupported, setVoiceSupported] = useState(true);
+  const [autoPlayEnabled, setAutoPlayEnabled] = useState(false);
   const voiceManagerRef = useRef(null);
+  const lastAutoMarkRef = useRef(null);
   const [state, setState] = useState({
     user: null,
     game: null,
@@ -51,6 +53,17 @@ export default function PlayPage() {
   const hasCard = Boolean(state.card?.card_number);
   const displayState = !hasCard && state.game?.state === "playing" ? "watching" : state.game?.state;
   const shouldConfirmQuit = state.game?.state === "playing" && hasCard;
+  const currentCallParts = useMemo(() => {
+    if (!Number.isFinite(currentCall)) {
+      return null;
+    }
+
+    const limit = Math.max(5, Number(state.bingo_number_max) || 400);
+    const step = Math.max(1, Math.floor(limit / 5));
+    const letters = ["B", "I", "N", "G", "O"];
+    const index = Math.min(4, Math.max(0, Math.floor((currentCall - 1) / step)));
+    return { letter: letters[index], number: currentCall };
+  }, [currentCall, state.bingo_number_max]);
 
   const derashAmount = useMemo(() => {
     const stakeAmount = Number(state.game?.stake_amount || 10);
@@ -231,12 +244,64 @@ export default function PlayPage() {
     };
   }, [shouldConfirmQuit, telegramId, t]);
 
+  // Check if a set of marked numbers forms a winning bingo pattern on the grid
+  function checkBingoWin(grid, markedSet) {
+    const SIZE = 5;
+    // rows
+    for (let r = 0; r < SIZE; r++) {
+      if (grid[r].every((cell) => cell === null || markedSet.has(Number(cell)))) return true;
+    }
+    // columns
+    for (let c = 0; c < SIZE; c++) {
+      if (grid.every((row) => row[c] === null || markedSet.has(Number(row[c])))) return true;
+    }
+    // main diagonal
+    if (grid.every((row, i) => row[i] === null || markedSet.has(Number(row[i])))) return true;
+    // anti diagonal
+    if (grid.every((row, i) => row[SIZE - 1 - i] === null || markedSet.has(Number(row[SIZE - 1 - i])))) return true;
+    return false;
+  }
+
+  useEffect(() => {
+    if (!autoPlayEnabled || !hasCard || state.game?.state !== "playing") {
+      return;
+    }
+
+    const grid = state.card?.grid;
+    if (!grid?.length) return;
+
+    const gridNumbers = grid.flat().filter((value) => value != null);
+    if (!gridNumbers.length) return;
+
+    const gridSet = new Set(gridNumbers.map((value) => Number(value)));
+    const markedSet = new Set(markedNumbers.map((v) => Number(v)));
+
+    // Mark all called numbers on the card that haven't been marked yet
+    const unmarkedCalled = calledNumbers.filter(
+      (value) => gridSet.has(Number(value)) && !markedSet.has(Number(value))
+    );
+
+    if (unmarkedCalled.length > 0) {
+      const nextNumber = unmarkedCalled[unmarkedCalled.length - 1];
+      if (lastAutoMarkRef.current !== nextNumber) {
+        lastAutoMarkRef.current = nextNumber;
+        markCurrentNumber(nextNumber);
+      }
+      return;
+    }
+
+    // All callable numbers are marked — check for a win
+    if (checkBingoWin(grid, markedSet)) {
+      claimBingo();
+    }
+  }, [autoPlayEnabled, calledNumbers, hasCard, markedNumbers, state.game?.state, state.card?.grid]);
+
   const stats = useMemo(() => {
     return [
       { label: t("common.players"), value: state.total_players },
-      {label:t("common.medeb"), value: `${state.game?.stake_amount || 10} Birr`},
+      { label: t("common.medeb"), value: `${state.game?.stake_amount || 10} Birr` },
       { label: t("common.derash"), value: derashAmount },
-      {label:t("common.called"), value: calledNumbers.length ? `${calledNumbers.length}/75` : "-"},
+      { label: t("common.called"), value: calledNumbers.length ? `${calledNumbers.length}/75` : "-" },
     ];
   }, [calledNumbers, state.total_players, derashAmount, t, state.game?.stake_amount]);
 
@@ -279,31 +344,66 @@ export default function PlayPage() {
 
         <NotificationComponent notification={notification} />
         <div className="grid-layout">
-          {hasCard && (
-            <BingoGridComponent
-              grid={state.card.grid}
+          <div className="called-numbers-stack">
+            <div className="stat-strip current-call play-current-strip">
+              <div className="stat-item current-call-item">
+                <div className="stat-value current-call-value">
+                  {currentCallParts ? (
+                    <span className="call-badge">
+                      <span className="call-letter">{currentCallParts.letter}</span>
+                      <span className="call-value">{currentCallParts.number}</span>
+                    </span>
+                  ) : (
+                    "-"
+                  )}
+                </div>
+              </div>
+            </div>
+            <CalledNumbersComponent
               calledNumbers={calledNumbers}
-              markedNumbers={markedNumbers}
-              markSource="marked"
-              interactive={state.game?.state === "playing"}
-              clickableNumber={state.game?.state === "playing" ? currentCall : null}
-              onSelectNumber={markCurrentNumber}
-              footer={<ActionButtonsComponent state={displayState} hasCard={hasCard} onBingo={claimBingo} />}
-              
+              maxNumber={state.bingo_number_max || 400}
+              onNumberClick={markCurrentNumber}
+              interactive={hasCard && state.game?.state === "playing"}
             />
-            
-            
-          )
-          }
+          </div>
+          {hasCard && (
+            <div className="bingo-stack">
+              <div className="auto-play-toggle">
+                <button
+                  type="button"
+                  className={`auto-play-btn${autoPlayEnabled ? " is-on" : ""}`}
+                  onClick={() => setAutoPlayEnabled((prev) => !prev)}
+                  role="switch"
+                  aria-checked={autoPlayEnabled}
+                >
+                  <span className="auto-play-label">{autoPlayEnabled ? "Automatic" : "Manual"}</span>
+                  <span className="auto-play-track" aria-hidden="true">
+                    <span className="auto-play-thumb" />
+                  </span>
+                </button>
+              </div>
+              <BingoGridComponent
+                grid={state.card.grid}
+                calledNumbers={calledNumbers}
+                markedNumbers={markedNumbers}
+                markSource="marked"
+                interactive={state.game?.state === "playing"}
+                clickableNumber={state.game?.state === "playing" ? currentCall : null}
+                onSelectNumber={markCurrentNumber}
+                footer={
+                  <ActionButtonsComponent
+                    state={displayState}
+                    hasCard={hasCard}
+                    onBingo={claimBingo}
+                    bingoLabel={autoPlayEnabled ? "AUTOMATIC" : undefined}
+                  />
+                }
+              />
+            </div>
+          )}
           {!hasCard && state.game?.state === "playing" && (
             <SpectatorViewComponent id="bingoGridComponent" title={t("play.yourBingoGrid")} />
           )}
-          <CalledNumbersComponent 
-            calledNumbers={calledNumbers} 
-            maxNumber={state.bingo_number_max || 400}
-            onNumberClick={markCurrentNumber}
-            interactive={hasCard && state.game?.state === "playing"}
-          />
         </div>
       </div>
       {state.game?.state === "finished" && (

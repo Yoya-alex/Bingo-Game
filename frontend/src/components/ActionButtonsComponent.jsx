@@ -1,6 +1,6 @@
 import { useI18n } from "../i18n/LanguageContext.jsx";
 
-export default function ActionButtonsComponent({ state, hasCard, onSelectCard, onBingo }) {
+export default function ActionButtonsComponent({ state, hasCard, onSelectCard, onBingo, bingoLabel }) {
   const { t } = useI18n();
   let content = null;
   if (state === "waiting" && !hasCard) {
@@ -18,7 +18,7 @@ export default function ActionButtonsComponent({ state, hasCard, onSelectCard, o
   } else if (state === "playing" && hasCard) {
     content = (
       <button className="btn btn-success" onClick={onBingo}>
-        {t("common.bingo")}
+        {bingoLabel || t("common.bingo")}
       </button>
     );
   } else {
