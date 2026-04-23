@@ -38,6 +38,7 @@ function normalizeLobbyPayload(payload, preferredStake) {
       prize_amount: selectedGame.prize_amount ?? selectedGame.derash ?? 0,
       winner_card: selectedGame.winner_card || null,
       user_card: selectedGame.user_card || null,
+      winner_announcement_seconds: payload?.winner_announcement_seconds ?? 3,
     };
   }
 
@@ -60,6 +61,7 @@ function normalizeLobbyPayload(payload, preferredStake) {
     prize_amount: fallbackRow?.derash || 0,
     winner_card: null,
     user_card: null,
+    winner_announcement_seconds: payload?.winner_announcement_seconds ?? 3,
   };
 }
 
@@ -91,6 +93,7 @@ export default function LobbyPage() {
     prize_amount: 0,
     winner_card: null,
     user_card: null,
+    winner_announcement_seconds: 3,
   });
   const { t } = useI18n();
 
@@ -239,7 +242,8 @@ export default function LobbyPage() {
       setFinishCountdown(null);
       return;
     }
-    let remaining = 3;
+    const durationSeconds = Math.max(1, Number(data.winner_announcement_seconds) || 3);
+    let remaining = durationSeconds;
     setFinishCountdown(remaining);
     const timer = setInterval(() => {
       remaining -= 1;
@@ -251,19 +255,19 @@ export default function LobbyPage() {
     }, 1000);
     const fallback = setTimeout(() => {
       window.location.assign(withAuthPath(`/lobby/${telegramId}`));
-    }, 3500);
+    }, (durationSeconds + 0.5) * 1000);
     return () => {
       clearInterval(timer);
       clearTimeout(fallback);
     };
-  }, [data.game?.state, telegramId]);
+  }, [data.game?.state, data.winner_announcement_seconds, telegramId]);
 
   const countdownValue = displayState === "waiting" && displayCountdown > 0 ? displayCountdown : "-";
   const showCountdownBox = Boolean(data.user_card?.grid) && displayState === "waiting" && displayCountdown > 0;
 
   const stats = [
     { label: "Derash", value: `${data.stake || preferredStake} Birr` },
-    { label: t("common.walletBalance"), value: `${data.wallet_balance || 0} Birr` },
+    { label: t("Balance"), value: `${data.wallet_balance || 0} Birr` },
     { label: t("common.players"), value: data.total_players },
     { label: t("common.medeb"), value: `${data.stake || preferredStake} Birr` },
   ];
@@ -341,6 +345,14 @@ export default function LobbyPage() {
               winnerCard={data.winner_card}
               calledNumbers={calledNumbers}
               countdown={finishCountdown}
+              gameId={data.game?.id}
+              stakeAmount={data.stake || preferredStake}
+              totalPlayers={data.total_players}
+              currentTelegramId={telegramId}
+              isCurrentUserWinner={Number(data.winner_card?.winner_telegram_id) === Number(telegramId)}
+              onPlayNextRound={() =>
+                navigate(withAuthPath(`/lobby/${telegramId}?stake=${Number(data.stake || preferredStake || 10)}`))
+              }
             />
           </div>
         </div>

@@ -39,6 +39,7 @@ export default function PlayPage() {
     winner: null,
     winner_card: null,
     countdown: 0,
+    winner_announcement_seconds: 3,
   });
   const { t } = useI18n();
   const { voiceEnabled } = useSettings();
@@ -203,7 +204,8 @@ export default function PlayPage() {
       setFinishCountdown(null);
       return;
     }
-    let remaining = 3;
+    const durationSeconds = Math.max(1, Number(state.winner_announcement_seconds) || 3);
+    let remaining = durationSeconds;
     setFinishCountdown(remaining);
     const timer = setInterval(() => {
       remaining -= 1;
@@ -215,12 +217,12 @@ export default function PlayPage() {
     }, 1000);
     const fallback = setTimeout(() => {
       window.location.assign(withAuthPath(`/lobby/${telegramId}`));
-    }, 3500);
+    }, (durationSeconds + 0.5) * 1000);
     return () => {
       clearInterval(timer);
       clearTimeout(fallback);
     };
-  }, [state.game?.state, telegramId]);
+  }, [state.game?.state, state.winner_announcement_seconds, telegramId]);
 
   useEffect(() => {
     if (!shouldConfirmQuit) {
@@ -415,6 +417,14 @@ export default function PlayPage() {
               winnerCard={state.winner_card}
               calledNumbers={calledNumbers}
               countdown={finishCountdown}
+              gameId={state.game?.id}
+              stakeAmount={state.game?.stake_amount}
+              totalPlayers={state.total_players}
+              currentTelegramId={telegramId}
+              isCurrentUserWinner={Number(state.winner_card?.winner_telegram_id) === Number(telegramId)}
+              onPlayNextRound={() =>
+                navigate(withAuthPath(`/lobby/${telegramId}?stake=${Number(state.game?.stake_amount || 10)}`))
+              }
             />
           </div>
         </div>

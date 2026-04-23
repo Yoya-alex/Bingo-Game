@@ -304,6 +304,11 @@ class BusinessRuleSettings(models.Model):
         default=25,
         validators=[MinValueValidator(5), MaxValueValidator(600)],
     )
+    winner_announcement_seconds = models.PositiveIntegerField(
+        default=3,
+        validators=[MinValueValidator(1), MaxValueValidator(120)],
+        help_text='How long the winner announcement modal stays visible before redirecting users.',
+    )
     derash_percentage = models.DecimalField(
         max_digits=5,
         decimal_places=2,
@@ -350,6 +355,7 @@ class BusinessRuleSettings(models.Model):
             'minimum_withdrawable_balance': Decimal(str(getattr(settings, 'MIN_WITHDRAWAL', 100))),
             'referral_bonus_amount': Decimal(str(getattr(settings, 'REFERRAL_REWARD', 10))),
             'countdown_seconds': int(getattr(settings, 'WAITING_TIME', 25)),
+            'winner_announcement_seconds': int(getattr(settings, 'WINNER_ANNOUNCEMENT_SECONDS', 3)),
             'derash_percentage': Decimal('80.00'),
             'system_percentage': Decimal('20.00'),
             'telebirr_receiving_phone_number': str(getattr(settings, 'TELEBIRR_NUMBER', '0912345678')),
@@ -379,6 +385,7 @@ class BusinessRuleSettings(models.Model):
             f"Business Rules (Min Withdraw: {self.minimum_withdrawable_balance}, "
             f"Referral: {self.referral_bonus_amount}, "
             f"Countdown: {self.countdown_seconds}s, "
+            f"Winner Announcement: {self.winner_announcement_seconds}s, "
             f"Derash/System: {self.derash_percentage}/{self.system_percentage})"
         )
 

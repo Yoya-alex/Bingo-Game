@@ -1028,6 +1028,115 @@ html[lang="om"] .play-page .stat-item span {
   border: 2px solid var(--winner-border);
 }
 
+.winner-card.is-self {
+  background: linear-gradient(
+    140deg,
+    color-mix(in srgb, var(--success) 26%, var(--surface-1)),
+    color-mix(in srgb, var(--success) 12%, var(--surface-2))
+  );
+  border-color: color-mix(in srgb, var(--success) 58%, var(--border-soft));
+  box-shadow: 0 14px 30px color-mix(in srgb, var(--success) 18%, transparent);
+}
+
+.winner-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.winner-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  color: color-mix(in srgb, var(--success) 84%, var(--ink-1));
+  background: color-mix(in srgb, var(--success) 20%, transparent);
+  border: 1px solid color-mix(in srgb, var(--success) 44%, transparent);
+}
+
+.winner-label {
+  font-size: 1.35rem;
+  font-weight: 800;
+  margin-bottom: 10px;
+}
+
+.winner-metadata {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.winner-chip {
+  font-size: 0.75rem;
+  padding: 5px 10px;
+  border-radius: 999px;
+  color: var(--ink-2);
+  background: color-mix(in srgb, var(--surface-1) 78%, transparent);
+  border: 1px solid var(--border-soft);
+}
+
+.winner-breakdown {
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--surface-1) 82%, transparent);
+  margin-bottom: 10px;
+}
+
+.winner-breakdown-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.94rem;
+  color: var(--ink-1);
+}
+
+.winner-breakdown-row + .winner-breakdown-row {
+  margin-top: 6px;
+}
+
+.winner-breakdown-row.muted {
+  font-size: 0.84rem;
+  color: var(--ink-2);
+}
+
+.winner-patterns {
+  margin-top: 0;
+}
+
+.winner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.winner-action-btn {
+  border: 1px solid var(--border-soft);
+  background: var(--component-bg);
+  color: var(--ink-1);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.winner-action-btn.primary {
+  background: color-mix(in srgb, var(--accent-2) 70%, #ffffff);
+  border-color: color-mix(in srgb, var(--accent-2) 70%, var(--border-soft));
+}
+
+.winner-card.is-self .winner-action-btn.primary {
+  background: color-mix(in srgb, var(--success) 72%, #ffffff);
+  border-color: color-mix(in srgb, var(--success) 58%, var(--border-soft));
+}
+
 .modal {
   position: fixed;
   inset: 0;
@@ -1439,6 +1548,10 @@ html[lang="om"] .play-page .stat-item span {
   width: 100%;
   display: flex;
   justify-content: center;
+}
+
+.play-page .stat-strip.current-call {
+  margin-top: 0;
 }
 
 .play-page .current-call-item {

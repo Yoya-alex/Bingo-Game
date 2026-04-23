@@ -23,7 +23,13 @@ from game.models import (
     Season,
     UserMissionProgress,
 )
-from game.business_rules import get_business_rules, get_countdown_seconds, get_derash_multiplier, get_system_multiplier
+from game.business_rules import (
+    get_business_rules,
+    get_countdown_seconds,
+    get_derash_multiplier,
+    get_system_multiplier,
+    get_winner_announcement_seconds,
+)
 from game.engagement import claim_mission, credit_user_reward, increment_missions, touch_user_streak, RewardSafetyError
 from wallet.models import Wallet, Transaction
 from game.security import (
@@ -403,6 +409,7 @@ def get_winner_card_payload(game):
         'grid': winner_card.get_grid(),
         'winner_name': game.winner.first_name,
         'winner_username': game.winner.username if game.winner.username else None,
+        'winner_telegram_id': game.winner.telegram_id,
     }
 
 
@@ -756,6 +763,7 @@ def lobby_state_api(request, telegram_id):
         'selected_game': selected_game_payload,
         'server_time': timezone.now().isoformat(),
         'number_call_interval': settings.NUMBER_CALL_INTERVAL,
+        'winner_announcement_seconds': get_winner_announcement_seconds(),
         'wallet_balance': float(user.wallet.total_balance),
         'all_numbers': list(range(1, settings.CARD_COUNT + 1)),
     })
@@ -798,6 +806,7 @@ def play_state_api(request, telegram_id, game_id):
         },
         'server_time': timezone.now().isoformat(),
         'number_call_interval': settings.NUMBER_CALL_INTERVAL,
+        'winner_announcement_seconds': get_winner_announcement_seconds(),
         'card': {
             'card_number': user_card.card_number,
             'grid': grid,
