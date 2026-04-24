@@ -183,7 +183,7 @@ ADMIN_LOGIN_TOKEN = os.getenv('ADMIN_LOGIN_TOKEN', '').strip()
 
 # React UI Configuration
 USE_REACT_UI = os.getenv('USE_REACT_UI', 'True') == 'True'
-REACT_APP_URL = os.getenv('REACT_APP_URL', 'https://bingo-game-1-5kj6.onrender.com')
+REACT_APP_URL = os.getenv('REACT_APP_URL', 'https://okbingogame.work.gd')
 ALLOW_LOCALHOST_TELEGRAM_BUTTON_URL = env_bool('ALLOW_LOCALHOST_TELEGRAM_BUTTON_URL', False)
 ALLOW_PRIVATE_IP_TELEGRAM_BUTTON_URL = env_bool('ALLOW_PRIVATE_IP_TELEGRAM_BUTTON_URL', DEBUG)
 WEB_ONLINE_TIMEOUT_SECONDS = int(os.getenv('WEB_ONLINE_TIMEOUT_SECONDS', 45))

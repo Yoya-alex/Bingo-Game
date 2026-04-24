@@ -1643,7 +1643,7 @@ html[lang="om"] .play-page .stat-item span {
 
   .current-call-value .call-letter,
   .current-call-value .call-value {
-    font-size: 1.7rem;
+    font-size: 1.25rem;
     min-width: 40px;
     padding: 8px 10px;
   }
