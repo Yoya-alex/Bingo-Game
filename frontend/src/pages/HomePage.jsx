@@ -23,7 +23,6 @@ export default function HomePage() {
   const zeroSyncRef = useRef({});
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState(EMPTY_NOTIFICATION);
-  const [showInfoModal, setShowInfoModal] = useState(false);
   const [activeGuideIndex, setActiveGuideIndex] = useState(0);
   const [displayCountdowns, setDisplayCountdowns] = useState({});
   const [data, setData] = useState({
@@ -266,14 +265,11 @@ export default function HomePage() {
   }, [syncLobbyState]);
 
   useEffect(() => {
-    if (!showInfoModal) {
-      return undefined;
-    }
     const patternTimer = setInterval(() => {
       setActiveGuideIndex((prev) => (prev + 1) % guidePatterns.length);
     }, 1400);
     return () => clearInterval(patternTimer);
-  }, [guidePatterns.length, showInfoModal]);
+  }, [guidePatterns.length]);
 
   useEffect(() => {
     pollRef.current = setInterval(() => {
@@ -432,14 +428,73 @@ export default function HomePage() {
         </section>
 
         <div className="lobby-info-actions">
-          <button type="button" className="game-info-btn" onClick={() => setShowInfoModal(true)}>
-            {t("home.gameInformation")}
-          </button>
-          <button type="button" className="game-info-btn" onClick={() => navigate(withAuthPath(`/engagement/${telegramId}`))}>
-            {t("home.engagementCenter")}
-          </button>
           <p className="lobby-sync-note">{t("home.liveUpdatesEvery", { seconds: POLL_MS / 1000 })}</p>
         </div>
+
+        <section className="component home-game-info-section" aria-label={t("home.gameInfoDialogAria")}>
+          <h2 className="component-title">{t("home.gameInfoTitle")}</h2>
+          <div className="game-info-live-grid">
+            <section className="game-info-panel card-panel" aria-label={t("home.cardWinGuideAria")}>
+              <div className="bingo-preview-header">
+                <h3>{t("home.winningPreview")}</h3>
+                <p>{t("home.animatedBoxes")}</p>
+              </div>
+              <div className="bingo-preview-card-wrap">
+                <div className="bingo-preview-card" role="img" aria-label={t("home.previewCardAria")}>
+                  <div className="bingo-preview-labels">
+                    {['B', 'I', 'N', 'G', 'O'].map((letter) => (
+                      <span key={letter}>{letter}</span>
+                    ))}
+                  </div>
+                  <div className="bingo-preview-grid">
+                    {previewCard.flat().map((value, index) => (
+                      <div
+                        key={`${index}-${String(value)}`}
+                        className={`bingo-preview-cell ${value === "FREE" ? "free" : ""} ${isWinningPreviewCell(index, activeGuidePattern) ? "win-guide-active" : ""}`}
+                      >
+                        {value}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section className="game-info-panel" aria-label={t("home.currentSnapshotAria")}>
+              <div className="game-info-status-row">
+                <span className={`status-chip status-${infoContext.state}`}>{infoContext.statusLabel}</span>
+                <span className="game-info-live-pill">{t("home.liveSync")}</span>
+              </div>
+              <div className="game-info-metrics">
+                <article className="game-info-metric-card">
+                  <span>{t("home.roundStatus")}</span>
+                  <strong>{infoContext.state === "playing" ? t("common.playing") : t("common.waiting")}</strong>
+                </article>
+                <article className="game-info-metric-card">
+                  <span>{t("home.activePlayers")}</span>
+                  <strong>{infoContext.players}</strong>
+                </article>
+                <article className="game-info-metric-card">
+                  <span>{t("home.medb")}</span>
+                  <strong>{formatBirr(infoContext.stake)}</strong>
+                </article>
+                <article className="game-info-metric-card">
+                  <span>{t("home.currentDerash")}</span>
+                  <strong>{formatBirr(infoContext.derash)}</strong>
+                </article>
+                <article className="game-info-metric-card wide">
+                  <span>{t("home.countdown")}</span>
+                  <strong>{infoContext.state === "waiting" ? `${infoContext.countdown}s` : t("common.roundInProgress")}</strong>
+                </article>
+              </div>
+              <div className="rules-content game-info-rules">
+                <p>{t("home.chooseTier")}</p>
+                <p>{t("home.firstPlayerWins")}</p>
+                <p>{t("home.winLines")}</p>
+              </div>
+            </section>
+          </div>
+        </section>
 
         <nav className="bottom-nav" aria-label={t("profile.bottomNavigationAria")}>
           <button type="button" className="bottom-nav-item active">
@@ -465,82 +520,6 @@ export default function HomePage() {
         </nav>
       </div>
 
-      {showInfoModal && (
-        <div className="modal" role="dialog" aria-modal="true" aria-label={t("home.gameInfoDialogAria")}>
-          <div className="modal-card wide lobby-modal-card">
-            <button
-              type="button"
-              className="modal-close"
-              onClick={() => setShowInfoModal(false)}
-              aria-label={t("common.close")}
-            >
-              X
-            </button>
-            <h2 className="component-title">{t("home.gameInfoTitle")}</h2>
-            <div className="game-info-live-grid">
-              <section className="game-info-panel card-panel" aria-label={t("home.cardWinGuideAria")}>
-                <div className="bingo-preview-header">
-                  <h3>{t("home.winningPreview")}</h3>
-                  <p>{t("home.animatedBoxes")}</p>
-                </div>
-                <div className="bingo-preview-card-wrap">
-                  <div className="bingo-preview-card" role="img" aria-label={t("home.previewCardAria")}>
-                    <div className="bingo-preview-labels">
-                      {['B', 'I', 'N', 'G', 'O'].map((letter) => (
-                        <span key={letter}>{letter}</span>
-                      ))}
-                    </div>
-                    <div className="bingo-preview-grid">
-                      {previewCard.flat().map((value, index) => (
-                        <div
-                          key={`${index}-${String(value)}`}
-                          className={`bingo-preview-cell ${value === "FREE" ? "free" : ""} ${isWinningPreviewCell(index, activeGuidePattern) ? "win-guide-active" : ""}`}
-                        >
-                          {value}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              <section className="game-info-panel" aria-label={t("home.currentSnapshotAria")}>
-                <div className="game-info-status-row">
-                  <span className={`status-chip status-${infoContext.state}`}>{infoContext.statusLabel}</span>
-                  <span className="game-info-live-pill">{t("home.liveSync")}</span>
-                </div>
-                <div className="game-info-metrics">
-                  <article className="game-info-metric-card">
-                    <span>{t("home.roundStatus")}</span>
-                    <strong>{infoContext.state === "playing" ? t("common.playing") : t("common.waiting")}</strong>
-                  </article>
-                  <article className="game-info-metric-card">
-                    <span>{t("home.activePlayers")}</span>
-                    <strong>{infoContext.players}</strong>
-                  </article>
-                  <article className="game-info-metric-card">
-                    <span>{t("home.medb")}</span>
-                    <strong>{formatBirr(infoContext.stake)}</strong>
-                  </article>
-                  <article className="game-info-metric-card">
-                    <span>{t("home.currentDerash")}</span>
-                    <strong>{formatBirr(infoContext.derash)}</strong>
-                  </article>
-                  <article className="game-info-metric-card wide">
-                    <span>{t("home.countdown")}</span>
-                    <strong>{infoContext.state === "waiting" ? `${infoContext.countdown}s` : t("common.roundInProgress")}</strong>
-                  </article>
-                </div>
-                <div className="rules-content game-info-rules">
-                  <p>{t("home.chooseTier")}</p>
-                  <p>{t("home.firstPlayerWins")}</p>
-                  <p>{t("home.winLines")}</p>
-                </div>
-              </section>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

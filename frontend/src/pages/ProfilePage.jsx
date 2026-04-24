@@ -130,7 +130,7 @@ export default function ProfilePage() {
     const stats = data.stats || {};
     const referrals = data.referrals || {};
     const items = [];
-
+    
     if ((stats.wins || 0) >= 1) {
       items.push(t("profile.achievements.firstWin"));
     }
