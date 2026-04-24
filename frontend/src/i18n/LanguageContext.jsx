@@ -9,6 +9,14 @@ function normalizeLanguage(value) {
   return SUPPORTED_LANGUAGES.includes(raw) ? raw : "";
 }
 
+function canUseSessionStorage() {
+  return typeof window !== "undefined" && typeof window.sessionStorage !== "undefined";
+}
+
+function canUseLocalStorage() {
+  return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
+}
+
 function getInitialLanguage() {
   if (typeof window === "undefined") {
     return "en";
@@ -20,8 +28,23 @@ function getInitialLanguage() {
     return fromUrl;
   }
 
-  const saved = (window.localStorage.getItem(STORAGE_KEY) || "").trim();
-  return normalizeLanguage(saved) || "en";
+  if (canUseSessionStorage()) {
+    const saved = (window.sessionStorage.getItem(STORAGE_KEY) || "").trim();
+    const normalized = normalizeLanguage(saved);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  if (canUseLocalStorage()) {
+    const saved = (window.localStorage.getItem(STORAGE_KEY) || "").trim();
+    const normalized = normalizeLanguage(saved);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return "en";
 }
 
 function resolvePath(obj, path) {
@@ -51,8 +74,8 @@ export function LanguageProvider({ children }) {
   function setLanguage(next) {
     const normalized = SUPPORTED_LANGUAGES.includes(next) ? next : "en";
     setLanguageState(normalized);
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(STORAGE_KEY, normalized);
+    if (canUseSessionStorage()) {
+      window.sessionStorage.setItem(STORAGE_KEY, normalized);
     }
   }
 
@@ -60,8 +83,20 @@ export function LanguageProvider({ children }) {
     if (typeof document !== "undefined") {
       document.documentElement.lang = language;
     }
+    if (canUseSessionStorage()) {
+      window.sessionStorage.setItem(STORAGE_KEY, language);
+    }
+    if (canUseLocalStorage()) {
+      window.localStorage.removeItem(STORAGE_KEY);
+    }
     if (typeof window !== "undefined") {
-      window.localStorage.setItem(STORAGE_KEY, language);
+      const url = new URL(window.location.href);
+      const currentUrlLanguage = normalizeLanguage(url.searchParams.get("lang") || url.searchParams.get("language"));
+      if (currentUrlLanguage !== language || url.searchParams.has("language")) {
+        url.searchParams.set("lang", language);
+        url.searchParams.delete("language");
+        window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+      }
     }
   }, [language]);
 

@@ -18,12 +18,18 @@ function buildHomeTargetFromQuery() {
   const params = new URLSearchParams(window.location.search || "");
   const telegramId = (params.get("telegram_id") || params.get("telegramId") || "0").trim() || "0";
   const token = (params.get("token") || "").trim();
+  const language = (params.get("lang") || params.get("language") || "").trim();
+  const nextParams = new URLSearchParams();
 
-  if (!token) {
-    return `/home/${telegramId}`;
+  if (token) {
+    nextParams.set("token", token);
+  }
+  if (language) {
+    nextParams.set("lang", language);
   }
 
-  return `/home/${telegramId}?token=${encodeURIComponent(token)}`;
+  const query = nextParams.toString();
+  return `/home/${telegramId}${query ? `?${query}` : ""}`;
 }
 
 export default function App() {

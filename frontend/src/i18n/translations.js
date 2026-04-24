@@ -49,6 +49,21 @@ export const translations = {
       playing: "Playing",
       close: "Close",
     },
+    winner: {
+      youWonBadge: "You won",
+      stake: "Stake",
+      totalPot: "Total pot",
+      platformFee: "Platform fee",
+      winningPattern: "Winning pattern",
+      unknownWinner: "Unknown",
+      share: "Share",
+      copied: "Copied",
+      playNextRound: "Play next round",
+      patternRow: "Row {{index}}",
+      patternColumn: "Column {{index}}",
+      patternMainDiagonal: "Main diagonal",
+      patternAntiDiagonal: "Anti diagonal",
+    },
     home: {
       brand: "Ok Bingo",
       welcomeBack: "Welcome back, {{name}}",
@@ -896,4 +911,36 @@ export const translations = {
       ends: "Xumura",
     },
   },
+};
+
+translations.am.winner = {
+  youWonBadge: "እርስዎ አሸንፈዋል",
+  stake: "መደብ",
+  totalPot: "ጠቅላላ ድርሻ",
+  platformFee: "የስርዓት ክፍያ",
+  winningPattern: "የአሸናፊ ንድፍ",
+  unknownWinner: "ያልታወቀ",
+  share: "አጋራ",
+  copied: "ተቀድቷል",
+  playNextRound: "ቀጣይ ዙር ይጫወቱ",
+  patternRow: "ረድፍ {{index}}",
+  patternColumn: "አምድ {{index}}",
+  patternMainDiagonal: "ዋና ሰያፍ",
+  patternAntiDiagonal: "ተቃራኒ ሰያፍ",
+};
+
+translations.om.winner = {
+  youWonBadge: "Ati injifatte",
+  stake: "Medeeb",
+  totalPot: "Walitti qabama hundaa",
+  platformFee: "Kaffaltii sirna",
+  winningPattern: "Fakkeenya injifannoo",
+  unknownWinner: "Hin beekamne",
+  share: "Qoodi",
+  copied: "Koppii ta'eera",
+  playNextRound: "Marsaa itti aanu taphadhu",
+  patternRow: "Tarree {{index}}",
+  patternColumn: "Tarjaa {{index}}",
+  patternMainDiagonal: "Diyaagonaalii guddaa",
+  patternAntiDiagonal: "Diyaagonaalii faallaa",
 };

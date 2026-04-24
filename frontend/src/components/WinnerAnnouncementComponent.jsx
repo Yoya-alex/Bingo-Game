@@ -20,21 +20,21 @@ function detectWinningPatterns(grid, calledNumbers = []) {
 
   for (let row = 0; row < 5; row += 1) {
     if ([0, 1, 2, 3, 4].every((col) => isMarked(row, col))) {
-      patterns.push(`Row ${row + 1}`);
+      patterns.push({ type: "row", index: row + 1 });
     }
   }
 
   for (let col = 0; col < 5; col += 1) {
     if ([0, 1, 2, 3, 4].every((row) => isMarked(row, col))) {
-      patterns.push(`Column ${col + 1}`);
+      patterns.push({ type: "column", index: col + 1 });
     }
   }
 
   if ([0, 1, 2, 3, 4].every((index) => isMarked(index, index))) {
-    patterns.push("Main diagonal");
+    patterns.push({ type: "mainDiagonal" });
   }
   if ([0, 1, 2, 3, 4].every((index) => isMarked(index, 4 - index))) {
-    patterns.push("Anti diagonal");
+    patterns.push({ type: "antiDiagonal" });
   }
 
   return patterns;
@@ -53,7 +53,7 @@ export default function WinnerAnnouncementComponent({
   isCurrentUserWinner,
   onPlayNextRound,
 }) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [shareCopied, setShareCopied] = useState(false);
 
   const winnerTelegramId = Number(winnerCard?.winner_telegram_id);
@@ -77,20 +77,47 @@ export default function WinnerAnnouncementComponent({
     [winnerCard?.grid, calledNumbers]
   );
 
+  const localizedWinningPatterns = useMemo(
+    () =>
+      winningPatterns.map((pattern) => {
+        if (pattern?.type === "row") {
+          return t("winner.patternRow", { index: pattern.index });
+        }
+        if (pattern?.type === "column") {
+          return t("winner.patternColumn", { index: pattern.index });
+        }
+        if (pattern?.type === "mainDiagonal") {
+          return t("winner.patternMainDiagonal");
+        }
+        if (pattern?.type === "antiDiagonal") {
+          return t("winner.patternAntiDiagonal");
+        }
+        return "";
+      }).filter(Boolean),
+    [t, winningPatterns]
+  );
+
   const prizeFormatter = useMemo(
     () =>
-      new Intl.NumberFormat("en-US", {
+      new Intl.NumberFormat(
+        {
+          am: "am-ET",
+          om: "om-ET",
+          en: "en-US",
+        }[language] || "en-US",
+        {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
-      }),
-    []
+        }
+      ),
+    [language]
   );
 
   async function handleShare() {
     const summary = [
-      `Winner: ${displayName || "Unknown"}`,
-      `Prize: ${prizeFormatter.format(normalizedPrize)} Birr`,
-      Number.isFinite(Number(gameId)) ? `Game #${gameId}` : null,
+      `${t("common.winnerAnnouncement")}: ${displayName || t("winner.unknownWinner")}`,
+      `${t("common.prize")}: ${prizeFormatter.format(normalizedPrize)} Birr`,
+      Number.isFinite(Number(gameId)) ? `${t("common.game")} #${gameId}` : null,
     ]
       .filter(Boolean)
       .join(" | ");
@@ -110,15 +137,15 @@ export default function WinnerAnnouncementComponent({
     <section className={`component winner-card${resolvedIsWinner ? " is-self" : ""}`} id="winnerAnnouncementComponent">
       <div className="winner-header">
         <div className="component-title">{t("common.winnerAnnouncement")}</div>
-        {resolvedIsWinner && <span className="winner-badge">You won</span>}
+        {resolvedIsWinner && <span className="winner-badge">{t("winner.youWonBadge")}</span>}
       </div>
 
       <div className="winner-label">{label}</div>
 
       <div className="winner-metadata">
-        {Number.isFinite(Number(gameId)) && <span className="winner-chip">Game #{gameId}</span>}
-        {Number.isFinite(normalizedStake) && <span className="winner-chip">Stake {normalizedStake} Birr</span>}
-        {Number.isFinite(normalizedPlayers) && <span className="winner-chip">Players {normalizedPlayers}</span>}
+        {Number.isFinite(Number(gameId)) && <span className="winner-chip">{t("common.game")} #{gameId}</span>}
+        {Number.isFinite(normalizedStake) && <span className="winner-chip">{t("winner.stake")} {normalizedStake} Birr</span>}
+        {Number.isFinite(normalizedPlayers) && <span className="winner-chip">{t("common.players")} {normalizedPlayers}</span>}
       </div>
 
       <div className="winner-breakdown">
@@ -128,20 +155,20 @@ export default function WinnerAnnouncementComponent({
         </div>
         {totalPot !== null && (
           <div className="winner-breakdown-row muted">
-            <span>Total pot</span>
+            <span>{t("winner.totalPot")}</span>
             <span>{prizeFormatter.format(totalPot)} Birr</span>
           </div>
         )}
         {platformFee !== null && (
           <div className="winner-breakdown-row muted">
-            <span>Platform fee</span>
+            <span>{t("winner.platformFee")}</span>
             <span>{prizeFormatter.format(platformFee)} Birr</span>
           </div>
         )}
       </div>
 
-      {!!winningPatterns.length && (
-        <p className="subtitle winner-patterns">Winning pattern: {winningPatterns.join(", ")}</p>
+      {!!localizedWinningPatterns.length && (
+        <p className="subtitle winner-patterns">{t("winner.winningPattern")}: {localizedWinningPatterns.join(", ")}</p>
       )}
 
       {Number.isFinite(countdown) && countdown >= 0 && (
@@ -150,10 +177,10 @@ export default function WinnerAnnouncementComponent({
 
       <div className="winner-actions">
         <button type="button" className="winner-action-btn" onClick={handleShare}>
-          {shareCopied ? "Copied" : "Share"}
+          {shareCopied ? t("winner.copied") : t("winner.share")}
         </button>
         <button type="button" className="winner-action-btn primary" onClick={onPlayNextRound}>
-          Play next round
+          {t("winner.playNextRound")}
         </button>
       </div>
 
