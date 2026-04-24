@@ -103,7 +103,7 @@ export const translations = {
       chooseTier: "Choose your MEDB tier and join a live round from the lobby table.",
       firstPlayerWins: "First player to complete a valid line wins the DERASH prize.",
       winLines: "Winning line can be horizontal, vertical, or diagonal.",
-      winningPreview: "Winning Patterns Preview",
+      winningPreview: "How to win?",
       animatedBoxes: "Animated boxes show possible Bingo wins.",
     },
     lobby: {
@@ -402,8 +402,8 @@ export const translations = {
       chooseTier: "የመደብ ደረጃዎን ይምረጡ እና ከሎቢ ሰንጠረዥ ወደ ቀጥታ ዙር ይግቡ።",
       firstPlayerWins: "የተሟላ መስመር የመጀመሪያ የሚያገኝ ተጫዋች የደራሽ ሽልማት ያሸንፋል።",
       winLines: "የአሸናፊ መስመር አግድም፣ ቁመት ወይም ሰያፍ ሊሆን ይችላል።",
-      winningPreview: "የአሸናፊ ንድፎች ቅድመ እይታ",
-      animatedBoxes: "አኒሜትድ ሳጥኖች የሚቻሉ የቢንጎ አሸናፊ ንድፎችን ያሳያሉ።",
+      winningPreview: "ጨዋታውን እንዴት ማሸነፍ ይቻላል?",
+      animatedBoxes: "ከታች ያሉት አኒሚሽኖች መስመሩ እንዴት ሲሆን ማሸነፍ እንደሚቻል ያሳያሉ",
     },
     lobby: {
       title: "የቢንጎ ሎቢ",
@@ -467,12 +467,12 @@ export const translations = {
       calledClickToMark: "የተጠራ {{number}} (ለምልክት ይጫኑ)",
     },
     profile: {
-      loading: "መገለጫ በመጫን ላይ...",
+      loading: "መገለጫ በማስጀመር ላይ...",
       title: "መገለጫ",
       noUsername: "የተጠቃሚ ስም የለም",
       telegram: "ቴሌግራም",
       joined: "የተቀላቀለበት",
-      walletSummary: "የቦርሳ ማጠቃለያ",
+      walletSummary: "አጠቃላይ የገንዘቦ መረጃ",
       gameStats: "የጨዋታ ስታቲስቲክስ",
       gamesJoined: "የተቀላቀሉ ጨዋታዎች",
       wins: "ድሎች",
@@ -510,7 +510,7 @@ export const translations = {
       compactHistoryMode: "አጭር የታሪክ ሁነታ",
       support: "ድጋፍ",
       contactSupport: "ድጋፍን ያነጋግሩ",
-      reportIssue: "ችግር ሪፖርት አድርግ",
+      reportIssue: "ችግርን ያስታውቁ",
       issueReportNoted: "የችግር ሪፖርት ተመዝግቧል። እባክዎ ዝርዝር ጋር ድጋፍን ያነጋግሩ።",
       bottomNavigationAria: "የታች መጓዣ",
       achievements: {
@@ -524,7 +524,7 @@ export const translations = {
       },
     },
     trophy: {
-      loading: "የሽልማት ሰሌዳ በመጫን ላይ...",
+      loading: "የሽልማት ሰሌዳ በማስጀመር ላይ...",
       title: "ከፍተኛ አሸናፊዎች",
       leaderboardRefresh: "የደረጃ ሰሌዳ ዝመና",
       season: "ወቅት",
@@ -701,7 +701,7 @@ export const translations = {
       chooseTier: "Sadarkaa MEDB kee filadhu; gabatee lobbii irraa gara marsaa kallattiitti seeni.",
       firstPlayerWins: "Taphataan jalqaba sarara sirrii guutu badhaasa DERASH injifata.",
       winLines: "Sarari injifannoo olka'aa, dhaabbataa, ykn qaxxaamuraa ta'uu danda'a.",
-      winningPreview: "Durargii Fakkeenyota Injifannoo",
+      winningPreview: "Akkamitti injifachuuf?",
       animatedBoxes: "Saanduqa socho'an fakkeenyota injifannoo Bingo ni agarsiisu.",
     },
     lobby: {

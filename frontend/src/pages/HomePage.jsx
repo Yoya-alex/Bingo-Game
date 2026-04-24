@@ -427,12 +427,10 @@ export default function HomePage() {
           </table>
         </section>
 
-        <div className="lobby-info-actions">
-          <p className="lobby-sync-note">{t("home.liveUpdatesEvery", { seconds: POLL_MS / 1000 })}</p>
-        </div>
+      
 
         <section className="component home-game-info-section" aria-label={t("home.gameInfoDialogAria")}>
-          <h2 className="component-title">{t("home.gameInfoTitle")}</h2>
+         
           <div className="game-info-live-grid">
             <section className="game-info-panel card-panel" aria-label={t("home.cardWinGuideAria")}>
               <div className="bingo-preview-header">
@@ -460,39 +458,6 @@ export default function HomePage() {
               </div>
             </section>
 
-            <section className="game-info-panel" aria-label={t("home.currentSnapshotAria")}>
-              <div className="game-info-status-row">
-                <span className={`status-chip status-${infoContext.state}`}>{infoContext.statusLabel}</span>
-                <span className="game-info-live-pill">{t("home.liveSync")}</span>
-              </div>
-              <div className="game-info-metrics">
-                <article className="game-info-metric-card">
-                  <span>{t("home.roundStatus")}</span>
-                  <strong>{infoContext.state === "playing" ? t("common.playing") : t("common.waiting")}</strong>
-                </article>
-                <article className="game-info-metric-card">
-                  <span>{t("home.activePlayers")}</span>
-                  <strong>{infoContext.players}</strong>
-                </article>
-                <article className="game-info-metric-card">
-                  <span>{t("home.medb")}</span>
-                  <strong>{formatBirr(infoContext.stake)}</strong>
-                </article>
-                <article className="game-info-metric-card">
-                  <span>{t("home.currentDerash")}</span>
-                  <strong>{formatBirr(infoContext.derash)}</strong>
-                </article>
-                <article className="game-info-metric-card wide">
-                  <span>{t("home.countdown")}</span>
-                  <strong>{infoContext.state === "waiting" ? `${infoContext.countdown}s` : t("common.roundInProgress")}</strong>
-                </article>
-              </div>
-              <div className="rules-content game-info-rules">
-                <p>{t("home.chooseTier")}</p>
-                <p>{t("home.firstPlayerWins")}</p>
-                <p>{t("home.winLines")}</p>
-              </div>
-            </section>
           </div>
         </section>
 
