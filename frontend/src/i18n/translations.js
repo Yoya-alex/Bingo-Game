@@ -122,7 +122,7 @@ export const translations = {
       voiceUnsupportedShort: "Voice unsupported",
       voiceOn: "Voice assistant on",
       voiceOff: "Voice assistant off",
-      yourBingoGrid: "Your Bingo Grid",
+      yourBingoGrid: "Your Bingo Card",
     },
     wallet: {
       title: "Wallet",
@@ -421,7 +421,7 @@ export const translations = {
       voiceUnsupportedShort: "ድምጽ አይደገፍም",
       voiceOn: "የድምጽ እገዛ በርቷል",
       voiceOff: "የድምጽ እገዛ ጠፍቷል",
-      yourBingoGrid: "የእርስዎ የቢንጎ ግሪድ",
+      yourBingoGrid: "የእርስዎ የቢንጎ ካርድ",
     },
     wallet: {
       title: "ገንዘብ",
@@ -720,7 +720,7 @@ export const translations = {
       voiceUnsupportedShort: "Sagaleen hin deeggaramu",
       voiceOn: "Gargaarsi sagalee banameera",
       voiceOff: "Gargaarsi sagalee cufameera",
-      yourBingoGrid: "Giriidii Bingo Kee",
+      yourBingoGrid: "Kaardii Bingo Kee",
     },
     wallet: {
       title: "Qarshii",
@@ -944,3 +944,13 @@ translations.om.winner = {
   patternMainDiagonal: "Diyaagonaalii guddaa",
   patternAntiDiagonal: "Diyaagonaalii faallaa",
 };
+
+translations.en.common.balance = "Balance";
+translations.en.lobby.gameStartsIn = "The game starts in";
+translations.en.lobby.gameStartsInSuffix = "seconds";
+translations.am.common.balance = "ቀሪ";
+translations.am.lobby.gameStartsIn = "ጨዋታው በ";
+translations.am.lobby.gameStartsInSuffix = "ሰከንድ ይጀምራል";
+translations.om.common.balance = "Hafee";
+translations.om.lobby.gameStartsIn = "Taphi kun";
+translations.om.lobby.gameStartsInSuffix = "sekondii keessatti jalqaba";

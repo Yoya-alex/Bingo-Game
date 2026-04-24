@@ -18,7 +18,7 @@ export default function CardSelectionComponent({ numbers, takenSet, selectedNumb
 
   return (
     <section className="component" id="cardSelectionComponent">
-      <div className="component-title card-selection-title">select cartala</div>
+      <div className="component-title card-selection-title">{t("cardSelection.selectYourCard")}</div>
       <div className="card-grid" id="cardsGrid">
         {numbers.map((num) => (
           <CardChip

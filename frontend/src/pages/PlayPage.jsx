@@ -326,7 +326,7 @@ export default function PlayPage() {
         <div className="play-top-row">
           <div className="page-actions">
             <button type="button" className="btn btn-secondary play-back-btn" onClick={handleBackToHome}>
-              Back
+              {t("common.backToHome")}
             </button>
           </div>
           <div className="home-brand-row play-brand-row">

@@ -266,8 +266,8 @@ export default function LobbyPage() {
   const showCountdownBox = Boolean(data.user_card?.grid) && displayState === "waiting" && displayCountdown > 0;
 
   const stats = [
-    { label: "Derash", value: `${data.stake || preferredStake} Birr` },
-    { label: t("Balance"), value: `${data.wallet_balance || 0} Birr` },
+    { label: t("common.derash"), value: `${data.stake || preferredStake} Birr` },
+    { label: t("common.balance"), value: `${data.wallet_balance || 0} Birr` },
     { label: t("common.players"), value: data.total_players },
     { label: t("common.medeb"), value: `${data.stake || preferredStake} Birr` },
   ];
@@ -290,7 +290,7 @@ export default function LobbyPage() {
       <div className="app-card">
         <div className="page-actions">
           <button type="button" className="btn btn-secondary lobby-back-btn" onClick={handleBackToHome}>
-            Back
+            {t("common.backToHome")}
           </button>
         </div>
 
@@ -311,10 +311,10 @@ export default function LobbyPage() {
               {showCountdownBox && (
                 <section className="component lobby-countdown-box is-active" aria-live="polite" aria-atomic="true">
                   <div className="lobby-countdown-message" key={countdownValue}>
-                    <span className="lobby-countdown-text">The game starting in</span>
+                    <span className="lobby-countdown-text">{t("lobby.gameStartsIn")}</span>
                     <span className="lobby-countdown-clock" aria-hidden="true">⏰</span>
                     <span className="lobby-countdown-seconds">{countdownValue}</span>
-                    <span className="lobby-countdown-text">seconds</span>
+                    <span className="lobby-countdown-text">{t("lobby.gameStartsInSuffix")}</span>
                   </div>
                 </section>
               )}
