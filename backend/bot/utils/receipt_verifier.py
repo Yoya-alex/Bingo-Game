@@ -44,7 +44,7 @@ def _fetch_page(url: str) -> str:
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=120) as resp:
             return resp.read().decode("utf-8", errors="replace")
     except urllib.error.URLError as e:
         if hasattr(e, 'reason'):
