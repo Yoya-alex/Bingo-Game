@@ -43,8 +43,15 @@ def _fetch_page(url: str) -> str:
             )
         },
     )
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        return resp.read().decode("utf-8", errors="replace")
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return resp.read().decode("utf-8", errors="replace")
+    except urllib.error.URLError as e:
+        if hasattr(e, 'reason'):
+            raise urllib.error.URLError(f"Network error: {e.reason}")
+        raise
+    except Exception as e:
+        raise Exception(f"Failed to fetch receipt page: {str(e)}")
 
 
 def _strip_tags(text: str) -> str:
@@ -185,9 +192,28 @@ async def verify_receipt(text: str, transaction_id: int) -> dict:
     try:
         html = _fetch_page(url)
     except urllib.error.URLError as e:
-        return {"success": False, "message": f"❌ Could not open receipt page: {e.reason}"}
+        return {
+            "success": False,
+            "message": (
+                f"❌ Network error accessing receipt page.\n"
+                f"Error: {str(e.reason)}\n\n"
+                f"Please check:\n"
+                f"1. The receipt URL is correct\n"
+                f"2. Your internet connection\n"
+                f"3. Try again in a moment"
+            ),
+            "extracted_text": str(e)
+        }
     except Exception as e:
-        return {"success": False, "message": f"❌ Error fetching receipt: {str(e)}"}
+        return {
+            "success": False,
+            "message": (
+                f"❌ Could not verify receipt.\n"
+                f"Error: {str(e)}\n\n"
+                f"Please try again or contact support."
+            ),
+            "extracted_text": str(e)
+        }
 
     # 3. Extract fields
     credited_name = _extract_credited_name(html)

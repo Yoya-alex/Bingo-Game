@@ -195,21 +195,46 @@ async def process_deposit_confirmation(message: Message, state: FSMContext):
         except Exception:
             pass
     else:
-        # Mark transaction as rejected
-        await _reject_transaction(transaction.id, result.get("extracted_text", ""))
-        await message.answer(result["message"], reply_markup=main_menu_keyboard(), parse_mode="HTML")
-        try:
-            await send_admin_notification(
-                message.bot,
-                text=(
-                    "❌ <b>Rejected Deposit Attempt</b>\n\n"
-                    f"User: {user.first_name} (@{user.username or '—'})\n"
-                    f"Reason: {result['message']}\n"
-                    f"Transaction ID: #{transaction.id}"
-                ),
+        # Check if it's a timeout/network error
+        if "timeout" in result["message"].lower() or "network" in result["message"].lower():
+            # On timeout, keep transaction as pending for admin review instead of rejecting
+            await message.answer(
+                "⏳ <b>Receipt verification pending</b>\n\n"
+                "We couldn't verify your receipt automatically due to network issues.\n"
+                "An admin will review it shortly.\n\n"
+                f"Transaction ID: #{transaction.id}",
+                reply_markup=main_menu_keyboard(),
+                parse_mode="HTML"
             )
-        except Exception:
-            pass
+            try:
+                await send_admin_notification(
+                    message.bot,
+                    text=(
+                        "⏳ <b>Deposit Pending Manual Review (Verification Timeout)</b>\n\n"
+                        f"User: {user.first_name} (@{user.username or '—'})\n"
+                        f"Receipt: {confirmation_text}\n"
+                        f"Transaction ID: #{transaction.id}\n\n"
+                        "Please verify manually and approve/reject."
+                    ),
+                )
+            except Exception:
+                pass
+        else:
+            # Mark transaction as rejected for validation errors
+            await _reject_transaction(transaction.id, result.get("extracted_text", ""))
+            await message.answer(result["message"], reply_markup=main_menu_keyboard(), parse_mode="HTML")
+            try:
+                await send_admin_notification(
+                    message.bot,
+                    text=(
+                        "❌ <b>Rejected Deposit Attempt</b>\n\n"
+                        f"User: {user.first_name} (@{user.username or '—'})\n"
+                        f"Reason: {result['message']}\n"
+                        f"Transaction ID: #{transaction.id}"
+                    ),
+                )
+            except Exception:
+                pass
 
     await state.clear()
 
