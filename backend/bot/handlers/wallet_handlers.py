@@ -78,6 +78,20 @@ def get_minimum_withdrawal_amount():
     return float(get_business_rules().minimum_withdrawable_balance)
 
 
+@sync_to_async
+def _reject_transaction(transaction_id: int, extracted_text: str):
+    from wallet.models import Transaction, Deposit
+    t = Transaction.objects.get(id=transaction_id)
+    t.status = "rejected"
+    t.save()
+    try:
+        d = t.deposit_detail
+        d.extracted_text = extracted_text
+        d.save()
+    except Exception:
+        pass
+
+
 @router.message(lambda message: is_menu_text(message.text, 'menu_balance'))
 async def show_balance(message: Message):
     """Show user balance"""
@@ -104,22 +118,17 @@ async def show_balance(message: Message):
 @router.message(lambda message: is_menu_text(message.text, 'menu_deposit'))
 async def deposit_menu(message: Message):
     """Show deposit menu"""
-<<<<<<< HEAD
     from asgiref.sync import sync_to_async
     get_rules = sync_to_async(get_business_rules)
     rules = await get_rules()
     telebirr_number = rules.telebirr_receiving_phone_number
-=======
+    telebirr_name = rules.telebirr_receiving_account_name
+    
     user = await get_user_with_wallet(message.from_user.id)
     if not user:
         await message.answer(tr('en', 'please_start'))
         return
     language = normalize_language(user.language)
-
-    telebirr = await get_telebirr_details()
-    telebirr_number = telebirr['number']
-    telebirr_name = telebirr['name']
->>>>>>> 7f2e6ab47c48eb78ef62edcd105c0f66e87a2fe3
     
     deposit_text = tr(
         language,
@@ -156,31 +165,8 @@ async def process_deposit_confirmation(message: Message, state: FSMContext):
 
     confirmation_text = (message.text or "").strip()
     if not confirmation_text:
-<<<<<<< HEAD
-        await message.answer("❌ Please paste the payment confirmation text or link.")
-        return
-=======
         await message.answer(tr(normalize_language(user.language), 'wallet_confirmation_required'))
         return
-    
-    # Create transaction with pending status (amount entered by admin later)
-    transaction = await create_transaction(
-        user,
-        'deposit',
-        None,
-        'pending',
-        'Deposit pending verification',
-    )
-    
-    # Create deposit detail
-    await create_deposit(transaction, confirmation_text, 'Telebirr')
-    
-    await message.answer(
-        tr(normalize_language(user.language), 'wallet_deposit_submitted', transaction_id=transaction.id),
-        reply_markup=main_menu_keyboard(normalize_language(user.language)),
-        parse_mode="HTML"
-    )
->>>>>>> 7f2e6ab47c48eb78ef62edcd105c0f66e87a2fe3
 
     await message.answer("⏳ Verifying your receipt, please wait...")
 
@@ -228,25 +214,7 @@ async def process_deposit_confirmation(message: Message, state: FSMContext):
     await state.clear()
 
 
-<<<<<<< HEAD
-@sync_to_async
-def _reject_transaction(transaction_id: int, extracted_text: str):
-    from wallet.models import Transaction, Deposit
-    t = Transaction.objects.get(id=transaction_id)
-    t.status = "rejected"
-    t.save()
-    try:
-        d = t.deposit_detail
-        d.extracted_text = extracted_text
-        d.save()
-    except Exception:
-        pass
-
-
-@router.message(F.text == "➖ Withdraw")
-=======
 @router.message(lambda message: is_menu_text(message.text, 'menu_withdraw'))
->>>>>>> 7f2e6ab47c48eb78ef62edcd105c0f66e87a2fe3
 async def withdrawal_menu(message: Message):
     """Show withdrawal menu"""
     user = await get_user_with_wallet(message.from_user.id)
@@ -254,18 +222,10 @@ async def withdrawal_menu(message: Message):
     if not user:
         await message.answer(tr('en', 'please_start'))
         return
-<<<<<<< HEAD
-
-    from asgiref.sync import sync_to_async
-    get_rules = sync_to_async(get_business_rules)
-    rules = await get_rules()
-    minimum_withdrawal = float(rules.minimum_withdrawable_balance)
-=======
     
     wallet = user.wallet
     language = normalize_language(user.language)
     minimum_withdrawal = await get_minimum_withdrawal_amount()
->>>>>>> 7f2e6ab47c48eb78ef62edcd105c0f66e87a2fe3
     
     # Check minimum withdrawal amount - only winnings can be withdrawn
     if float(wallet.winnings_balance) < minimum_withdrawal:
@@ -298,16 +258,9 @@ async def withdrawal_menu(message: Message):
 @router.callback_query(F.data == "request_withdrawal")
 async def request_withdrawal_start(callback: CallbackQuery, state: FSMContext):
     """Start withdrawal request process"""
-<<<<<<< HEAD
-    from asgiref.sync import sync_to_async
-    get_rules = sync_to_async(get_business_rules)
-    rules = await get_rules()
-    minimum_withdrawal = float(rules.minimum_withdrawable_balance)
-=======
     user = await get_user_with_wallet(callback.from_user.id)
     language = normalize_language(getattr(user, 'language', None))
     minimum_withdrawal = await get_minimum_withdrawal_amount()
->>>>>>> 7f2e6ab47c48eb78ef62edcd105c0f66e87a2fe3
     await callback.message.answer(
         tr(language, 'wallet_withdraw_request_prompt', minimum_withdrawal=minimum_withdrawal)
     )
@@ -321,14 +274,7 @@ async def process_withdrawal_amount(message: Message, state: FSMContext):
     try:
         amount = float(message.text)
         user = await get_user_with_wallet(message.from_user.id)
-<<<<<<< HEAD
-        from asgiref.sync import sync_to_async
-        get_rules = sync_to_async(get_business_rules)
-        rules = await get_rules()
-        minimum_withdrawal = float(rules.minimum_withdrawable_balance)
-=======
         minimum_withdrawal = await get_minimum_withdrawal_amount()
->>>>>>> 7f2e6ab47c48eb78ef62edcd105c0f66e87a2fe3
         
         if not user:
             await message.answer(tr('en', 'please_start'))
