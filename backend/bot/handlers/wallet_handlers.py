@@ -155,7 +155,7 @@ async def submit_deposit_start(callback: CallbackQuery, state: FSMContext):
 
 @router.message(DepositStates.waiting_for_confirmation, F.text)
 async def process_deposit_confirmation(message: Message, state: FSMContext):
-    """Process deposit confirmation — auto-verify via telebirr receipt URL."""
+    """Process deposit confirmation — manual admin verification."""
     user = await get_user_with_wallet(message.from_user.id)
 
     if not user:
@@ -168,73 +168,38 @@ async def process_deposit_confirmation(message: Message, state: FSMContext):
         await message.answer(tr(normalize_language(user.language), 'wallet_confirmation_required'))
         return
 
-    await message.answer("⏳ Verifying your receipt, please wait...")
-
-    # Create a pending transaction first so we have an ID
+    # Create a pending transaction
     transaction = await create_transaction(
-        user, 'deposit', None, 'pending', 'Deposit pending verification'
+        user, 'deposit', None, 'pending', 'Deposit pending admin verification'
     )
     await create_deposit(transaction, confirmation_text, 'Telebirr')
 
-    # Auto-verify
-    result = await verify_receipt(confirmation_text, transaction.id)
+    language = normalize_language(user.language)
+    
+    await message.answer(
+        f"✅ <b>Deposit Submitted</b>\n\n"
+        f"Your receipt has been received.\n"
+        f"An admin will verify and approve it shortly.\n\n"
+        f"<b>Transaction ID:</b> #{transaction.id}\n"
+        f"<b>Status:</b> Pending Review",
+        reply_markup=main_menu_keyboard(language),
+        parse_mode="HTML"
+    )
 
-    if result["success"]:
-        await message.answer(result["message"], reply_markup=main_menu_keyboard(), parse_mode="HTML")
-        try:
-            await send_admin_notification(
-                message.bot,
-                text=(
-                    "✅ <b>Auto-Approved Deposit</b>\n\n"
-                    f"User: {user.first_name} (@{user.username or '—'})\n"
-                    f"Amount: {result.get('amount')} Birr\n"
-                    f"Invoice: #{result.get('invoice_no')}\n"
-                    f"Transaction ID: #{transaction.id}"
-                ),
-            )
-        except Exception:
-            pass
-    else:
-        # Check if it's a timeout/network error
-        if "timeout" in result["message"].lower() or "network" in result["message"].lower():
-            # On timeout, keep transaction as pending for admin review instead of rejecting
-            await message.answer(
-                "⏳ <b>Receipt verification pending</b>\n\n"
-                "We couldn't verify your receipt automatically due to network issues.\n"
-                "An admin will review it shortly.\n\n"
-                f"Transaction ID: #{transaction.id}",
-                reply_markup=main_menu_keyboard(),
-                parse_mode="HTML"
-            )
-            try:
-                await send_admin_notification(
-                    message.bot,
-                    text=(
-                        "⏳ <b>Deposit Pending Manual Review (Verification Timeout)</b>\n\n"
-                        f"User: {user.first_name} (@{user.username or '—'})\n"
-                        f"Receipt: {confirmation_text}\n"
-                        f"Transaction ID: #{transaction.id}\n\n"
-                        "Please verify manually and approve/reject."
-                    ),
-                )
-            except Exception:
-                pass
-        else:
-            # Mark transaction as rejected for validation errors
-            await _reject_transaction(transaction.id, result.get("extracted_text", ""))
-            await message.answer(result["message"], reply_markup=main_menu_keyboard(), parse_mode="HTML")
-            try:
-                await send_admin_notification(
-                    message.bot,
-                    text=(
-                        "❌ <b>Rejected Deposit Attempt</b>\n\n"
-                        f"User: {user.first_name} (@{user.username or '—'})\n"
-                        f"Reason: {result['message']}\n"
-                        f"Transaction ID: #{transaction.id}"
-                    ),
-                )
-            except Exception:
-                pass
+    # Notify admins about new deposit
+    try:
+        await send_admin_notification(
+            message.bot,
+            text=(
+                "🔔 <b>New Deposit Submission</b>\n\n"
+                f"User: {user.first_name} (@{user.username or '—'})\n"
+                f"Receipt/Link: {confirmation_text}\n"
+                f"Transaction ID: #{transaction.id}\n\n"
+                "Please verify and approve/reject in admin panel."
+            ),
+        )
+    except Exception:
+        pass
 
     await state.clear()
 
