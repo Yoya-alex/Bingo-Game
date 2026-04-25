@@ -5,9 +5,19 @@ import string
 
 
 class User(models.Model):
+    LANGUAGE_EN = 'en'
+    LANGUAGE_AM = 'am'
+    LANGUAGE_OM = 'om'
+    LANGUAGE_CHOICES = [
+        (LANGUAGE_EN, 'English'),
+        (LANGUAGE_AM, 'Amharic'),
+        (LANGUAGE_OM, 'Oromo'),
+    ]
+
     telegram_id = models.BigIntegerField(unique=True, db_index=True)
     username = models.CharField(max_length=255, null=True, blank=True)
     first_name = models.CharField(max_length=255)
+    language = models.CharField(max_length=5, choices=LANGUAGE_CHOICES, null=True, blank=True)
     invite_code = models.CharField(max_length=10, unique=True, db_index=True, blank=True)
     referred_by = models.ForeignKey(
         'self',
@@ -18,6 +28,7 @@ class User(models.Model):
     )
     referral_count = models.PositiveIntegerField(default=0)
     registration_date = models.DateTimeField(default=timezone.now)
+    last_site_seen_at = models.DateTimeField(null=True, blank=True)
     is_active = models.BooleanField(default=True)
     is_admin = models.BooleanField(default=False)
     

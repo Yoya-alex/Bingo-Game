@@ -300,6 +300,15 @@ class BusinessRuleSettings(models.Model):
         default=Decimal('10.00'),
         validators=[MinValueValidator(Decimal('0.00'))],
     )
+    countdown_seconds = models.PositiveIntegerField(
+        default=25,
+        validators=[MinValueValidator(5), MaxValueValidator(600)],
+    )
+    winner_announcement_seconds = models.PositiveIntegerField(
+        default=3,
+        validators=[MinValueValidator(1), MaxValueValidator(120)],
+        help_text='How long the winner announcement modal stays visible before redirecting users.',
+    )
     derash_percentage = models.DecimalField(
         max_digits=5,
         decimal_places=2,
@@ -315,6 +324,15 @@ class BusinessRuleSettings(models.Model):
     telebirr_receiving_phone_number = models.CharField(
         max_length=20,
         validators=[ethiopian_phone_validator],
+    )
+    telebirr_receiving_account_name = models.CharField(
+        max_length=120,
+        default='Bingo Bot',
+    )
+    rejoin_start_delay_minutes = models.PositiveIntegerField(
+        default=0,
+        validators=[MaxValueValidator(120)],
+        help_text='Additional delay before game start when players return to a previously lonely lobby.',
     )
     updated_by = models.ForeignKey(
         User,
@@ -336,9 +354,13 @@ class BusinessRuleSettings(models.Model):
         defaults = {
             'minimum_withdrawable_balance': Decimal(str(getattr(settings, 'MIN_WITHDRAWAL', 100))),
             'referral_bonus_amount': Decimal(str(getattr(settings, 'REFERRAL_REWARD', 10))),
+            'countdown_seconds': int(getattr(settings, 'WAITING_TIME', 25)),
+            'winner_announcement_seconds': int(getattr(settings, 'WINNER_ANNOUNCEMENT_SECONDS', 3)),
             'derash_percentage': Decimal('80.00'),
             'system_percentage': Decimal('20.00'),
             'telebirr_receiving_phone_number': str(getattr(settings, 'TELEBIRR_NUMBER', '0912345678')),
+            'telebirr_receiving_account_name': str(getattr(settings, 'TELEBIRR_ACCOUNT_NAME', 'Bingo Bot')),
+            'rejoin_start_delay_minutes': int(getattr(settings, 'REJOIN_START_DELAY_MINUTES', 0)),
         }
         settings_row, _ = cls.objects.get_or_create(pk=1, defaults=defaults)
         return settings_row
@@ -347,6 +369,8 @@ class BusinessRuleSettings(models.Model):
         super().clean()
         if not self.telebirr_receiving_phone_number:
             raise ValidationError({'telebirr_receiving_phone_number': 'Telebirr receiving phone number is required.'})
+        if not self.telebirr_receiving_account_name:
+            raise ValidationError({'telebirr_receiving_account_name': 'Telebirr account name is required.'})
         total = (self.derash_percentage or Decimal('0')) + (self.system_percentage or Decimal('0'))
         if total != Decimal('100'):
             raise ValidationError({'system_percentage': 'Derash Percentage + System Percentage must equal 100.'})
@@ -360,6 +384,8 @@ class BusinessRuleSettings(models.Model):
         return (
             f"Business Rules (Min Withdraw: {self.minimum_withdrawable_balance}, "
             f"Referral: {self.referral_bonus_amount}, "
+            f"Countdown: {self.countdown_seconds}s, "
+            f"Winner Announcement: {self.winner_announcement_seconds}s, "
             f"Derash/System: {self.derash_percentage}/{self.system_percentage})"
         )
 

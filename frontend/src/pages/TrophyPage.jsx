@@ -4,6 +4,7 @@ import { fetchJson } from "../api/client.js";
 import { withAuthPath } from "../utils/auth.js";
 import NotificationComponent from "../components/NotificationComponent.jsx";
 import BottomNavIcon from "../components/BottomNavIcon.jsx";
+import { useI18n } from "../i18n/LanguageContext.jsx";
 
 const EMPTY_NOTIFICATION = { type: "", message: "" };
 
@@ -23,13 +24,14 @@ function formatDate(value) {
   return parsed.toLocaleString();
 }
 
-function playerDisplayName(row) {
-  return row?.first_name || "Player";
+function playerDisplayName(row, fallbackPlayer) {
+  return row?.first_name || fallbackPlayer;
 }
 
 export default function TrophyPage() {
   const { telegramId } = useParams();
   const navigate = useNavigate();
+  const { t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState(EMPTY_NOTIFICATION);
   const [period, setPeriod] = useState("all");
@@ -45,7 +47,6 @@ export default function TrophyPage() {
     recent_big_wins: [],
     most_active_players: [],
     refresh_time: null,
-    tie_break_rules: [],
   });
 
   function notify(type, message) {
@@ -90,9 +91,9 @@ export default function TrophyPage() {
           <span className="trophy-cup-base" />
         </div>
         <div className="trophy-rank">#{rank}</div>
-        <div className="trophy-name">{playerDisplayName(row)}</div>
+        <div className="trophy-name">{playerDisplayName(row, t("common.player"))}</div>
         <div className="trophy-value">{formatBirr(row.total_winnings)}</div>
-        <small>{row.wins} wins</small>
+        <small>{t("trophy.winsCount", { count: row.wins })}</small>
       </div>
     );
   };
@@ -103,7 +104,7 @@ export default function TrophyPage() {
         <div className="app-card">
           <div className="loading-state" role="status" aria-live="polite">
             <span className="spinner" aria-hidden="true" />
-            <div className="subtitle">Loading trophy board...</div>
+            <div className="subtitle">{t("trophy.loading")}</div>
           </div>
         </div>
       </div>
@@ -114,17 +115,17 @@ export default function TrophyPage() {
     <div className="app-shell trophy-shell">
       <div className="app-card trophy-card">
         <header className="component trophy-header">
-          <h1 className="title trophy-title">Top Winners</h1>
-          <p className="subtitle">Leaderboard refresh: {formatDate(data.refresh_time)}</p>
+          <h1 className="title trophy-title">{t("trophy.title")}</h1>
+          <p className="subtitle">{t("trophy.leaderboardRefresh")}: {formatDate(data.refresh_time)}</p>
           {data.filters?.period === "season" && data.filters?.season_name && (
-            <p className="subtitle">Season: {data.filters.season_name}</p>
+            <p className="subtitle">{t("trophy.season")}: {data.filters.season_name}</p>
           )}
         </header>
 
         <NotificationComponent notification={notification} />
 
         <section className="component trophy-filters">
-          <h2 className="component-title">Filters</h2>
+          <h2 className="component-title">{t("trophy.filters")}</h2>
           <div className="trophy-filter-row">
             {periodOptions.map((option) => (
               <button
@@ -133,14 +134,14 @@ export default function TrophyPage() {
                 className={`trophy-filter-chip ${period === option ? "active" : ""}`}
                 onClick={() => setPeriod(option)}
               >
-                {option.toUpperCase()}
+                {t(`trophy.period.${option}`)}
               </button>
             ))}
           </div>
           <div className="trophy-filter-row">
             {stakeOptions.map((option) => {
               const isActive = String(stake) === String(option);
-              const label = option === "all" ? "ALL STAKES" : `${option} Br`;
+              const label = option === "all" ? t("trophy.allStakes") : `${option} Br`;
               return (
                 <button
                   key={String(option)}
@@ -156,10 +157,10 @@ export default function TrophyPage() {
         </section>
 
         <section className="component trophy-podium">
-          <h2 className="component-title">Podium</h2>
-          {!data.podium?.length && <div className="subtitle">No winners found for this filter.</div>}
+          <h2 className="component-title">{t("trophy.podium")}</h2>
+          {!data.podium?.length && <div className="subtitle">{t("trophy.noWinnersForFilter")}</div>}
           {!!data.podium?.length && (
-            <div className="trophy-podium-stage" aria-label="Top 3 podium">
+            <div className="trophy-podium-stage" aria-label={t("trophy.top3PodiumAria")}>
               <div className="trophy-podium-slot podium-slot-1">
                 {renderPodiumCard(1)}
               </div>
@@ -174,40 +175,40 @@ export default function TrophyPage() {
         </section>
 
         <section className="component trophy-your-position">
-          <h2 className="component-title">Your Position</h2>
+          <h2 className="component-title">{t("trophy.yourPosition")}</h2>
           <div className="profile-grid profile-grid-6">
-            <div className="profile-metric trophy-pos-rank"><span>Rank</span><strong>{yourRow.rank || "-"}</strong></div>
-            <div className="profile-metric trophy-pos-total"><span>Total Won</span><strong>{formatBirr(yourRow.total_winnings)}</strong></div>
-            <div className="profile-metric trophy-pos-wins"><span>Wins</span><strong>{yourRow.wins || 0}</strong></div>
-            <div className="profile-metric trophy-pos-games"><span>Games</span><strong>{yourRow.games_joined || 0}</strong></div>
-            <div className="profile-metric trophy-pos-rate"><span>Win Rate</span><strong>{Number(yourRow.win_rate || 0).toFixed(2)}%</strong></div>
-            <div className="profile-metric trophy-pos-gap"><span>Gap To Next</span><strong>{yourRow.gap_to_next_rank == null ? "-" : formatBirr(yourRow.gap_to_next_rank)}</strong></div>
+            <div className="profile-metric trophy-pos-rank"><span>{t("trophy.rank")}</span><strong>{yourRow.rank || "-"}</strong></div>
+            <div className="profile-metric trophy-pos-total"><span>{t("profile.totalWon")}</span><strong>{formatBirr(yourRow.total_winnings)}</strong></div>
+            <div className="profile-metric trophy-pos-wins"><span>{t("profile.wins")}</span><strong>{yourRow.wins || 0}</strong></div>
+            <div className="profile-metric trophy-pos-games"><span>{t("trophy.games")}</span><strong>{yourRow.games_joined || 0}</strong></div>
+            <div className="profile-metric trophy-pos-rate"><span>{t("profile.winRate")}</span><strong>{Number(yourRow.win_rate || 0).toFixed(2)}%</strong></div>
+            <div className="profile-metric trophy-pos-gap"><span>{t("trophy.gapToNext")}</span><strong>{yourRow.gap_to_next_rank == null ? "-" : formatBirr(yourRow.gap_to_next_rank)}</strong></div>
           </div>
         </section>
 
         <section className="component trophy-leaderboard">
-          <h2 className="component-title">Leaderboard</h2>
+          <h2 className="component-title">{t("trophy.leaderboard")}</h2>
           <div className="profile-table-wrap">
-            {leaderboard.length === 0 && <div className="subtitle">No leaderboard data yet.</div>}
+            {leaderboard.length === 0 && <div className="subtitle">{t("trophy.noLeaderboardData")}</div>}
             {leaderboard.length > 0 && (
-              <table className="profile-table" aria-label="Top winners leaderboard table">
+              <table className="profile-table" aria-label={t("trophy.leaderboardAria")}>
                 <thead>
                   <tr>
-                    <th>Rank</th>
-                    <th>Player</th>
-                    <th>Total Won</th>
-                    <th>Wins</th>
-                    <th>Games</th>
-                    <th>Win Rate</th>
-                    <th>Season Pts</th>
-                    <th>Biggest Win</th>
+                    <th>{t("trophy.rank")}</th>
+                    <th>{t("common.player")}</th>
+                    <th>{t("profile.totalWon")}</th>
+                    <th>{t("profile.wins")}</th>
+                    <th>{t("trophy.games")}</th>
+                    <th>{t("profile.winRate")}</th>
+                    <th>{t("trophy.seasonPts")}</th>
+                    <th>{t("profile.biggestWin")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {leaderboard.map((row) => (
                     <tr key={row.user_id} className={row.user_id === yourRow.user_id ? "trophy-self-row" : ""}>
                       <td className="trophy-cell-rank">#{row.rank}</td>
-                      <td className="trophy-cell-player">{playerDisplayName(row)}</td>
+                      <td className="trophy-cell-player">{playerDisplayName(row, t("common.player"))}</td>
                       <td className="trophy-cell-money">{formatBirr(row.total_winnings)}</td>
                       <td className="trophy-cell-success">{row.wins}</td>
                       <td className="trophy-cell-active">{row.games_joined}</td>
@@ -223,25 +224,25 @@ export default function TrophyPage() {
         </section>
 
         <section className="component trophy-recent-wins">
-          <h2 className="component-title">Recent Big Wins</h2>
+          <h2 className="component-title">{t("trophy.recentBigWins")}</h2>
           <div className="profile-table-wrap">
-            {(data.recent_big_wins || []).length === 0 && <div className="subtitle">No big wins in this filter.</div>}
+            {(data.recent_big_wins || []).length === 0 && <div className="subtitle">{t("trophy.noBigWins")}</div>}
             {(data.recent_big_wins || []).length > 0 && (
-              <table className="profile-table" aria-label="Recent big wins table">
+              <table className="profile-table" aria-label={t("trophy.recentBigWinsAria")}>
                 <thead>
                   <tr>
-                    <th>Game</th>
-                    <th>Winner</th>
-                    <th>Stake</th>
-                    <th>Prize</th>
-                    <th>Date</th>
+                    <th>{t("common.game")}</th>
+                    <th>{t("trophy.winner")}</th>
+                    <th>{t("profile.stake")}</th>
+                    <th>{t("common.prize")}</th>
+                    <th>{t("wallet.date")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(data.recent_big_wins || []).map((row) => (
                     <tr key={`${row.game_id}-${row.finished_at}`}>
                       <td>#{row.game_id}</td>
-                      <td className="trophy-cell-player">{row.winner_name || "Player"}</td>
+                      <td className="trophy-cell-player">{row.winner_name || t("common.player")}</td>
                       <td className="trophy-cell-stake">{row.stake_amount} Br</td>
                       <td className="trophy-cell-jackpot">{formatBirr(row.prize_amount)}</td>
                       <td>{formatDate(row.finished_at)}</td>
@@ -254,21 +255,21 @@ export default function TrophyPage() {
         </section>
 
         <section className="component trophy-most-active">
-          <h2 className="component-title">Most Active Players</h2>
+          <h2 className="component-title">{t("trophy.mostActivePlayers")}</h2>
           <div className="profile-table-wrap">
-            {(data.most_active_players || []).length === 0 && <div className="subtitle">No activity data for this filter.</div>}
+            {(data.most_active_players || []).length === 0 && <div className="subtitle">{t("trophy.noActivityData")}</div>}
             {(data.most_active_players || []).length > 0 && (
-              <table className="profile-table" aria-label="Most active players table">
+              <table className="profile-table" aria-label={t("trophy.mostActivePlayersAria")}>
                 <thead>
                   <tr>
-                    <th>Player</th>
-                    <th>Games Joined</th>
+                    <th>{t("common.player")}</th>
+                    <th>{t("profile.gamesJoined")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(data.most_active_players || []).map((row) => (
                     <tr key={row.user_id}>
-                      <td className="trophy-cell-player">{playerDisplayName(row)}</td>
+                      <td className="trophy-cell-player">{playerDisplayName(row, t("common.player"))}</td>
                       <td className="trophy-cell-active">{row.games_joined}</td>
                     </tr>
                   ))}
@@ -278,41 +279,26 @@ export default function TrophyPage() {
           </div>
         </section>
 
-        <section className="component trophy-rules">
-          <h2 className="component-title">Tie-Break Rules</h2>
-          <div className="rules-content">
-            {(data.tie_break_rules || []).map((rule) => (
-              <p key={rule}>{rule}</p>
-            ))}
-            {data.season_rules?.point_formula && <p>Season points: {data.season_rules.point_formula}</p>}
-            {data.season_rules?.top_rewards && (
-              <p>
-                Season rewards: 1st {formatBirr(data.season_rules.top_rewards.top_1)}, 2nd {formatBirr(data.season_rules.top_rewards.top_2)}, 3rd {formatBirr(data.season_rules.top_rewards.top_3)}, participation {formatBirr(data.season_rules.top_rewards.participation)}.
-              </p>
-            )}
-          </div>
-        </section>
-
-        <nav className="bottom-nav" aria-label="Bottom navigation">
+        <nav className="bottom-nav" aria-label={t("profile.bottomNavigationAria")}>
           <button type="button" className="bottom-nav-item" onClick={() => navigate(withAuthPath(`/home/${telegramId}`))}>
             <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="home" /></span>
-            <span className="bottom-nav-label">Home</span>
+            <span className="bottom-nav-label">{t("common.home")}</span>
           </button>
           <button type="button" className="bottom-nav-item" onClick={() => navigate(withAuthPath(`/profile/${telegramId}`))}>
             <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="profile" /></span>
-            <span className="bottom-nav-label">Profile</span>
+            <span className="bottom-nav-label">{t("common.profile")}</span>
           </button>
           <button type="button" className="bottom-nav-item active">
             <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="trophy" /></span>
-            <span className="bottom-nav-label">Top Winners</span>
+            <span className="bottom-nav-label">{t("common.topWinners")}</span>
           </button>
           <button type="button" className="bottom-nav-item" onClick={() => navigate(withAuthPath(`/wallet/${telegramId}`))}>
             <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="wallet" /></span>
-            <span className="bottom-nav-label">Wallet</span>
+            <span className="bottom-nav-label">{t("common.wallet")}</span>
           </button>
           <button type="button" className="bottom-nav-item" onClick={() => navigate(withAuthPath(`/engagement/${telegramId}`))}>
             <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="engagement" /></span>
-            <span className="bottom-nav-label">Engage</span>
+            <span className="bottom-nav-label">{t("common.engage")}</span>
           </button>
         </nav>
       </div>

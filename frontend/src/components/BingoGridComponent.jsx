@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useI18n } from "../i18n/LanguageContext.jsx";
 
 export default function BingoGridComponent({
   grid,
@@ -7,14 +8,16 @@ export default function BingoGridComponent({
   markSource = "called",
   clickableNumber = null,
   onSelectNumber,
-  title = "Your Bingo Grid",
+  title,
   id = "bingoGridComponent",
   interactive = false,
   footer = null,
 }) {
+  const { t } = useI18n();
   const flatGrid = useMemo(() => grid.flat(), [grid]);
   const calledSet = useMemo(() => new Set(calledNumbers), [calledNumbers]);
   const markedSet = useMemo(() => new Set(markedNumbers), [markedNumbers]);
+  const resolvedTitle = title ?? t("play.yourBingoGrid");
 
   function handleSelect(value, canSelect) {
     if (!canSelect || typeof onSelectNumber !== "function") {
@@ -25,7 +28,7 @@ export default function BingoGridComponent({
 
   return (
     <section className="component" id={id}>
-      <div className="component-title">{title}</div>
+      <div className="component-title">{resolvedTitle}</div>
       <div className="bingo-columns" aria-hidden="true">
         <span className="bingo-col" data-letter="B">B</span>
         <span className="bingo-col" data-letter="I">I</span>

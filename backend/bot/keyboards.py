@@ -1,30 +1,31 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from bot.utils.i18n import tr
 
 
-def main_menu_keyboard():
+def main_menu_keyboard(language='en'):
     """Main menu keyboard"""
     keyboard = [
-        [KeyboardButton(text="🎮 Play Bingo")],
-        [KeyboardButton(text="💰 Balance"), KeyboardButton(text="📜 Rules")],
-        [KeyboardButton(text="➕ Deposit"), KeyboardButton(text="➖ Withdraw")],
-        [KeyboardButton(text="👥 My Invites")],
-        [KeyboardButton(text="🆘 Support")]
+        [KeyboardButton(text=tr(language, 'menu_play'))],
+        [KeyboardButton(text=tr(language, 'menu_balance')), KeyboardButton(text=tr(language, 'menu_rules'))],
+        [KeyboardButton(text=tr(language, 'menu_deposit')), KeyboardButton(text=tr(language, 'menu_withdraw'))],
+        [KeyboardButton(text=tr(language, 'menu_invites')), KeyboardButton(text=tr(language, 'menu_language'))],
+        [KeyboardButton(text=tr(language, 'menu_support'))]
     ]
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
 
-def admin_main_menu_keyboard():
+def admin_main_menu_keyboard(language='en'):
     """Admin main menu keyboard"""
     keyboard = [
-        [KeyboardButton(text="📊 Dashboard")],
-        [KeyboardButton(text="💰 Deposits"), KeyboardButton(text="🏧 Withdrawals")],
-        [KeyboardButton(text="💼 System Balance")],
-        [KeyboardButton(text="🚀 Engagement Management")],
-        [KeyboardButton(text="👛 Wallet Management"), KeyboardButton(text="🎮 Game Management")],
-        [KeyboardButton(text="👤 User Management"), KeyboardButton(text="📜 Transaction Logs")],
-        [KeyboardButton(text="📢 Announcement")],
-        [KeyboardButton(text="⚙️ Settings"), KeyboardButton(text="🔍 Search")],
-        [KeyboardButton(text="🏠 User Menu")],
+        [KeyboardButton(text=tr(language, 'admin_menu_dashboard'))],
+        [KeyboardButton(text=tr(language, 'admin_menu_deposits')), KeyboardButton(text=tr(language, 'admin_menu_withdrawals'))],
+        [KeyboardButton(text=tr(language, 'admin_menu_system_balance'))],
+        [KeyboardButton(text=tr(language, 'admin_menu_engagement'))],
+        [KeyboardButton(text=tr(language, 'admin_menu_wallet')), KeyboardButton(text=tr(language, 'admin_menu_game'))],
+        [KeyboardButton(text=tr(language, 'admin_menu_users')), KeyboardButton(text=tr(language, 'admin_menu_transactions'))],
+        [KeyboardButton(text=tr(language, 'admin_menu_announcement'))],
+        [KeyboardButton(text=tr(language, 'admin_menu_settings')), KeyboardButton(text=tr(language, 'admin_menu_search'))],
+        [KeyboardButton(text=tr(language, 'menu_user')), KeyboardButton(text=tr(language, 'menu_language'))],
     ]
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 

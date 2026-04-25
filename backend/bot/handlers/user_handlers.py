@@ -13,8 +13,40 @@ from bot.keyboards import main_menu_keyboard, admin_main_menu_keyboard
 from bot.utils.db_helpers import get_or_create_user, create_wallet, save_model
 from bot.utils.admin_helpers import is_admin
 from bot.utils.referral_service import register_referral_for_new_user, get_user_referral_stats
+from bot.utils.i18n import (
+    is_menu_text,
+    language_button_rows,
+    language_name,
+    normalize_language,
+    tr,
+)
+from game.business_rules import get_countdown_seconds
 
 router = Router()
+
+
+def _language_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=language_button_rows())
+
+
+async def _send_welcome_by_language(message: Message, user: User, created: bool, referral_text: str = ""):
+    language = normalize_language(user.language)
+    first_name = user.first_name or "User"
+    if created:
+        text = tr(
+            language,
+            'start_first_time',
+            first_name=first_name,
+            welcome_bonus=settings.WELCOME_BONUS,
+            referral_text=referral_text,
+        )
+    else:
+        text = tr(language, 'start_back', first_name=first_name)
+
+    if await is_admin(user.telegram_id):
+        await message.answer(text, reply_markup=admin_main_menu_keyboard(language))
+    else:
+        await message.answer(text, reply_markup=main_menu_keyboard(language))
 
 
 def _normalize_bot_username(raw_value: Optional[str]) -> str:
@@ -61,6 +93,7 @@ async def cmd_start(message: Message):
     # Check if user exists
     user, created = await get_or_create_user(telegram_id, username, first_name)
     
+    referral_text = ""
     if created:
         referral = await sync_to_async(register_referral_for_new_user)(user, start_payload)
 
@@ -81,94 +114,83 @@ async def cmd_start(message: Message):
         )
         await save_model(transaction)
 
-        referral_text = ""
         if referral and referral.status == 'PENDING':
             referral_text = (
                 "\n\n🎯 Referral tracked successfully!\n"
                 "Your inviter will receive bonus when you complete your first qualifying deposit."
             )
-        
-        welcome_text = (
-            f"🎉 <b>Welcome to Bingo Bot, {first_name}!</b>\n\n"
-            f"✅ Registration successful!\n"
-            f"🎁 You received {settings.WELCOME_BONUS} Birr welcome bonus!\n\n"
-            f"💡 Use your bonus to play your first Bingo game.\n"
-            f"Note: Bonus money can only be used for playing, not for withdrawal.\n\n"
-            f"Ready to play? Click 🎮 Play Bingo!"
-            f"{referral_text}"
-        )
-    else:
-        welcome_text = (
-            f"👋 <b>Welcome back, {first_name}!</b>\n\n"
-            f"Ready to play Bingo? Choose an option below:"
-        )
+
+    # Force language selection for first-time users and users without language.
+    if not user.language:
+        await message.answer(tr('en', 'lang_prompt'), reply_markup=_language_keyboard())
+        return
 
     # If user is an admin, show admin menu by default (can switch back to user menu).
     try:
-        if await is_admin(telegram_id):
-            await message.answer(welcome_text, reply_markup=admin_main_menu_keyboard())
-        else:
-            await message.answer(welcome_text, reply_markup=main_menu_keyboard())
+        await _send_welcome_by_language(message, user, created=created, referral_text=referral_text)
     except TelegramForbiddenError:
         # User has blocked the bot; avoid crashing the update handler.
         return
 
 
-@router.message(F.text == "📜 Rules")
+@router.callback_query(F.data.startswith("set_lang:"))
+async def set_language(callback):
+    language = normalize_language(callback.data.split(":", 1)[1])
+    user = await sync_to_async(User.objects.filter(telegram_id=callback.from_user.id).first)()
+    if not user:
+        await callback.answer(tr('en', 'please_start'), show_alert=True)
+        return
+
+    user.language = language
+    await save_model(user)
+
+    await callback.answer(
+        tr(language, 'lang_saved', language_name=language_name(language, language)),
+        show_alert=False,
+    )
+    await callback.message.answer(
+        tr(language, 'lang_saved', language_name=language_name(language, language)),
+    )
+    await _send_welcome_by_language(callback.message, user, created=False)
+
+
+@router.message(lambda message: is_menu_text(message.text, 'menu_rules'))
 async def show_rules(message: Message):
     """Show game rules"""
-    rules_text = (
-        "<b>📜 BINGO GAME RULES</b>\n\n"
-        "<b>How to Play:</b>\n"
-        "1️⃣ Select a card (1-400) from the waiting screen\n"
-        "2️⃣ Each card costs 10 Birr\n"
-        "3️⃣ Wait for the game to start (25 seconds countdown)\n"
-        f"4️⃣ Numbers will be called randomly (1-{settings.BINGO_NUMBER_MAX})\n"
-        "5️⃣ Mark numbers on your 5×5 grid\n"
-        "6️⃣ Complete a line (horizontal, vertical, or diagonal)\n"
-        "7️⃣ Click BINGO button to claim your win!\n\n"
-        "<b>💰 Wallet Rules:</b>\n"
-        "• Minimum deposit: 10 Birr\n"
-        "• Bonus money: Play only, cannot withdraw\n"
-        "• Main balance: Can be withdrawn anytime\n\n"
-        "<b>🎯 Winning:</b>\n"
-        "• First player to complete a valid line wins\n"
-        "• Prize is credited to your main balance\n"
-        "• Invalid claims will be rejected\n\n"
-        "Good luck! 🍀"
+    countdown_seconds = await sync_to_async(get_countdown_seconds)()
+    user = await sync_to_async(User.objects.filter(telegram_id=message.from_user.id).first)()
+    language = normalize_language(getattr(user, 'language', None))
+    rules_text = tr(
+        language,
+        'rules_text',
+        countdown_seconds=countdown_seconds,
+        bingo_max=settings.BINGO_NUMBER_MAX,
     )
-    await message.answer(rules_text, reply_markup=main_menu_keyboard())
+    await message.answer(rules_text, reply_markup=main_menu_keyboard(language))
 
 
-@router.message(F.text == "🆘 Support")
+@router.message(lambda message: is_menu_text(message.text, 'menu_support'))
 async def show_support(message: Message):
     """Show support information"""
-    support_text = (
-        "<b>🆘 SUPPORT</b>\n\n"
-        "Need help? Contact us:\n\n"
-        "📧 Email: support@bingobot.com\n"
-        "💬 Telegram: @BingoSupport\n\n"
-        "We're here to help! 😊"
-    )
-    await message.answer(support_text, reply_markup=main_menu_keyboard())
+    user = await sync_to_async(User.objects.filter(telegram_id=message.from_user.id).first)()
+    language = normalize_language(getattr(user, 'language', None))
+    support_text = tr(language, 'support_text')
+    await message.answer(support_text, reply_markup=main_menu_keyboard(language))
 
 
-@router.message(F.text == "👥 My Invites")
+@router.message(lambda message: is_menu_text(message.text, 'menu_invites'))
 async def my_invites(message: Message):
     """Show referral link and referral stats."""
     user = await sync_to_async(User.objects.filter(telegram_id=message.from_user.id).first)()
     if not user:
-        await message.answer("❌ Please start the bot first with /start")
+        await message.answer(tr('en', 'please_start'))
         return
+
+    language = normalize_language(user.language)
 
     bot_username = await _resolve_bot_username(message)
     invite_link = f"https://t.me/{bot_username}?start=ref_{quote_plus(user.invite_code)}"
-    share_text = (
-        "🎯 Play Bingo and Win!\n\n"
-        "Join the game using my invite link and start winning.\n\n"
-        f"👇 Tap to join:\n{invite_link}\n\n"
-        "You will also receive a welcome bonus!"
-    )
+    share_text = tr(language, 'invite_share_text', invite_link=invite_link)
     share_url = (
         f"https://t.me/share/url?url={quote_plus(invite_link)}"
         f"&text={quote_plus(share_text)}"
@@ -176,28 +198,31 @@ async def my_invites(message: Message):
     stats = await sync_to_async(get_user_referral_stats)(user)
     welcome_bonus = getattr(settings, "WELCOME_BONUS", 0)
 
-    text = (
-        "<b>📊 Referral Statistics</b>\n\n"
-        f"🔗 Your Invite Link:\n{invite_link}\n\n"
-        f"👥 Total Invited Users: {stats['total']}\n"
-        f"✅ Qualified Referrals: {stats['qualified']}\n"
-        f"⏳ Pending Referrals: {stats['pending']}\n"
-        f"🎁 Total Bonus Earned: {stats['total_bonus']} credits\n\n"
-        "<b>🎯 Play Bingo and Win!</b>\n\n"
-        "Join the game using my invite link and start winning.\n\n"
-        "👇 Tap to join:\n"
-        f"<a href=\"{invite_link}\">{invite_link}</a>\n\n"
-        "If Telegram opens the chat first, press the <b>START</b> button once.\n\n"
-        f"You will also receive a welcome bonus of {welcome_bonus}!"
+    text = tr(
+        language,
+        'invite_card_text',
+        invite_link=invite_link,
+        total=stats['total'],
+        qualified=stats['qualified'],
+        pending=stats['pending'],
+        total_bonus=stats['total_bonus'],
+        welcome_bonus=welcome_bonus,
     )
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="📤 Forward Invite Link",
+                    text=tr(language, 'invite_forward_btn'),
                     url=share_url,
                 )
             ]
         ]
     )
     await message.answer(text, reply_markup=keyboard)
+
+
+@router.message(lambda message: is_menu_text(message.text, 'menu_language'))
+async def language_menu(message: Message):
+    user = await sync_to_async(User.objects.filter(telegram_id=message.from_user.id).first)()
+    language = normalize_language(getattr(user, 'language', None))
+    await message.answer(tr(language, 'lang_prompt'), reply_markup=_language_keyboard())

@@ -6,7 +6,7 @@ from django.views.decorators.http import require_POST
 from django.conf import settings
 from django.utils import timezone
 from django.db import transaction
-from django.db.models import Count, Max, Sum
+from django.db.models import Count, Max, Sum, Q
 from decimal import Decimal
 from datetime import timedelta
 from users.models import User
@@ -23,16 +23,25 @@ from game.models import (
     Season,
     UserMissionProgress,
 )
-from game.business_rules import get_business_rules, get_derash_multiplier, get_system_multiplier
+from game.business_rules import (
+    get_business_rules,
+    get_countdown_seconds,
+    get_derash_multiplier,
+    get_system_multiplier,
+    get_winner_announcement_seconds,
+)
 from game.engagement import claim_mission, credit_user_reward, increment_missions, touch_user_streak, RewardSafetyError
 from wallet.models import Wallet, Transaction
 from game.security import (
+    create_user_access_token,
     get_request_access_token,
     rate_limit,
     require_path_telegram_auth,
     require_valid_web_token,
     verify_user_access_token,
 )
+from bot.utils.url_helpers import build_react_url, can_use_telegram_button_url
+from bot.utils.i18n import normalize_language
 import json
 import logging
 from urllib import error as urllib_error
@@ -104,6 +113,97 @@ def _notify_admins_hidden_promo_claim(claim):
             continue
 
 
+def _send_telegram_text_message(chat_id, text, reply_markup=None):
+    bot_token = (getattr(settings, 'BOT_TOKEN', '') or '').strip()
+    if not bot_token or not chat_id or not text:
+        return False
+
+    payload_data = {
+        'chat_id': int(chat_id),
+        'text': text,
+    }
+    if reply_markup:
+        payload_data['reply_markup'] = reply_markup
+
+    payload = json.dumps(payload_data).encode('utf-8')
+    req = urllib_request.Request(
+        url=f'https://api.telegram.org/bot{bot_token}/sendMessage',
+        data=payload,
+        headers={'Content-Type': 'application/json'},
+        method='POST',
+    )
+    try:
+        urllib_request.urlopen(req, timeout=5)
+        return True
+    except (urllib_error.URLError, urllib_error.HTTPError, TimeoutError, ValueError):
+        return False
+
+
+def touch_site_presence(telegram_id):
+    if not telegram_id:
+        return
+    now = timezone.now()
+    touch_interval_seconds = int(getattr(settings, 'WEB_PRESENCE_TOUCH_INTERVAL_SECONDS', 15) or 15)
+    refresh_cutoff = now - timedelta(seconds=max(1, touch_interval_seconds))
+    User.objects.filter(telegram_id=telegram_id).filter(
+        Q(last_site_seen_at__isnull=True) | Q(last_site_seen_at__lt=refresh_cutoff)
+    ).update(last_site_seen_at=now)
+
+
+def is_user_online_on_site(user):
+    last_seen = getattr(user, 'last_site_seen_at', None)
+    if not last_seen:
+        return False
+    timeout_seconds = int(getattr(settings, 'WEB_ONLINE_TIMEOUT_SECONDS', 45) or 45)
+    return (timezone.now() - last_seen).total_seconds() <= max(5, timeout_seconds)
+
+
+def notify_lonely_waiting_players(game, joined_user, delay_minutes):
+    recipients = list(
+        User.objects.filter(
+            id__in=game.cards.exclude(user_id=joined_user.id).values_list('user_id', flat=True),
+            telegram_id__lt=BOT_TELEGRAM_ID_THRESHOLD,
+        ).only('telegram_id', 'last_site_seen_at', 'language')
+    )
+    recipients_to_notify = [recipient for recipient in recipients if not is_user_online_on_site(recipient)]
+    if not recipients_to_notify:
+        return
+
+    countdown_seconds = int(get_countdown_seconds())
+    total_wait_seconds = (max(0, int(delay_minutes)) * 60) + countdown_seconds
+    joined_name = joined_user.first_name or 'A player'
+    stake_amount = get_game_stake(game)
+    message = (
+        f"Good news! {joined_name} joined your waiting game (#{game.id}, {stake_amount} Birr tier).\n"
+        f"Please rejoin now. The game can start in about {total_wait_seconds} seconds."
+    )
+
+    def _send_notification(recipient):
+        chat_id = recipient.telegram_id
+        access_token = create_user_access_token(chat_id)
+        play_url = build_react_url(
+            '/',
+            telegram_id=chat_id,
+            token=access_token,
+            lang=normalize_language(getattr(recipient, 'language', None)),
+        )
+        reply_markup = None
+        if can_use_telegram_button_url(play_url):
+            reply_markup = {
+                'inline_keyboard': [[
+                    {'text': '▶️ Play Now', 'url': play_url},
+                ]]
+            }
+        _send_telegram_text_message(chat_id, message, reply_markup=reply_markup)
+
+    transaction.on_commit(
+        lambda: [
+            _send_notification(recipient)
+            for recipient in recipients_to_notify
+        ]
+    )
+
+
 def _serialize_mission_progress(progress):
     mission = progress.mission
     return {
@@ -138,7 +238,7 @@ def get_game_countdown(game):
     if game.state != 'waiting':
         return 0
     time_elapsed = (timezone.now() - game.created_at).total_seconds()
-    return max(0, int(settings.WAITING_TIME - time_elapsed))
+    return max(0, int(get_countdown_seconds() - time_elapsed))
 
 
 def cleanup_bot_only_waiting_game(game):
@@ -309,6 +409,7 @@ def get_winner_card_payload(game):
         'grid': winner_card.get_grid(),
         'winner_name': game.winner.first_name,
         'winner_username': game.winner.username if game.winner.username else None,
+        'winner_telegram_id': game.winner.telegram_id,
     }
 
 
@@ -368,7 +469,7 @@ def ensure_game_started(game_id):
 
         time_elapsed = (timezone.now() - game.created_at).total_seconds()
         if (
-            time_elapsed >= settings.WAITING_TIME
+            time_elapsed >= get_countdown_seconds()
             and total_players >= settings.GAME_MIN_PLAYERS
             and real_players >= MIN_REAL_USERS_TO_START
         ):
@@ -399,7 +500,8 @@ def game_lobby(request, telegram_id):
             'error': 'User not found. Please start the bot first.'
         })
 
-    return redirect(f"{settings.REACT_APP_URL}/home/{telegram_id}?token={token}")
+    language = normalize_language(getattr(user, 'language', None))
+    return redirect(f"{settings.REACT_APP_URL}/home/{telegram_id}?token={token}&lang={language}")
 
 
 def game_play(request, telegram_id, game_id):
@@ -423,7 +525,8 @@ def game_play(request, telegram_id, game_id):
             'error': 'User not found.'
         })
 
-    return redirect(f"{settings.REACT_APP_URL}/play/{telegram_id}/{game_id}?token={token}")
+    language = normalize_language(getattr(user, 'language', None))
+    return redirect(f"{settings.REACT_APP_URL}/play/{telegram_id}/{game_id}?token={token}&lang={language}")
 
 
 @csrf_exempt
@@ -450,7 +553,9 @@ def select_card_api(request):
 
         with transaction.atomic():
             user = User.objects.select_for_update().get(telegram_id=telegram_id)
+            touch_site_presence(user.telegram_id)
             wallet, _ = Wallet.objects.select_for_update().get_or_create(user=user)
+            business_rules = get_business_rules()
 
             user_cards_qs = BingoCard.objects.select_related('game').filter(user=user, game__state='waiting')
             if stake_amount is not None:
@@ -460,6 +565,9 @@ def select_card_api(request):
             if user_card:
                 game = Game.objects.select_for_update().get(pk=user_card.game_id)
                 previous_player_count = game.cards.count()
+                previous_real_player_count = game.cards.filter(
+                    user__telegram_id__lt=BOT_TELEGRAM_ID_THRESHOLD
+                ).count()
             else:
                 if stake_amount is None:
                     return JsonResponse({'error': 'Game tier is required for new join.'}, status=400)
@@ -473,6 +581,9 @@ def select_card_api(request):
                         return JsonResponse({'error': 'This game is currently active. Please wait for next round.'}, status=400)
                     game = Game.objects.create(state='waiting', stake_amount=stake_amount)
                 previous_player_count = game.cards.count()
+                previous_real_player_count = game.cards.filter(
+                    user__telegram_id__lt=BOT_TELEGRAM_ID_THRESHOLD
+                ).count()
 
             # Check if card is available for this user
             if game.cards.filter(card_number=card_number).exclude(user=user).exists():
@@ -532,9 +643,14 @@ def select_card_api(request):
                 touch_user_streak(user)
 
                 current_player_count = previous_player_count + 1
+                current_real_player_count = previous_real_player_count + 1
                 if previous_player_count < settings.GAME_MIN_PLAYERS <= current_player_count:
-                    game.created_at = timezone.now()
+                    delay_minutes = int(getattr(business_rules, 'rejoin_start_delay_minutes', 0) or 0)
+                    game.created_at = timezone.now() + timedelta(minutes=max(0, delay_minutes))
                     game.save(update_fields=['created_at'])
+
+                    if previous_real_player_count == 1 and current_real_player_count >= MIN_REAL_USERS_TO_START:
+                        notify_lonely_waiting_players(game, user, delay_minutes)
         
         return JsonResponse({
             'success': True,
@@ -559,6 +675,7 @@ def select_card_api(request):
 def game_status_api(request, game_id):
     """API endpoint to get game status (for real-time updates)"""
     try:
+        touch_site_presence(getattr(request, 'auth_telegram_id', None))
         game = ensure_game_started(game_id)
         
         # Calculate countdown
@@ -593,6 +710,7 @@ def lobby_state_api(request, telegram_id):
     """Return lobby data for React UI."""
     try:
         user = User.objects.select_related('wallet').get(telegram_id=telegram_id)
+        touch_site_presence(user.telegram_id)
     except User.DoesNotExist:
         return JsonResponse({'error': 'User not found. Please start the bot first.'}, status=404)
 
@@ -645,6 +763,7 @@ def lobby_state_api(request, telegram_id):
         'selected_game': selected_game_payload,
         'server_time': timezone.now().isoformat(),
         'number_call_interval': settings.NUMBER_CALL_INTERVAL,
+        'winner_announcement_seconds': get_winner_announcement_seconds(),
         'wallet_balance': float(user.wallet.total_balance),
         'all_numbers': list(range(1, settings.CARD_COUNT + 1)),
     })
@@ -657,6 +776,7 @@ def play_state_api(request, telegram_id, game_id):
     """Return play data for React UI."""
     try:
         user = User.objects.get(telegram_id=telegram_id)
+        touch_site_presence(user.telegram_id)
         game = ensure_game_started(game_id)
     except User.DoesNotExist:
         return JsonResponse({'error': 'User not found.'}, status=404)
@@ -686,6 +806,7 @@ def play_state_api(request, telegram_id, game_id):
         },
         'server_time': timezone.now().isoformat(),
         'number_call_interval': settings.NUMBER_CALL_INTERVAL,
+        'winner_announcement_seconds': get_winner_announcement_seconds(),
         'card': {
             'card_number': user_card.card_number,
             'grid': grid,
@@ -984,7 +1105,10 @@ def wallet_state_api(request, telegram_id):
             'Total balance includes main, bonus, and winnings balances.',
             'Only winnings balance is withdrawable.',
             f"Minimum withdrawal is {business_rules.minimum_withdrawable_balance} Birr.",
-            f"Telebirr receiving number: {business_rules.telebirr_receiving_phone_number}.",
+            (
+                f"Telebirr receiving number: {business_rules.telebirr_receiving_phone_number} "
+                f"({business_rules.telebirr_receiving_account_name})."
+            ),
             'Net values compare wins against game entry spending.',
             'Pending transactions are informational and may still change status.',
         ],

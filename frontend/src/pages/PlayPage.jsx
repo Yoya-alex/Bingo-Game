@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { fetchJson, postJson } from "../api/client.js";
 import { withAuthPath } from "../utils/auth.js";
-import HeaderComponent from "../components/HeaderComponent.jsx";
 import BingoGridComponent from "../components/BingoGridComponent.jsx";
 import CalledNumbersComponent from "../components/CalledNumbersComponent.jsx";
 import SpectatorViewComponent from "../components/SpectatorViewComponent.jsx";
@@ -10,6 +9,8 @@ import WinnerAnnouncementComponent from "../components/WinnerAnnouncementCompone
 import ActionButtonsComponent from "../components/ActionButtonsComponent.jsx";
 import NotificationComponent from "../components/NotificationComponent.jsx";
 import VoiceSyncManager from "../utils/voiceSyncManager.js";
+import { useI18n } from "../i18n/LanguageContext.jsx";
+import { useSettings } from "../context/SettingsContext.jsx";
 
 const EMPTY_NOTIFICATION = { type: "", message: "" };
 
@@ -20,9 +21,10 @@ export default function PlayPage() {
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState(EMPTY_NOTIFICATION);
   const [finishCountdown, setFinishCountdown] = useState(null);
-  const [voiceEnabled, setVoiceEnabled] = useState(false);
   const [voiceSupported, setVoiceSupported] = useState(true);
+  const [autoPlayEnabled, setAutoPlayEnabled] = useState(false);
   const voiceManagerRef = useRef(null);
+  const lastAutoMarkRef = useRef(null);
   const [state, setState] = useState({
     user: null,
     game: null,
@@ -37,7 +39,10 @@ export default function PlayPage() {
     winner: null,
     winner_card: null,
     countdown: 0,
+    winner_announcement_seconds: 3,
   });
+  const { t } = useI18n();
+  const { voiceEnabled } = useSettings();
 
   const calledNumberEntries = state.called_numbers || [];
   const calledNumbers = useMemo(
@@ -49,21 +54,17 @@ export default function PlayPage() {
   const hasCard = Boolean(state.card?.card_number);
   const displayState = !hasCard && state.game?.state === "playing" ? "watching" : state.game?.state;
   const shouldConfirmQuit = state.game?.state === "playing" && hasCard;
+  const currentCallParts = useMemo(() => {
+    if (!Number.isFinite(currentCall)) {
+      return null;
+    }
 
-  const formatCalledNumber = useMemo(() => {
-    const maxNumber = Math.max(5, Number(state.bingo_number_max) || 400);
-    const step = Math.max(1, Math.floor(maxNumber / 5));
+    const limit = Math.max(5, Number(state.bingo_number_max) || 400);
+    const step = Math.max(1, Math.floor(limit / 5));
     const letters = ["B", "I", "N", "G", "O"];
-
-    return (value) => {
-      const number = Number(value);
-      if (!Number.isFinite(number)) {
-        return "—";
-      }
-      const index = Math.min(4, Math.max(0, Math.floor((number - 1) / step)));
-      return `${letters[index]}${number}`;
-    };
-  }, [state.bingo_number_max]);
+    const index = Math.min(4, Math.max(0, Math.floor((currentCall - 1) / step)));
+    return { letter: letters[index], number: currentCall };
+  }, [currentCall, state.bingo_number_max]);
 
   const derashAmount = useMemo(() => {
     const stakeAmount = Number(state.game?.stake_amount || 10);
@@ -73,28 +74,6 @@ export default function PlayPage() {
       maximumFractionDigits: 2,
     }).format(value)} Birr`;
   }, [state.total_players, state.game?.stake_amount]);
-
-  function toCallParts(value) {
-    const formatted = String(formatCalledNumber(value));
-    const match = formatted.match(/^([A-Za-z]+)(\d+)$/);
-    if (match) {
-      return { letter: match[1].toUpperCase(), number: match[2] };
-    }
-    return { letter: "#", number: formatted };
-  }
-
-  function renderCallBadge(value, keyPrefix) {
-    if (value == null) {
-      return "—";
-    }
-    const parts = toCallParts(value);
-    return (
-      <span key={`${keyPrefix}-${value}`} className="call-badge">
-        <span className="call-letter">{parts.letter}</span>
-        <span className="call-value">{parts.number}</span>
-      </span>
-    );
-  }
 
   useEffect(() => {
     setLoading(true);
@@ -113,23 +92,15 @@ export default function PlayPage() {
     pollRef.current = setInterval(() => {
       fetchJson(`/game/api/play-state/${telegramId}/${gameId}/`)
         .then((payload) => setState(payload))
-        .catch(() => notify("error", "Unable to sync game state."));
+        .catch(() => notify("error", t("play.syncFailed")));
     }, 2500);
 
     return () => clearInterval(pollRef.current);
-  }, [state.game?.id, telegramId, gameId]);
+  }, [state.game?.id, telegramId, gameId, t]);
 
   function notify(type, message) {
     setNotification({ type, message });
     setTimeout(() => setNotification(EMPTY_NOTIFICATION), 3500);
-  }
-
-  function toggleVoiceAssistant() {
-    if (!voiceSupported) {
-      notify("error", "Voice assistant is not supported on this device.");
-      return;
-    }
-    setVoiceEnabled((prev) => !prev);
   }
 
   function claimBingo() {
@@ -180,7 +151,7 @@ export default function PlayPage() {
 
   function handleBackToHome() {
     if (shouldConfirmQuit) {
-      const confirmed = window.confirm("Are you sure you want to quit this game and go back to home?");
+      const confirmed = window.confirm(t("play.quitConfirm"));
       if (!confirmed) {
         return;
       }
@@ -201,8 +172,14 @@ export default function PlayPage() {
     if (!voiceManagerRef.current) {
       return;
     }
+
+    if (!voiceSupported) {
+      voiceManagerRef.current.setEnabled(false);
+      return;
+    }
+
     voiceManagerRef.current.setEnabled(voiceEnabled);
-  }, [voiceEnabled]);
+  }, [voiceEnabled, voiceSupported]);
 
   useEffect(() => {
     if (!voiceManagerRef.current) {
@@ -227,7 +204,8 @@ export default function PlayPage() {
       setFinishCountdown(null);
       return;
     }
-    let remaining = 3;
+    const durationSeconds = Math.max(1, Number(state.winner_announcement_seconds) || 3);
+    let remaining = durationSeconds;
     setFinishCountdown(remaining);
     const timer = setInterval(() => {
       remaining -= 1;
@@ -239,12 +217,12 @@ export default function PlayPage() {
     }, 1000);
     const fallback = setTimeout(() => {
       window.location.assign(withAuthPath(`/lobby/${telegramId}`));
-    }, 3500);
+    }, (durationSeconds + 0.5) * 1000);
     return () => {
       clearInterval(timer);
       clearTimeout(fallback);
     };
-  }, [state.game?.state, telegramId]);
+  }, [state.game?.state, state.winner_announcement_seconds, telegramId]);
 
   useEffect(() => {
     if (!shouldConfirmQuit) {
@@ -252,7 +230,7 @@ export default function PlayPage() {
     }
 
     const handlePopState = () => {
-      const confirmed = window.confirm("Are you sure you want to quit this game and go back to home?");
+      const confirmed = window.confirm(t("play.quitConfirm"));
       if (confirmed) {
         window.location.assign(withAuthPath(`/home/${telegramId}`));
         return;
@@ -266,20 +244,68 @@ export default function PlayPage() {
     return () => {
       window.removeEventListener("popstate", handlePopState);
     };
-  }, [shouldConfirmQuit, telegramId]);
+  }, [shouldConfirmQuit, telegramId, t]);
+
+  // Check if a set of marked numbers forms a winning bingo pattern on the grid
+  function checkBingoWin(grid, markedSet) {
+    const SIZE = 5;
+    // rows
+    for (let r = 0; r < SIZE; r++) {
+      if (grid[r].every((cell) => cell === null || markedSet.has(Number(cell)))) return true;
+    }
+    // columns
+    for (let c = 0; c < SIZE; c++) {
+      if (grid.every((row) => row[c] === null || markedSet.has(Number(row[c])))) return true;
+    }
+    // main diagonal
+    if (grid.every((row, i) => row[i] === null || markedSet.has(Number(row[i])))) return true;
+    // anti diagonal
+    if (grid.every((row, i) => row[SIZE - 1 - i] === null || markedSet.has(Number(row[SIZE - 1 - i])))) return true;
+    return false;
+  }
+
+  useEffect(() => {
+    if (!autoPlayEnabled || !hasCard || state.game?.state !== "playing") {
+      return;
+    }
+
+    const grid = state.card?.grid;
+    if (!grid?.length) return;
+
+    const gridNumbers = grid.flat().filter((value) => value != null);
+    if (!gridNumbers.length) return;
+
+    const gridSet = new Set(gridNumbers.map((value) => Number(value)));
+    const markedSet = new Set(markedNumbers.map((v) => Number(v)));
+
+    // Mark all called numbers on the card that haven't been marked yet
+    const unmarkedCalled = calledNumbers.filter(
+      (value) => gridSet.has(Number(value)) && !markedSet.has(Number(value))
+    );
+
+    if (unmarkedCalled.length > 0) {
+      const nextNumber = unmarkedCalled[unmarkedCalled.length - 1];
+      if (lastAutoMarkRef.current !== nextNumber) {
+        lastAutoMarkRef.current = nextNumber;
+        markCurrentNumber(nextNumber);
+      }
+      return;
+    }
+
+    // All callable numbers are marked — check for a win
+    if (checkBingoWin(grid, markedSet)) {
+      claimBingo();
+    }
+  }, [autoPlayEnabled, calledNumbers, hasCard, markedNumbers, state.game?.state, state.card?.grid]);
 
   const stats = useMemo(() => {
     return [
-      { label: "State", value: displayState?.toUpperCase() || "—" },
-      { label: "Players", value: state.total_players },
-      {label:"Medeb", value: `${state.game?.stake_amount || 10} Birr`},
-      { label: "Derash", value: derashAmount },
-      {label:"called", value: calledNumbers.length ? `${calledNumbers.length}/75` : "-"},
+      { label: t("common.players"), value: state.total_players },
+      { label: t("common.medeb"), value: `${state.game?.stake_amount || 10} Birr` },
+      { label: t("common.derash"), value: derashAmount },
+      { label: t("common.called"), value: calledNumbers.length ? `${calledNumbers.length}/75` : "-" },
     ];
-  }, [calledNumbers, displayState, state.total_players, derashAmount]);
-
-  const voiceStateClass = !voiceSupported ? "voice-unsupported" : voiceEnabled ? "voice-on" : "voice-off";
-  const voiceButtonTitle = !voiceSupported ? "Voice unsupported" : voiceEnabled ? "Voice assistant on" : "Voice assistant off";
+  }, [calledNumbers, state.total_players, derashAmount, t, state.game?.stake_amount]);
 
   if (loading) {
     return (
@@ -287,7 +313,7 @@ export default function PlayPage() {
         <div className="app-card">
           <div className="loading-state" role="status" aria-live="polite">
             <span className="spinner" aria-hidden="true" />
-            <div className="subtitle">Loading game...</div>
+            <div className="subtitle">{t("common.loadingGame")}</div>
           </div>
         </div>
       </div>
@@ -295,63 +321,91 @@ export default function PlayPage() {
   }
 
   return (
-    <div className="app-shell">
-      <button
-        className={`theme-toggle voice-toggle voice-icon-btn ${voiceStateClass}`}
-        onClick={toggleVoiceAssistant}
-        disabled={!voiceSupported || state.game?.state !== "playing"}
-        aria-label={voiceButtonTitle}
-        title={voiceButtonTitle}
-      >
-        <span className="voice-icon" aria-hidden="true">🔊</span>
-      </button>
+    <div className="app-shell play-page">
       <div className="app-card">
-        <HeaderComponent
-          title="Bingo "
-          subtitle={`Game #${state.game?.id ?? "-"} • ${hasCard ? `Card #${state.card.card_number} • ` : "Spectator • "}${state.user?.first_name ?? "Player"}`}
-          stats={stats}
-        />
-
-        {state.game?.state !== "finished" && (
-          <div className="stat-strip current-call" style={{ marginTop: "10px" }}>
-            <div className="stat-item current-call-item">
-              <span className="current-call-label">Current Call</span>
-              <div className="stat-value current-call-value">{renderCallBadge(currentCall, "current")}</div>
-            </div>
+        <div className="play-top-row">
+          <div className="page-actions">
+            <button type="button" className="btn btn-secondary play-back-btn" onClick={handleBackToHome}>
+              {t("common.backToHome")}
+            </button>
           </div>
-        )}
-        <NotificationComponent notification={notification} />
-        <div className="page-actions">
-          <button type="button" className="btn btn-secondary" onClick={handleBackToHome}>
-            Back to Home
-          </button>
+          <div className="home-brand-row play-brand-row">
+            <span className="home-brand-logo" role="img" aria-label={t("home.okHandLogoAria")}>👌</span>
+            <h1 className="title lobby-title home-brand-title">{t("home.brand")}</h1>
+          </div>
         </div>
+
+        <div className="component stat-strip">
+          {stats.map((stat) => (
+            <div className="stat-item" key={stat.label}>
+              <span>{stat.label}</span>
+              <div className="stat-value">{stat.value}</div>
+            </div>
+          ))}
+        </div>
+
+        <NotificationComponent notification={notification} />
         <div className="grid-layout">
-          {hasCard && (
-            <BingoGridComponent
-              grid={state.card.grid}
+          <div className="called-numbers-stack">
+            <div className="stat-strip current-call play-current-strip">
+              <div className="stat-item current-call-item">
+                <div className="stat-value current-call-value">
+                  {currentCallParts ? (
+                    <span className="call-badge">
+                      <span className="call-letter">{currentCallParts.letter}</span>
+                      <span className="call-value">{currentCallParts.number}</span>
+                    </span>
+                  ) : (
+                    "-"
+                  )}
+                </div>
+              </div>
+            </div>
+            <CalledNumbersComponent
               calledNumbers={calledNumbers}
-              markedNumbers={markedNumbers}
-              markSource="marked"
-              interactive={state.game?.state === "playing"}
-              clickableNumber={state.game?.state === "playing" ? currentCall : null}
-              onSelectNumber={markCurrentNumber}
-              footer={<ActionButtonsComponent state={displayState} hasCard={hasCard} onBingo={claimBingo} />}
-              
+              maxNumber={state.bingo_number_max || 400}
+              onNumberClick={markCurrentNumber}
+              interactive={hasCard && state.game?.state === "playing"}
             />
-            
-            
-          )
-          }
-          {!hasCard && state.game?.state === "playing" && (
-            <SpectatorViewComponent id="bingoGridComponent" title="Your Bingo Grid" />
+          </div>
+          {hasCard && (
+            <div className="bingo-stack">
+              <div className="auto-play-toggle">
+                <button
+                  type="button"
+                  className={`auto-play-btn${autoPlayEnabled ? " is-on" : ""}`}
+                  onClick={() => setAutoPlayEnabled((prev) => !prev)}
+                  role="switch"
+                  aria-checked={autoPlayEnabled}
+                >
+                  <span className="auto-play-label">{autoPlayEnabled ? "Automatic" : "Manual"}</span>
+                  <span className="auto-play-track" aria-hidden="true">
+                    <span className="auto-play-thumb" />
+                  </span>
+                </button>
+              </div>
+              <BingoGridComponent
+                grid={state.card.grid}
+                calledNumbers={calledNumbers}
+                markedNumbers={markedNumbers}
+                markSource="marked"
+                interactive={state.game?.state === "playing"}
+                clickableNumber={state.game?.state === "playing" ? currentCall : null}
+                onSelectNumber={markCurrentNumber}
+                footer={
+                  <ActionButtonsComponent
+                    state={displayState}
+                    hasCard={hasCard}
+                    onBingo={claimBingo}
+                    bingoLabel={autoPlayEnabled ? "AUTOMATIC" : undefined}
+                  />
+                }
+              />
+            </div>
           )}
-          <CalledNumbersComponent 
-            calledNumbers={calledNumbers} 
-            maxNumber={state.bingo_number_max || 400}
-            onNumberClick={markCurrentNumber}
-            interactive={hasCard && state.game?.state === "playing"}
-          />
+          {!hasCard && state.game?.state === "playing" && (
+            <SpectatorViewComponent id="bingoGridComponent" title={t("play.yourBingoGrid")} />
+          )}
         </div>
       </div>
       {state.game?.state === "finished" && (
@@ -363,6 +417,14 @@ export default function PlayPage() {
               winnerCard={state.winner_card}
               calledNumbers={calledNumbers}
               countdown={finishCountdown}
+              gameId={state.game?.id}
+              stakeAmount={state.game?.stake_amount}
+              totalPlayers={state.total_players}
+              currentTelegramId={telegramId}
+              isCurrentUserWinner={Number(state.winner_card?.winner_telegram_id) === Number(telegramId)}
+              onPlayNextRound={() =>
+                navigate(withAuthPath(`/lobby/${telegramId}?stake=${Number(state.game?.stake_amount || 10)}`))
+              }
             />
           </div>
         </div>

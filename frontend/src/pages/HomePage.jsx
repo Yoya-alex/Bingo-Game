@@ -4,6 +4,7 @@ import { fetchJson } from "../api/client.js";
 import { withAuthPath } from "../utils/auth.js";
 import NotificationComponent from "../components/NotificationComponent.jsx";
 import BottomNavIcon from "../components/BottomNavIcon.jsx";
+import { useI18n } from "../i18n/LanguageContext.jsx";
 
 const EMPTY_NOTIFICATION = { type: "", message: "" };
 const POLL_MS = 2000;
@@ -22,7 +23,7 @@ export default function HomePage() {
   const zeroSyncRef = useRef({});
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState(EMPTY_NOTIFICATION);
-  const [showInfoModal, setShowInfoModal] = useState(false);
+  const [activeGuideIndex, setActiveGuideIndex] = useState(0);
   const [displayCountdowns, setDisplayCountdowns] = useState({});
   const [data, setData] = useState({
     user: null,
@@ -30,6 +31,7 @@ export default function HomePage() {
     stakes: [10, 20, 50, 100],
     wallet_balance: 0,
   });
+  const { t } = useI18n();
 
   const gameRows = useMemo(() => {
     if (Array.isArray(data.games) && data.games.length) {
@@ -38,7 +40,7 @@ export default function HomePage() {
         if (row.state === "waiting" && Number.isFinite(localCountdown) && localCountdown > 0) {
           return {
             ...row,
-            status_label: `Starting in ${localCountdown}s`,
+            status_label: t("home.startsIn", { seconds: localCountdown }),
           };
         }
         return row;
@@ -51,13 +53,13 @@ export default function HomePage() {
       medb: stake,
       derash: 0,
       players: 0,
-      status_label: "Waiting for players",
+      status_label: t("home.waitingPlayers"),
       state: "waiting",
       action: "join",
-      action_label: "Join Now",
+      action_label: t("common.selectCard"),
       user_has_card: false,
     }));
-  }, [data.games, data.stakes, displayCountdowns]);
+  }, [data.games, data.stakes, displayCountdowns, t]);
 
   const liveStats = useMemo(() => {
     const waiting = gameRows.filter((row) => row.state === "waiting").length;
@@ -68,6 +70,126 @@ export default function HomePage() {
       tiers: gameRows.length,
     };
   }, [gameRows]);
+
+  const featuredGame = useMemo(() => {
+    const rows = Array.isArray(gameRows) ? gameRows : [];
+    if (!rows.length) {
+      return null;
+    }
+
+    const playing = rows.filter((row) => row.state === "playing");
+    if (playing.length) {
+      return playing.sort((a, b) => Number(b.players || 0) - Number(a.players || 0))[0];
+    }
+
+    const waiting = rows.filter((row) => row.state === "waiting");
+    if (waiting.length) {
+      return waiting.sort((a, b) => Number(b.players || 0) - Number(a.players || 0))[0];
+    }
+
+    return rows[0];
+  }, [gameRows]);
+
+  const infoContext = useMemo(() => {
+    const row = featuredGame;
+    if (!row) {
+      return {
+        statusLabel: t("common.waiting"),
+        state: "waiting",
+        stake: 0,
+        players: 0,
+        derash: 0,
+        countdown: 0,
+      };
+    }
+
+    const localCountdown = Number(displayCountdowns[row.stake_amount]);
+    const countdown = row.state === "waiting"
+      ? (Number.isFinite(localCountdown) && localCountdown > 0 ? localCountdown : Math.max(0, Number(row.countdown || 0)))
+      : 0;
+
+    return {
+      statusLabel: row.state === "playing" ? t("home.liveRound") : countdown > 0 ? t("home.startsIn", { seconds: countdown }) : t("home.waitingPlayers"),
+      state: row.state,
+      stake: Number(row.stake_amount || 0),
+      players: Number(row.players || 0),
+      derash: Number(row.derash || 0),
+      countdown,
+    };
+  }, [displayCountdowns, featuredGame, t]);
+
+  const previewCard = useMemo(() => {
+    const seed = Number(featuredGame?.game_id || featuredGame?.stake_amount || 17);
+    const ranges = [
+      [1, 15],
+      [16, 30],
+      [31, 45],
+      [46, 60],
+      [61, 75],
+    ];
+
+    const makeColumn = (start, end, offset) => {
+      const values = [];
+      for (let n = start; n <= end; n += 1) {
+        values.push(n);
+      }
+      for (let i = values.length - 1; i > 0; i -= 1) {
+        const j = (seed + offset + i * 7) % (i + 1);
+        const temp = values[i];
+        values[i] = values[j];
+        values[j] = temp;
+      }
+      return values.slice(0, 5);
+    };
+
+    const cols = ranges.map(([start, end], idx) => makeColumn(start, end, idx * 13));
+    const matrix = Array.from({ length: 5 }, (_, rowIdx) => cols.map((col) => col[rowIdx]));
+    matrix[2][2] = "FREE";
+    return matrix;
+  }, [featuredGame]);
+
+  const guidePatterns = useMemo(
+    () => [
+      { type: "row", index: 0 },
+      { type: "row", index: 1 },
+      { type: "row", index: 2 },
+      { type: "row", index: 3 },
+      { type: "row", index: 4 },
+      { type: "col", index: 0 },
+      { type: "col", index: 1 },
+      { type: "col", index: 2 },
+      { type: "col", index: 3 },
+      { type: "col", index: 4 },
+      { type: "diag", index: 0 },
+      { type: "diag", index: 1 },
+    ],
+    [],
+  );
+
+  const activeGuidePattern = guidePatterns[activeGuideIndex] || guidePatterns[0];
+
+  function isWinningPreviewCell(cellIndex, pattern) {
+    if (!pattern) {
+      return false;
+    }
+
+    const row = Math.floor(cellIndex / 5);
+    const col = cellIndex % 5;
+
+    if (pattern.type === "row") {
+      return row === pattern.index;
+    }
+    if (pattern.type === "col") {
+      return col === pattern.index;
+    }
+    if (pattern.type === "diag") {
+      if (pattern.index === 0) {
+        return row === col;
+      }
+      return row + col === 4;
+    }
+    return false;
+  }
 
   const syncCountdownSeeds = useCallback((payload) => {
     const games = Array.isArray(payload?.games) ? payload.games : [];
@@ -143,13 +265,20 @@ export default function HomePage() {
   }, [syncLobbyState]);
 
   useEffect(() => {
+    const patternTimer = setInterval(() => {
+      setActiveGuideIndex((prev) => (prev + 1) % guidePatterns.length);
+    }, 1400);
+    return () => clearInterval(patternTimer);
+  }, [guidePatterns.length]);
+
+  useEffect(() => {
     pollRef.current = setInterval(() => {
       syncLobbyState()
-        .catch(() => notify("error", "Unable to sync lobby state."));
+        .catch(() => notify("error", t("lobby.syncFailed")));
     }, POLL_MS);
 
     return () => clearInterval(pollRef.current);
-  }, [syncLobbyState]);
+  }, [syncLobbyState, t]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -194,7 +323,7 @@ export default function HomePage() {
   function handleRowAction(row) {
     const stake = row.stake_amount;
     if (!stake) {
-      notify("error", "Invalid game tier.");
+      notify("error", t("home.invalidGameTier"));
       return;
     }
 
@@ -212,7 +341,7 @@ export default function HomePage() {
         <div className="app-card">
           <div className="loading-state" role="status" aria-live="polite">
             <span className="spinner" aria-hidden="true" />
-            <div className="subtitle">Loading lobby...</div>
+            <div className="subtitle">{t("common.loadingLobby")}</div>
           </div>
         </div>
       </div>
@@ -222,43 +351,43 @@ export default function HomePage() {
   return (
     <div className="app-shell lobby-shell">
       <div className="app-card lobby-card">
-        <section className="component home-hero-card" aria-label="Lobby overview">
+        <section className="component home-hero-card" aria-label={t("home.lobbyOverviewAria")}>
           <div className="home-hero-top">
             <div className="home-brand-row">
-              <span className="home-brand-logo" role="img" aria-label="OK hand logo">👌</span>
-              <h1 className="title lobby-title home-brand-title">Ok Bingo</h1>
+              <span className="home-brand-logo" role="img" aria-label={t("home.okHandLogoAria")}>👌</span>
+              <h1 className="title lobby-title home-brand-title">{t("home.brand")}</h1>
             </div>
-            <span className="home-live-chip">LIVE • {POLL_MS / 1000}s sync</span>
+            <span className="home-live-chip">{t("home.liveChip", { seconds: POLL_MS / 1000 })}</span>
           </div>
 
           <p className="subtitle lobby-subtitle home-hero-greeting">
-            Welcome back, <span className="home-hero-username">{data.user?.first_name || "Player"}</span>
+            {t("home.welcomeBack", { name: data.user?.first_name || t("common.player") })}
           </p>
 
           <div className="home-wallet-highlight">
-            <span className="home-wallet-label">Wallet Balance</span>
+            <span className="home-wallet-label">{t("home.walletBalance")}</span>
             <strong className="home-wallet-value">{formatBirr(data.wallet_balance)}</strong>
           </div>
 
-          <div className="home-hero-chips" role="list" aria-label="Lobby quick stats">
-            <span className="home-hero-chip" role="listitem">{liveStats.tiers} stake tiers</span>
-            <span className="home-hero-chip" role="listitem">{liveStats.waiting} waiting</span>
-            <span className="home-hero-chip" role="listitem">{liveStats.playing} in play</span>
-            <span className="home-hero-chip" role="listitem">Pick a MEDB tier below</span>
+          <div className="home-hero-chips" role="list" aria-label={t("home.quickStatsAria")}>
+            <span className="home-hero-chip" role="listitem">{t("home.stakeTiers", { count: liveStats.tiers })}</span>
+            <span className="home-hero-chip" role="listitem">{t("home.waitingCount", { count: liveStats.waiting })}</span>
+            <span className="home-hero-chip" role="listitem">{t("home.inPlayCount", { count: liveStats.playing })}</span>
+            <span className="home-hero-chip" role="listitem">{t("home.pickTier")}</span>
           </div>
         </section>
 
         <NotificationComponent notification={notification} />
 
         <section className="lobby-table-wrap component">
-          <table className="lobby-table" aria-label="Bingo game lobby">
+          <table className="lobby-table" aria-label={t("home.bingoLobbyAria")}>
             <thead>
               <tr>
-                <th>MEDB</th>
-                <th>DERASH</th>
-                <th>PLAYERS</th>
-                <th>STATUS</th>
-                <th>ACTION</th>
+                <th>{t("home.medb")}</th>
+                <th>{t("home.derash")}</th>
+                <th>{t("home.players")}</th>
+                <th>{t("home.status")}</th>
+                <th>{t("home.action")}</th>
               </tr>
             </thead>
             <tbody>
@@ -298,61 +427,64 @@ export default function HomePage() {
           </table>
         </section>
 
-        <div className="lobby-info-actions">
-          <button type="button" className="game-info-btn" onClick={() => setShowInfoModal(true)}>
-            Game Information
-          </button>
-          <button type="button" className="game-info-btn" onClick={() => navigate(withAuthPath(`/engagement/${telegramId}`))}>
-            Engagement Center
-          </button>
-          <p className="lobby-sync-note">Live updates every {POLL_MS / 1000}s</p>
-        </div>
+      
 
-        <nav className="bottom-nav" aria-label="Bottom navigation">
+        <section className="component home-game-info-section" aria-label={t("home.gameInfoDialogAria")}>
+         
+          <div className="game-info-live-grid">
+            <section className="game-info-panel card-panel" aria-label={t("home.cardWinGuideAria")}>
+              <div className="bingo-preview-header">
+                <h3>{t("home.winningPreview")}</h3>
+                <p>{t("home.animatedBoxes")}</p>
+              </div>
+              <div className="bingo-preview-card-wrap">
+                <div className="bingo-preview-card" role="img" aria-label={t("home.previewCardAria")}>
+                  <div className="bingo-preview-labels">
+                    {['B', 'I', 'N', 'G', 'O'].map((letter) => (
+                      <span key={letter}>{letter}</span>
+                    ))}
+                  </div>
+                  <div className="bingo-preview-grid">
+                    {previewCard.flat().map((value, index) => (
+                      <div
+                        key={`${index}-${String(value)}`}
+                        className={`bingo-preview-cell ${value === "FREE" ? "free" : ""} ${isWinningPreviewCell(index, activeGuidePattern) ? "win-guide-active" : ""}`}
+                      >
+                        {value}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </section>
+
+          </div>
+        </section>
+
+        <nav className="bottom-nav" aria-label={t("profile.bottomNavigationAria")}>
           <button type="button" className="bottom-nav-item active">
             <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="home" /></span>
-            <span className="bottom-nav-label">Home</span>
+            <span className="bottom-nav-label">{t("common.home")}</span>
           </button>
           <button type="button" className="bottom-nav-item" onClick={() => navigate(withAuthPath(`/profile/${telegramId}`))}>
             <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="profile" /></span>
-            <span className="bottom-nav-label">Profile</span>
+            <span className="bottom-nav-label">{t("common.profile")}</span>
           </button>
           <button type="button" className="bottom-nav-item" onClick={() => navigate(withAuthPath(`/trophy/${telegramId}`))}>
             <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="trophy" /></span>
-            <span className="bottom-nav-label">Top Winners</span>
+            <span className="bottom-nav-label">{t("common.topWinners")}</span>
           </button>
           <button type="button" className="bottom-nav-item" onClick={() => navigate(withAuthPath(`/wallet/${telegramId}`))}>
             <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="wallet" /></span>
-            <span className="bottom-nav-label">Wallet</span>
+            <span className="bottom-nav-label">{t("common.wallet")}</span>
           </button>
           <button type="button" className="bottom-nav-item" onClick={() => navigate(withAuthPath(`/engagement/${telegramId}`))}>
             <span className="bottom-nav-icon" aria-hidden="true"><BottomNavIcon name="engagement" /></span>
-            <span className="bottom-nav-label">Engage</span>
+            <span className="bottom-nav-label">{t("common.engage")}</span>
           </button>
         </nav>
       </div>
 
-      {showInfoModal && (
-        <div className="modal" role="dialog" aria-modal="true" aria-label="Game information">
-          <div className="modal-card wide lobby-modal-card">
-            <button
-              type="button"
-              className="modal-close"
-              onClick={() => setShowInfoModal(false)}
-              aria-label="Close game information"
-            >
-              X
-            </button>
-            <h2 className="component-title">Game Information</h2>
-            <div className="rules-content">
-              <p>How to play: Choose a game tier and join from this home page.</p>
-              <p>After joining, you are redirected to the lobby page to select and manage your card.</p>
-              <p>Prize calculation: DERASH = players x MEDB x 0.8.</p>
-              <p>Winning condition: First player with a valid Bingo pattern wins.</p>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

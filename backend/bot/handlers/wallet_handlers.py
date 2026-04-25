@@ -10,6 +10,7 @@ from wallet.models import Wallet, Transaction, Deposit, Withdrawal
 from bot.keyboards import main_menu_keyboard, deposit_keyboard, withdrawal_keyboard, payment_method_keyboard
 from bot.utils.notification_service import send_admin_notification
 from bot.utils.receipt_verifier import verify_receipt
+from bot.utils.i18n import is_menu_text, normalize_language, tr
 from game.business_rules import get_business_rules
 
 router = Router()
@@ -63,50 +64,69 @@ def create_withdrawal(transaction, method, account):
     )
 
 
-@router.message(F.text == "💰 Balance")
+@sync_to_async
+def get_telebirr_details():
+    rules = get_business_rules()
+    return {
+        'number': rules.telebirr_receiving_phone_number,
+        'name': getattr(rules, 'telebirr_receiving_account_name', 'Bingo Bot'),
+    }
+
+
+@sync_to_async
+def get_minimum_withdrawal_amount():
+    return float(get_business_rules().minimum_withdrawable_balance)
+
+
+@router.message(lambda message: is_menu_text(message.text, 'menu_balance'))
 async def show_balance(message: Message):
     """Show user balance"""
     user = await get_user_with_wallet(message.from_user.id)
     
     if not user:
-        await message.answer("❌ Please start the bot first with /start")
+        await message.answer(tr('en', 'please_start'))
         return
     
     wallet = user.wallet
-    balance_text = (
-        f"<b>💰 YOUR BALANCE</b>\n\n"
-        f"💵 Deposit Balance: {wallet.main_balance} Birr\n"
-        f"🏆 Winnings Balance: {wallet.winnings_balance} Birr\n"
-        f"🎁 Bonus Balance: {wallet.bonus_balance} Birr\n"
-        f"━━━━━━━━━━━━━━━━\n"
-        f"💎 Total Balance: {wallet.total_balance} Birr\n\n"
-        f"<i>Note:\n"
-        f"• All balances can be used for playing\n"
-        f"• Only winnings can be withdrawn\n"
-        f"• Deposit and bonus cannot be withdrawn</i>"
+    language = normalize_language(user.language)
+    balance_text = tr(
+        language,
+        'wallet_balance_text',
+        main_balance=wallet.main_balance,
+        winnings_balance=wallet.winnings_balance,
+        bonus_balance=wallet.bonus_balance,
+        total_balance=wallet.total_balance,
     )
     
-    await message.answer(balance_text, reply_markup=main_menu_keyboard())
+    await message.answer(balance_text, reply_markup=main_menu_keyboard(language))
 
 
-@router.message(F.text == "➕ Deposit")
+@router.message(lambda message: is_menu_text(message.text, 'menu_deposit'))
 async def deposit_menu(message: Message):
     """Show deposit menu"""
+<<<<<<< HEAD
     from asgiref.sync import sync_to_async
     get_rules = sync_to_async(get_business_rules)
     rules = await get_rules()
     telebirr_number = rules.telebirr_receiving_phone_number
+=======
+    user = await get_user_with_wallet(message.from_user.id)
+    if not user:
+        await message.answer(tr('en', 'please_start'))
+        return
+    language = normalize_language(user.language)
+
+    telebirr = await get_telebirr_details()
+    telebirr_number = telebirr['number']
+    telebirr_name = telebirr['name']
+>>>>>>> 7f2e6ab47c48eb78ef62edcd105c0f66e87a2fe3
     
-    deposit_text = (
-        "<b>➕ DEPOSIT</b>\n\n"
-        "To deposit money:\n\n"
-        "1️⃣ Transfer money to:\n"
-        f"   <b>Telebirr:</b> <code>{telebirr_number}</code>\n"
-        "   <b>Name:</b> Bingo Bot\n\n"
-        "   <i>Tap the number above to copy it</i>\n\n"
-        "2️⃣ Wait for the payment confirmation text\n"
-        "3️⃣ Click 'Submit Deposit Proof' below and send that text\n\n"
-        f"<i>Minimum deposit: {settings.MIN_DEPOSIT} Birr</i>"
+    deposit_text = tr(
+        language,
+        'wallet_deposit_text',
+        telebirr_number=telebirr_number,
+        telebirr_name=telebirr_name,
+        min_deposit=settings.MIN_DEPOSIT,
     )
     
     await message.answer(deposit_text, reply_markup=deposit_keyboard(), parse_mode="HTML")
@@ -115,9 +135,10 @@ async def deposit_menu(message: Message):
 @router.callback_query(F.data == "submit_deposit")
 async def submit_deposit_start(callback: CallbackQuery, state: FSMContext):
     """Start deposit submission process"""
+    user = await get_user_with_wallet(callback.from_user.id)
+    language = normalize_language(getattr(user, 'language', None))
     await callback.message.answer(
-        "📤 <b>Payment Confirmation</b>\n\n"
-        "Please paste the payment confirmation text you received:"
+        tr(language, 'wallet_confirmation_prompt')
     )
     await state.set_state(DepositStates.waiting_for_confirmation)
     await callback.answer()
@@ -129,14 +150,37 @@ async def process_deposit_confirmation(message: Message, state: FSMContext):
     user = await get_user_with_wallet(message.from_user.id)
 
     if not user:
-        await message.answer("❌ Please start the bot first with /start")
+        await message.answer(tr('en', 'please_start'))
         await state.clear()
         return
 
     confirmation_text = (message.text or "").strip()
     if not confirmation_text:
+<<<<<<< HEAD
         await message.answer("❌ Please paste the payment confirmation text or link.")
         return
+=======
+        await message.answer(tr(normalize_language(user.language), 'wallet_confirmation_required'))
+        return
+    
+    # Create transaction with pending status (amount entered by admin later)
+    transaction = await create_transaction(
+        user,
+        'deposit',
+        None,
+        'pending',
+        'Deposit pending verification',
+    )
+    
+    # Create deposit detail
+    await create_deposit(transaction, confirmation_text, 'Telebirr')
+    
+    await message.answer(
+        tr(normalize_language(user.language), 'wallet_deposit_submitted', transaction_id=transaction.id),
+        reply_markup=main_menu_keyboard(normalize_language(user.language)),
+        parse_mode="HTML"
+    )
+>>>>>>> 7f2e6ab47c48eb78ef62edcd105c0f66e87a2fe3
 
     await message.answer("⏳ Verifying your receipt, please wait...")
 
@@ -184,6 +228,7 @@ async def process_deposit_confirmation(message: Message, state: FSMContext):
     await state.clear()
 
 
+<<<<<<< HEAD
 @sync_to_async
 def _reject_transaction(transaction_id: int, extracted_text: str):
     from wallet.models import Transaction, Deposit
@@ -199,43 +244,52 @@ def _reject_transaction(transaction_id: int, extracted_text: str):
 
 
 @router.message(F.text == "➖ Withdraw")
+=======
+@router.message(lambda message: is_menu_text(message.text, 'menu_withdraw'))
+>>>>>>> 7f2e6ab47c48eb78ef62edcd105c0f66e87a2fe3
 async def withdrawal_menu(message: Message):
     """Show withdrawal menu"""
     user = await get_user_with_wallet(message.from_user.id)
 
     if not user:
-        await message.answer("❌ Please start the bot first with /start")
+        await message.answer(tr('en', 'please_start'))
         return
+<<<<<<< HEAD
 
     from asgiref.sync import sync_to_async
     get_rules = sync_to_async(get_business_rules)
     rules = await get_rules()
     minimum_withdrawal = float(rules.minimum_withdrawable_balance)
+=======
+    
+    wallet = user.wallet
+    language = normalize_language(user.language)
+    minimum_withdrawal = await get_minimum_withdrawal_amount()
+>>>>>>> 7f2e6ab47c48eb78ef62edcd105c0f66e87a2fe3
     
     # Check minimum withdrawal amount - only winnings can be withdrawn
     if float(wallet.winnings_balance) < minimum_withdrawal:
         await message.answer(
-            f"<b>➖ WITHDRAWAL</b>\n\n"
-            f"🏆 Winnings Balance: {wallet.winnings_balance} Birr\n"
-            f"💵 Deposit Balance: {wallet.main_balance} Birr (cannot withdraw)\n"
-            f"🎁 Bonus Balance: {wallet.bonus_balance} Birr (cannot withdraw)\n\n"
-            f"❌ <b>Insufficient winnings!</b>\n"
-            f"Minimum withdrawal amount is {minimum_withdrawal} Birr.\n\n"
-            f"<i>Note: Only prize/winnings money can be withdrawn.\n"
-            f"Deposit and bonus balance cannot be withdrawn.</i>",
-            reply_markup=main_menu_keyboard(),
+            tr(
+                language,
+                'wallet_withdraw_insufficient',
+                winnings_balance=wallet.winnings_balance,
+                main_balance=wallet.main_balance,
+                bonus_balance=wallet.bonus_balance,
+                minimum_withdrawal=minimum_withdrawal,
+            ),
+            reply_markup=main_menu_keyboard(language),
             parse_mode="HTML"
         )
         return
     
-    withdrawal_text = (
-        f"<b>➖ WITHDRAWAL</b>\n\n"
-        f"🏆 Available for withdrawal: {wallet.winnings_balance} Birr\n"
-        f"💵 Deposit Balance: {wallet.main_balance} Birr (cannot withdraw)\n"
-        f"🎁 Bonus Balance: {wallet.bonus_balance} Birr (cannot withdraw)\n\n"
-        f"<i>Note: Only prize/winnings money can be withdrawn.\n"
-        f"Minimum withdrawal: {minimum_withdrawal} Birr</i>\n\n"
-        f"Click below to request withdrawal:"
+    withdrawal_text = tr(
+        language,
+        'wallet_withdraw_menu',
+        winnings_balance=wallet.winnings_balance,
+        main_balance=wallet.main_balance,
+        bonus_balance=wallet.bonus_balance,
+        minimum_withdrawal=minimum_withdrawal,
     )
     
     await message.answer(withdrawal_text, reply_markup=withdrawal_keyboard(), parse_mode="HTML")
@@ -244,14 +298,18 @@ async def withdrawal_menu(message: Message):
 @router.callback_query(F.data == "request_withdrawal")
 async def request_withdrawal_start(callback: CallbackQuery, state: FSMContext):
     """Start withdrawal request process"""
+<<<<<<< HEAD
     from asgiref.sync import sync_to_async
     get_rules = sync_to_async(get_business_rules)
     rules = await get_rules()
     minimum_withdrawal = float(rules.minimum_withdrawable_balance)
+=======
+    user = await get_user_with_wallet(callback.from_user.id)
+    language = normalize_language(getattr(user, 'language', None))
+    minimum_withdrawal = await get_minimum_withdrawal_amount()
+>>>>>>> 7f2e6ab47c48eb78ef62edcd105c0f66e87a2fe3
     await callback.message.answer(
-        "💸 <b>Withdrawal Request</b>\n\n"
-        f"Please enter the amount you want to withdraw (in Birr).\n"
-        f"Minimum amount is {minimum_withdrawal} Birr:"
+        tr(language, 'wallet_withdraw_request_prompt', minimum_withdrawal=minimum_withdrawal)
     )
     await state.set_state(WithdrawalStates.waiting_for_amount)
     await callback.answer()
@@ -263,56 +321,55 @@ async def process_withdrawal_amount(message: Message, state: FSMContext):
     try:
         amount = float(message.text)
         user = await get_user_with_wallet(message.from_user.id)
+<<<<<<< HEAD
         from asgiref.sync import sync_to_async
         get_rules = sync_to_async(get_business_rules)
         rules = await get_rules()
         minimum_withdrawal = float(rules.minimum_withdrawable_balance)
+=======
+        minimum_withdrawal = await get_minimum_withdrawal_amount()
+>>>>>>> 7f2e6ab47c48eb78ef62edcd105c0f66e87a2fe3
         
         if not user:
-            await message.answer("❌ Please start the bot first with /start")
+            await message.answer(tr('en', 'please_start'))
             await state.clear()
             return
         
         wallet = user.wallet
+        language = normalize_language(user.language)
         
         if amount <= 0:
-            await message.answer("❌ Amount must be greater than 0")
+            await message.answer(tr(language, 'wallet_amount_gt_zero'))
             return
 
         if amount < minimum_withdrawal:
-            await message.answer(
-                f"❌ Minimum withdrawal amount is {minimum_withdrawal} Birr"
-            )
+            await message.answer(tr(language, 'wallet_min_withdraw', minimum_withdrawal=minimum_withdrawal))
             return
         
         if amount > wallet.winnings_balance:
-            await message.answer(
-                f"❌ Insufficient winnings!\n"
-                f"Available winnings: {wallet.winnings_balance} Birr\n\n"
-                f"<i>Note: Only prize/winnings money can be withdrawn.</i>"
-            )
+            await message.answer(tr(language, 'wallet_insufficient_winnings', winnings_balance=wallet.winnings_balance))
             return
         
         await state.update_data(amount=amount)
         await message.answer(
-            "📱 <b>Payment Method</b>\n\n"
-            "Please select your payment method:",
+            tr(language, 'wallet_select_method'),
             reply_markup=payment_method_keyboard(),
             parse_mode="HTML"
         )
         await state.set_state(WithdrawalStates.waiting_for_method)
         
     except ValueError:
-        await message.answer("❌ Please enter a valid number")
+        await message.answer(tr('en', 'wallet_enter_valid_number'))
 
 
 @router.message(WithdrawalStates.waiting_for_method)
 async def process_withdrawal_method(message: Message, state: FSMContext):
     """Process withdrawal payment method"""
+    user = await get_user_with_wallet(message.from_user.id)
+    language = normalize_language(getattr(user, 'language', None))
     await state.update_data(payment_method=message.text)
     await message.answer(
-        "🏦 <b>Account Information</b>\n\n"
-        "Please enter your account number or phone number:"
+        tr(language, 'wallet_account_prompt')
     )
     await state.set_state(WithdrawalStates.waiting_for_account)
 
@@ -320,14 +377,16 @@ async def process_withdrawal_method(message: Message, state: FSMContext):
 @router.callback_query(F.data.startswith("payment_method:"), WithdrawalStates.waiting_for_method)
 async def process_payment_method_callback(callback: CallbackQuery, state: FSMContext):
     """Handle payment method button selection"""
+    user = await get_user_with_wallet(callback.from_user.id)
+    language = normalize_language(getattr(user, 'language', None))
     method = callback.data.split(":")[1]
     
     if method == "cbe":
         payment_method = "CBE (Commercial Bank of Ethiopia)"
-        prompt = "🏦 <b>CBE Account Information</b>\n\nPlease enter your CBE account number:"
+        prompt = tr(language, 'wallet_cbe_prompt')
     else:  # telebirr
         payment_method = "Telebirr"
-        prompt = "📱 <b>Telebirr Account Information</b>\n\nPlease enter your Telebirr phone number:"
+        prompt = tr(language, 'wallet_telebirr_prompt')
     
     await state.update_data(payment_method=payment_method)
     await callback.message.answer(prompt, parse_mode="HTML")
@@ -341,7 +400,7 @@ async def process_withdrawal_account(message: Message, state: FSMContext):
     user = await get_user_with_wallet(message.from_user.id)
     
     if not user:
-        await message.answer("❌ Please start the bot first with /start")
+        await message.answer(tr('en', 'please_start'))
         await state.clear()
         return
     
@@ -356,13 +415,15 @@ async def process_withdrawal_account(message: Message, state: FSMContext):
     await create_withdrawal(transaction, data['payment_method'], message.text)
     
     await message.answer(
-        "✅ <b>Withdrawal request submitted!</b>\n\n"
-        f"Amount: {data['amount']} Birr\n"
-        f"Method: {data['payment_method']}\n"
-        f"Account: {message.text}\n\n"
-        "Your request is pending admin approval.\n"
-        f"Transaction ID: #{transaction.id}",
-        reply_markup=main_menu_keyboard()
+        tr(
+            normalize_language(user.language),
+            'wallet_withdraw_submitted',
+            amount=data['amount'],
+            payment_method=data['payment_method'],
+            account=message.text,
+            transaction_id=transaction.id,
+        ),
+        reply_markup=main_menu_keyboard(normalize_language(user.language))
     )
 
     # Notify admins about new withdrawal request
@@ -386,8 +447,10 @@ async def process_withdrawal_account(message: Message, state: FSMContext):
 async def back_to_menu(callback: CallbackQuery, state: FSMContext):
     """Return to main menu"""
     await state.clear()
+    user = await get_user_with_wallet(callback.from_user.id)
+    language = normalize_language(getattr(user, 'language', None))
     await callback.message.answer(
-        "🏠 Main Menu",
-        reply_markup=main_menu_keyboard()
+        tr(language, 'main_menu_title'),
+        reply_markup=main_menu_keyboard(language)
     )
     await callback.answer()

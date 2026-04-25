@@ -1,0 +1,37 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Deploy pushed commit to live server
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+          HEALTHCHECK_URL: https://okbingogame.work.gd/healthz
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: 22
+          script_stop: true
+          command_timeout: 30m
+          envs: GITHUB_SHA,HEALTHCHECK_URL
+          script: |
+            set -e
+            cd /opt/bingo/Bingo-Game
+            git fetch origin master --prune
+            git reset --hard "$GITHUB_SHA"
+            bash scripts/deploy_server.sh "$HEALTHCHECK_URL"

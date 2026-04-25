@@ -2,14 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { fetchJson, postJson } from "../api/client.js";
 import { withAuthPath } from "../utils/auth.js";
-import HeaderComponent from "../components/HeaderComponent.jsx";
 import CardSelectionComponent from "../components/CardSelectionComponent.jsx";
 import BingoGridComponent from "../components/BingoGridComponent.jsx";
 import CalledNumbersComponent from "../components/CalledNumbersComponent.jsx";
 import SpectatorViewComponent from "../components/SpectatorViewComponent.jsx";
 import WinnerAnnouncementComponent from "../components/WinnerAnnouncementComponent.jsx";
-import ActionButtonsComponent from "../components/ActionButtonsComponent.jsx";
 import NotificationComponent from "../components/NotificationComponent.jsx";
+import { useI18n } from "../i18n/LanguageContext.jsx";
 
 const EMPTY_NOTIFICATION = { type: "", message: "" };
 
@@ -39,6 +38,7 @@ function normalizeLobbyPayload(payload, preferredStake) {
       prize_amount: selectedGame.prize_amount ?? selectedGame.derash ?? 0,
       winner_card: selectedGame.winner_card || null,
       user_card: selectedGame.user_card || null,
+      winner_announcement_seconds: payload?.winner_announcement_seconds ?? 3,
     };
   }
 
@@ -61,6 +61,7 @@ function normalizeLobbyPayload(payload, preferredStake) {
     prize_amount: fallbackRow?.derash || 0,
     winner_card: null,
     user_card: null,
+    winner_announcement_seconds: payload?.winner_announcement_seconds ?? 3,
   };
 }
 
@@ -92,7 +93,9 @@ export default function LobbyPage() {
     prize_amount: 0,
     winner_card: null,
     user_card: null,
+    winner_announcement_seconds: 3,
   });
+  const { t } = useI18n();
 
 
 
@@ -157,11 +160,11 @@ export default function LobbyPage() {
   useEffect(() => {
     lobbyPollRef.current = setInterval(() => {
       syncLobbyState()
-        .catch(() => notify("error", "Unable to sync lobby state."));
+        .catch(() => notify("error", t("lobby.syncFailed")));
     }, 2500);
 
     return () => clearInterval(lobbyPollRef.current);
-  }, [syncLobbyState]);
+  }, [syncLobbyState, t]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -193,14 +196,14 @@ export default function LobbyPage() {
 
   function selectCard(cardNumber) {
     if (data.game?.state === "playing") {
-      notify("error", "Card selection is closed for this round.");
+      notify("error", t("lobby.cardSelectionClosed"));
       return;
     }
     
     // Check if user has sufficient balance
     const requiredBalance = data.stake || preferredStake;
     if (data.wallet_balance < requiredBalance) {
-      notify("error", `Insufficient balance! You need ${requiredBalance} Birr to play. Please deposit first.`);
+      notify("error", t("lobby.insufficientBalance", { amount: requiredBalance }));
       return;
     }
     
@@ -220,7 +223,7 @@ export default function LobbyPage() {
 
   function handleBackToHome() {
     if (shouldConfirmQuit) {
-      const confirmed = window.confirm("Are you sure you want to quit this game and go back to home?");
+      const confirmed = window.confirm(t("lobby.quitConfirm"));
       if (!confirmed) {
         return;
       }
@@ -239,7 +242,8 @@ export default function LobbyPage() {
       setFinishCountdown(null);
       return;
     }
-    let remaining = 3;
+    const durationSeconds = Math.max(1, Number(data.winner_announcement_seconds) || 3);
+    let remaining = durationSeconds;
     setFinishCountdown(remaining);
     const timer = setInterval(() => {
       remaining -= 1;
@@ -251,18 +255,21 @@ export default function LobbyPage() {
     }, 1000);
     const fallback = setTimeout(() => {
       window.location.assign(withAuthPath(`/lobby/${telegramId}`));
-    }, 3500);
+    }, (durationSeconds + 0.5) * 1000);
     return () => {
       clearInterval(timer);
       clearTimeout(fallback);
     };
-  }, [data.game?.state, telegramId]);
+  }, [data.game?.state, data.winner_announcement_seconds, telegramId]);
+
+  const countdownValue = displayState === "waiting" && displayCountdown > 0 ? displayCountdown : "-";
+  const showCountdownBox = Boolean(data.user_card?.grid) && displayState === "waiting" && displayCountdown > 0;
 
   const stats = [
-    { label: "State", value: displayState.toUpperCase() },
-    { label: "Count", value: displayState === "waiting" && displayCountdown > 0 ? displayCountdown : "-" },
-    { label: "Players", value: data.total_players },
-    { label: "Medeb", value: `${data.stake || preferredStake} Birr` },
+    { label: t("common.derash"), value: `${data.stake || preferredStake} Birr` },
+    { label: t("common.balance"), value: `${data.wallet_balance || 0} Birr` },
+    { label: t("common.players"), value: data.total_players },
+    { label: t("common.medeb"), value: `${data.stake || preferredStake} Birr` },
   ];
 
   if (loading) {
@@ -271,7 +278,7 @@ export default function LobbyPage() {
         <div className="app-card">
           <div className="loading-state" role="status" aria-live="polite">
             <span className="spinner" aria-hidden="true" />
-            <div className="subtitle">Loading lobby...</div>
+            <div className="subtitle">{t("common.loadingLobby")}</div>
           </div>
         </div>
       </div>
@@ -279,24 +286,41 @@ export default function LobbyPage() {
   }
 
   return (
-    <div className="app-shell">
+    <div className="app-shell lobby-page">
       <div className="app-card">
-        <HeaderComponent
-          title="Bingo Lobby"
-          subtitle={`Game #${data.game?.id ?? "-"} - ${data.user?.first_name ?? "Player"} - Balance ${data.wallet_balance} Birr`}
-          stats={stats}
-        />
-
-        <NotificationComponent notification={notification} />
-
         <div className="page-actions">
-          <button type="button" className="btn btn-secondary" onClick={handleBackToHome}>
-            Back to Home
+          <button type="button" className="btn btn-secondary lobby-back-btn" onClick={handleBackToHome}>
+            {t("common.backToHome")}
           </button>
         </div>
 
+        <div className="component stat-strip">
+          {stats.map((stat) => (
+            <div className="stat-item" key={stat.label}>
+              <span>{stat.label}</span>
+              <div className="stat-value">{stat.value}</div>
+            </div>
+          ))}
+        </div>
+
+        <NotificationComponent notification={notification} />
+
         <div className="grid-layout">
-          {data.user_card?.grid && <BingoGridComponent grid={data.user_card.grid} interactive={false} />}
+          {data.user_card?.grid && (
+            <>
+              {showCountdownBox && (
+                <section className="component lobby-countdown-box is-active" aria-live="polite" aria-atomic="true">
+                  <div className="lobby-countdown-message" key={countdownValue}>
+                    <span className="lobby-countdown-text">{t("lobby.gameStartsIn")}</span>
+                    <span className="lobby-countdown-clock" aria-hidden="true">⏰</span>
+                    <span className="lobby-countdown-seconds">{countdownValue}</span>
+                    <span className="lobby-countdown-text">{t("lobby.gameStartsInSuffix")}</span>
+                  </div>
+                </section>
+              )}
+              <BingoGridComponent grid={data.user_card.grid} interactive={false} />
+            </>
+          )}
           {data.game?.state !== "playing" && (
             <CardSelectionComponent
               numbers={data.all_numbers}
@@ -308,12 +332,6 @@ export default function LobbyPage() {
           {data.game?.state === "playing" && <CalledNumbersComponent calledNumbers={calledNumbers} maxNumber={400} />}
           {data.game?.state === "playing" && <SpectatorViewComponent />}
         </div>
-
-        <ActionButtonsComponent
-          state={displayState}
-          hasCard={hasCard}
-          onSelectCard={() => document.getElementById("cardSelectionComponent")?.scrollIntoView({ behavior: "smooth" })}
-        />
 
         <NotificationComponent notification={notification} />
       </div>
@@ -327,6 +345,14 @@ export default function LobbyPage() {
               winnerCard={data.winner_card}
               calledNumbers={calledNumbers}
               countdown={finishCountdown}
+              gameId={data.game?.id}
+              stakeAmount={data.stake || preferredStake}
+              totalPlayers={data.total_players}
+              currentTelegramId={telegramId}
+              isCurrentUserWinner={Number(data.winner_card?.winner_telegram_id) === Number(telegramId)}
+              onPlayNextRound={() =>
+                navigate(withAuthPath(`/lobby/${telegramId}?stake=${Number(data.stake || preferredStake || 10)}`))
+              }
             />
           </div>
         </div>

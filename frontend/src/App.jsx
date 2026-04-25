@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import HomePage from "./pages/HomePage.jsx";
 import LobbyPage from "./pages/LobbyPage.jsx";
@@ -8,21 +8,7 @@ import TrophyPage from "./pages/TrophyPage.jsx";
 import WalletPage from "./pages/WalletPage.jsx";
 import EngagementPage from "./pages/EngagementPage.jsx";
 import { bootstrapAuthToken } from "./utils/auth.js";
-
-const THEME_KEY = "bingo-theme";
-
-function getInitialTheme() {
-  if (typeof window === "undefined") {
-    return "dark";
-  }
-
-  const savedTheme = window.localStorage.getItem(THEME_KEY);
-  if (savedTheme === "light" || savedTheme === "dark") {
-    return savedTheme;
-  }
-
-  return "dark";
-}
+import SettingsButton from "./components/SettingsButton.jsx";
 
 function buildHomeTargetFromQuery() {
   if (typeof window === "undefined") {
@@ -32,35 +18,28 @@ function buildHomeTargetFromQuery() {
   const params = new URLSearchParams(window.location.search || "");
   const telegramId = (params.get("telegram_id") || params.get("telegramId") || "0").trim() || "0";
   const token = (params.get("token") || "").trim();
+  const language = (params.get("lang") || params.get("language") || "").trim();
+  const nextParams = new URLSearchParams();
 
-  if (!token) {
-    return `/home/${telegramId}`;
+  if (token) {
+    nextParams.set("token", token);
+  }
+  if (language) {
+    nextParams.set("lang", language);
   }
 
-  return `/home/${telegramId}?token=${encodeURIComponent(token)}`;
+  const query = nextParams.toString();
+  return `/home/${telegramId}${query ? `?${query}` : ""}`;
 }
 
 export default function App() {
-  const [theme, setTheme] = useState(getInitialTheme);
-
   useEffect(() => {
     bootstrapAuthToken();
   }, []);
 
-  useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
-    window.localStorage.setItem(THEME_KEY, theme);
-  }, [theme]);
-
-  function toggleTheme() {
-    setTheme((prevTheme) => (prevTheme === "dark" ? "light" : "dark"));
-  }
-
   return (
     <>
-      <button className="theme-toggle" type="button" onClick={toggleTheme} aria-label="Toggle night mode">
-        {theme === "dark" ? "☀️ Light" : "🌙 Night"}
-      </button>
+      <SettingsButton />
       <Routes>
         <Route path="/" element={<Navigate to={buildHomeTargetFromQuery()} replace />} />
         <Route path="/home/:telegramId" element={<HomePage />} />
