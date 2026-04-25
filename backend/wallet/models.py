@@ -69,10 +69,12 @@ class Deposit(models.Model):
     transaction = models.OneToOneField(Transaction, on_delete=models.CASCADE, related_name='deposit_detail')
     payment_proof = models.TextField()
     payment_method = models.CharField(max_length=100)
-    
+    invoice_no = models.CharField(max_length=100, blank=True, null=True, unique=True)
+    extracted_text = models.TextField(blank=True, null=True)
+
     class Meta:
         db_table = 'deposits'
-    
+
     def __str__(self):
         return f"Deposit {self.transaction.amount} by {self.transaction.user.first_name}"
 

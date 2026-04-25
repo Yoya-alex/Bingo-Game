@@ -9,6 +9,7 @@ from users.models import User
 from wallet.models import Wallet, Transaction, Deposit, Withdrawal
 from bot.keyboards import main_menu_keyboard, deposit_keyboard, withdrawal_keyboard, payment_method_keyboard
 from bot.utils.notification_service import send_admin_notification
+from bot.utils.receipt_verifier import verify_receipt
 from game.business_rules import get_business_rules
 
 router = Router()
@@ -91,7 +92,10 @@ async def show_balance(message: Message):
 @router.message(F.text == "➕ Deposit")
 async def deposit_menu(message: Message):
     """Show deposit menu"""
-    telebirr_number = get_business_rules().telebirr_receiving_phone_number
+    from asgiref.sync import sync_to_async
+    get_rules = sync_to_async(get_business_rules)
+    rules = await get_rules()
+    telebirr_number = rules.telebirr_receiving_phone_number
     
     deposit_text = (
         "<b>➕ DEPOSIT</b>\n\n"
@@ -121,71 +125,92 @@ async def submit_deposit_start(callback: CallbackQuery, state: FSMContext):
 
 @router.message(DepositStates.waiting_for_confirmation, F.text)
 async def process_deposit_confirmation(message: Message, state: FSMContext):
-    """Process deposit confirmation text submission"""
+    """Process deposit confirmation — auto-verify via telebirr receipt URL."""
     user = await get_user_with_wallet(message.from_user.id)
-    
+
     if not user:
         await message.answer("❌ Please start the bot first with /start")
         await state.clear()
         return
-    
+
     confirmation_text = (message.text or "").strip()
     if not confirmation_text:
-        await message.answer("❌ Please paste the payment confirmation text.")
+        await message.answer("❌ Please paste the payment confirmation text or link.")
         return
-    
-    # Create transaction with pending status (amount entered by admin later)
-    transaction = await create_transaction(
-        user,
-        'deposit',
-        None,
-        'pending',
-        'Deposit pending verification',
-    )
-    
-    # Create deposit detail
-    await create_deposit(transaction, confirmation_text, 'Telebirr')
-    
-    await message.answer(
-        "✅ <b>Deposit submitted!</b>\n\n"
-        "Amount: Pending verification\n"
-        "Your deposit is pending admin verification.\n"
-        "You'll be notified once it's approved.\n\n"
-        f"Transaction ID: #{transaction.id}",
-        reply_markup=main_menu_keyboard(),
-        parse_mode="HTML"
-    )
 
-    # Notify admins about new deposit request
-    try:
-        await send_admin_notification(
-            message.bot,
-            text=(
-                "🔔 <b>New Deposit Request</b>\n\n"
-                f"User: {user.first_name} (@{user.username or '—'})\n"
-                "Amount: Pending verification\n"
-                f"Confirmation: {confirmation_text}\n"
-                f"Transaction ID: #{transaction.id}"
-            ),
-        )
-    except Exception:
-        # Notification failures must not affect core flow
-        pass
+    await message.answer("⏳ Verifying your receipt, please wait...")
+
+    # Create a pending transaction first so we have an ID
+    transaction = await create_transaction(
+        user, 'deposit', None, 'pending', 'Deposit pending verification'
+    )
+    await create_deposit(transaction, confirmation_text, 'Telebirr')
+
+    # Auto-verify
+    result = await verify_receipt(confirmation_text, transaction.id)
+
+    if result["success"]:
+        await message.answer(result["message"], reply_markup=main_menu_keyboard(), parse_mode="HTML")
+        try:
+            await send_admin_notification(
+                message.bot,
+                text=(
+                    "✅ <b>Auto-Approved Deposit</b>\n\n"
+                    f"User: {user.first_name} (@{user.username or '—'})\n"
+                    f"Amount: {result.get('amount')} Birr\n"
+                    f"Invoice: #{result.get('invoice_no')}\n"
+                    f"Transaction ID: #{transaction.id}"
+                ),
+            )
+        except Exception:
+            pass
+    else:
+        # Mark transaction as rejected
+        await _reject_transaction(transaction.id, result.get("extracted_text", ""))
+        await message.answer(result["message"], reply_markup=main_menu_keyboard(), parse_mode="HTML")
+        try:
+            await send_admin_notification(
+                message.bot,
+                text=(
+                    "❌ <b>Rejected Deposit Attempt</b>\n\n"
+                    f"User: {user.first_name} (@{user.username or '—'})\n"
+                    f"Reason: {result['message']}\n"
+                    f"Transaction ID: #{transaction.id}"
+                ),
+            )
+        except Exception:
+            pass
 
     await state.clear()
+
+
+@sync_to_async
+def _reject_transaction(transaction_id: int, extracted_text: str):
+    from wallet.models import Transaction, Deposit
+    t = Transaction.objects.get(id=transaction_id)
+    t.status = "rejected"
+    t.save()
+    try:
+        d = t.deposit_detail
+        d.extracted_text = extracted_text
+        d.save()
+    except Exception:
+        pass
 
 
 @router.message(F.text == "➖ Withdraw")
 async def withdrawal_menu(message: Message):
     """Show withdrawal menu"""
     user = await get_user_with_wallet(message.from_user.id)
-    
+
     if not user:
         await message.answer("❌ Please start the bot first with /start")
         return
-    
-    wallet = user.wallet
-    minimum_withdrawal = float(get_business_rules().minimum_withdrawable_balance)
+
+    from asgiref.sync import sync_to_async
+    get_rules = sync_to_async(get_business_rules)
+    rules = await get_rules()
+    minimum_withdrawal = float(rules.minimum_withdrawable_balance)
     
     # Check minimum withdrawal amount - only winnings can be withdrawn
     if float(wallet.winnings_balance) < minimum_withdrawal:
@@ -219,7 +244,10 @@ async def withdrawal_menu(message: Message):
 @router.callback_query(F.data == "request_withdrawal")
 async def request_withdrawal_start(callback: CallbackQuery, state: FSMContext):
     """Start withdrawal request process"""
-    minimum_withdrawal = float(get_business_rules().minimum_withdrawable_balance)
+    from asgiref.sync import sync_to_async
+    get_rules = sync_to_async(get_business_rules)
+    rules = await get_rules()
+    minimum_withdrawal = float(rules.minimum_withdrawable_balance)
     await callback.message.answer(
         "💸 <b>Withdrawal Request</b>\n\n"
         f"Please enter the amount you want to withdraw (in Birr).\n"
@@ -235,7 +263,10 @@ async def process_withdrawal_amount(message: Message, state: FSMContext):
     try:
         amount = float(message.text)
         user = await get_user_with_wallet(message.from_user.id)
-        minimum_withdrawal = float(get_business_rules().minimum_withdrawable_balance)
+        from asgiref.sync import sync_to_async
+        get_rules = sync_to_async(get_business_rules)
+        rules = await get_rules()
+        minimum_withdrawal = float(rules.minimum_withdrawable_balance)
         
         if not user:
             await message.answer("❌ Please start the bot first with /start")
