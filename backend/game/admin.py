@@ -492,10 +492,29 @@ class BusinessRuleSettingsAdmin(admin.ModelAdmin):
         'system_percentage',
         'telebirr_receiving_phone_number',
         'telebirr_receiving_account_name',
+        'invitations_enabled',
         'updated_by',
         'updated_at',
     ]
     readonly_fields = ['created_at', 'updated_at', 'updated_by']
+    fieldsets = (
+        ('Game Settings', {
+            'fields': ('countdown_seconds', 'winner_announcement_seconds', 'rejoin_start_delay_minutes')
+        }),
+        ('Wallet Settings', {
+            'fields': ('minimum_withdrawable_balance', 'telebirr_receiving_phone_number', 'telebirr_receiving_account_name')
+        }),
+        ('Referral & Invitations', {
+            'fields': ('referral_bonus_amount', 'invitations_enabled')
+        }),
+        ('Prize Distribution', {
+            'fields': ('derash_percentage', 'system_percentage')
+        }),
+        ('Audit', {
+            'fields': ('updated_by', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
 
     def has_add_permission(self, request):
         return not BusinessRuleSettings.objects.exists()

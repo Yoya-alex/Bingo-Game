@@ -334,6 +334,10 @@ class BusinessRuleSettings(models.Model):
         validators=[MaxValueValidator(120)],
         help_text='Additional delay before game start when players return to a previously lonely lobby.',
     )
+    invitations_enabled = models.BooleanField(
+        default=True,
+        help_text='Enable or disable user invitations/referrals',
+    )
     updated_by = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,
