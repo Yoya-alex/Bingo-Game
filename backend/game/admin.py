@@ -485,6 +485,7 @@ class BusinessRuleSettingsAdmin(admin.ModelAdmin):
         'id',
         'minimum_withdrawable_balance',
         'referral_bonus_amount',
+        'invitations_enabled_display',
         'countdown_seconds',
         'winner_announcement_seconds',
         'rejoin_start_delay_minutes',
@@ -492,8 +493,6 @@ class BusinessRuleSettingsAdmin(admin.ModelAdmin):
         'system_percentage',
         'telebirr_receiving_phone_number',
         'telebirr_receiving_account_name',
-        'invitations_enabled',
-        'updated_by',
         'updated_at',
     ]
     readonly_fields = ['created_at', 'updated_at', 'updated_by']
@@ -515,6 +514,12 @@ class BusinessRuleSettingsAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
+    
+    def invitations_enabled_display(self, obj):
+        if obj.invitations_enabled:
+            return format_html('<span style="color: green; font-weight: bold;">✓ Enabled</span>')
+        return format_html('<span style="color: red; font-weight: bold;">✗ Disabled</span>')
+    invitations_enabled_display.short_description = 'Invitations'
 
     def has_add_permission(self, request):
         return not BusinessRuleSettings.objects.exists()
