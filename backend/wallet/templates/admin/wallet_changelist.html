@@ -1,0 +1,22 @@
+{% extends "admin/change_list.html" %}
+
+{% block content_title %}
+  <h1>Wallets</h1>
+{% endblock %}
+
+{% block submit_buttons_bottom %}
+  <div style="margin: 20px 0; padding: 15px; background-color: #e8f4f8; border: 1px solid #417690; border-radius: 5px;">
+    <h3 style="margin-top: 0; color: #417690;">⚙️ Reset Winning Balances</h3>
+    <p>
+      <strong>Action:</strong> Reset winning balance to 0 for all users <strong>EXCEPT</strong> those with completed deposits.
+    </p>
+    <p>
+      <strong>Users affected:</strong> {{ reset_winnings_count }}<br>
+      <strong>Total amount to reset:</strong> {{ reset_winnings_total }} Birr
+    </p>
+    <a href="{% url reset_winnings_url %}" class="button" style="background-color: #417690; padding: 10px 20px; color: white; border: none; border-radius: 4px; cursor: pointer; text-decoration: none; display: inline-block;">
+      🔄 Reset All Winning Balances Now
+    </a>
+  </div>
+  {{ block.super }}
+{% endblock %}
