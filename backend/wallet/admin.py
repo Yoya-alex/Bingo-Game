@@ -1,4 +1,4 @@
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.utils import timezone
 from django.urls import path
 from django.http import HttpResponseRedirect
@@ -39,14 +39,14 @@ class WalletAdmin(admin.ModelAdmin):
         count = wallets_to_reset.count()
         
         if count == 0:
-            self.message_user(request, "No wallets with winning balance to reset.", admin.messages.WARNING)
+            self.message_user(request, "No wallets with winning balance to reset.", messages.WARNING)
         else:
             # Reset winning balance to 0
             wallets_to_reset.update(winnings_balance=0)
             self.message_user(
                 request,
                 f"✅ Reset winning balance to 0 for {count} user(s). Total amount reset: {total_reset} Birr",
-                admin.messages.SUCCESS
+                messages.SUCCESS
             )
         
         return HttpResponseRedirect(request.META.get('HTTP_REFERER', '/admin/wallet/wallet/'))
@@ -96,7 +96,7 @@ class WalletAdmin(admin.ModelAdmin):
         self.message_user(
             request, 
             f"Added {amount} Birr to {queryset.count()} wallet(s)",
-            admin.messages.SUCCESS
+            messages.SUCCESS
         )
     add_main_balance.short_description = "Add 100 Birr to Main Balance"
     
@@ -121,7 +121,7 @@ class WalletAdmin(admin.ModelAdmin):
         self.message_user(
             request, 
             f"Added {amount} Birr bonus to {queryset.count()} wallet(s)",
-            admin.messages.SUCCESS
+            messages.SUCCESS
         )
     add_bonus_balance.short_description = "Add 50 Birr to Bonus Balance"
 
@@ -186,7 +186,7 @@ class TransactionAdmin(admin.ModelAdmin):
             self.message_user(
                 request,
                 "❌ Please select completed deposits first.",
-                admin.messages.ERROR
+                messages.ERROR
             )
             return
         
@@ -205,7 +205,7 @@ class TransactionAdmin(admin.ModelAdmin):
             self.message_user(
                 request,
                 "No wallets with winning balance to reset.",
-                admin.messages.WARNING
+                messages.WARNING
             )
             return
         
@@ -216,7 +216,7 @@ class TransactionAdmin(admin.ModelAdmin):
             request,
             f"✅ Reset winning balance to 0 for {count} user(s). Total amount reset: {total_reset} Birr\n"
             f"Users with selected completed deposits were excluded.",
-            admin.messages.SUCCESS
+            messages.SUCCESS
         )
     reset_winnings_except_selected.short_description = "🔄 Reset Winning Balance to 0 (Except Selected Deposits)"
 
