@@ -1,0 +1,31 @@
+{% extends "admin/change_list.html" %}
+{% load i18n admin_urls static admin_list_filter %}
+
+{% block content_title %}
+  <h1>Wallets</h1>
+{% endblock %}
+
+{% block search %}
+  {{ block.super }}
+{% endblock %}
+
+{% block result_list %}
+  <div style="margin: 20px 0; padding: 15px; background-color: #f0f0f0; border-radius: 5px;">
+    <h2 style="margin-top: 0;">⚙️ Wallet Management</h2>
+    <p>
+      <strong>Reset Winning Balance:</strong> 
+      This will reset winning balance to 0 for all users <strong>EXCEPT</strong> those who have completed deposits.
+    </p>
+    <p>
+      <strong>Users to be affected:</strong> {{ reset_winnings_count }}<br>
+      <strong>Total amount to reset:</strong> {{ reset_winnings_total }} Birr
+    </p>
+    <form method="post" action="{% url 'admin:reset_all_winnings' %}" style="display: inline;">
+      {% csrf_token %}
+      <button type="submit" class="button" style="background-color: #417690; padding: 10px 20px; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
+        🔄 Reset All Winning Balances
+      </button>
+    </form>
+  </div>
+  {{ block.super }}
+{% endblock %}
