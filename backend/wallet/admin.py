@@ -1,15 +1,6 @@
 from django.contrib import admin
 from django.utils import timezone
-from django.urls import path
-from django.http import HttpResponseRedirect
-from django.contrib import messages
 from .models import Wallet, Transaction, Deposit, Withdrawal
-
-
-class WalletAdminSite(admin.AdminSite):
-    site_header = "Bingo Game Admin"
-    site_title = "Admin"
-    index_title = "Welcome to Bingo Game Admin"
 
 
 @admin.register(Wallet)
@@ -18,72 +9,7 @@ class WalletAdmin(admin.ModelAdmin):
     search_fields = ['user__first_name', 'user__username', 'user__telegram_id']
     readonly_fields = ['created_at', 'updated_at']
     
-    change_list_template = "admin/wallet_changelist.html"
-    
-    def get_urls(self):
-        urls = super().get_urls()
-        custom_urls = [
-            path('reset-all-winnings/', self.admin_site.admin_view(self.reset_all_winnings_view), name='reset_all_winnings'),
-        ]
-        return custom_urls + urls
-    
-    def reset_all_winnings_view(self, request):
-        """Reset all winning balances except for users with completed deposits"""
-        if request.method == 'POST':
-            # Get users with completed deposits
-            users_with_completed_deposits = set(
-                Transaction.objects.filter(
-                    transaction_type='deposit',
-                    status='completed'
-                ).values_list('user_id', flat=True)
-            )
-            
-            # Get all wallets to reset (exclude those with completed deposits)
-            wallets_to_reset = Wallet.objects.exclude(
-                user_id__in=users_with_completed_deposits
-            ).exclude(winnings_balance=0)
-            
-            total_reset = sum(w.winnings_balance for w in wallets_to_reset)
-            count = wallets_to_reset.count()
-            
-            if count == 0:
-                messages.warning(request, "No wallets with winning balance to reset.")
-            else:
-                # Reset winning balance to 0
-                wallets_to_reset.update(winnings_balance=0)
-                messages.success(
-                    request,
-                    f"✅ Successfully reset winning balance to 0 for {count} user(s). Total amount reset: {total_reset} Birr"
-                )
-            
-            return HttpResponseRedirect(request.META.get('HTTP_REFERER', '/admin/wallet/wallet/'))
-        
-        return HttpResponseRedirect('/admin/wallet/wallet/')
-    
-    def changelist_view(self, request, extra_context=None):
-        extra_context = extra_context or {}
-        
-        # Calculate stats for the button
-        users_with_completed_deposits = set(
-            Transaction.objects.filter(
-                transaction_type='deposit',
-                status='completed'
-            ).values_list('user_id', flat=True)
-        )
-        
-        wallets_to_reset = Wallet.objects.exclude(
-            user_id__in=users_with_completed_deposits
-        ).exclude(winnings_balance=0)
-        
-        total_reset = sum(w.winnings_balance for w in wallets_to_reset)
-        count = wallets_to_reset.count()
-        
-        extra_context['reset_winnings_count'] = count
-        extra_context['reset_winnings_total'] = total_reset
-        
-        return super().changelist_view(request, extra_context=extra_context)
-    
-    actions = ['add_main_balance', 'add_bonus_balance']
+    actions = ['add_main_balance', 'add_bonus_balance', 'reset_winning_balance_no_deposits']
     
     def add_main_balance(self, request, queryset):
         """Add balance to main balance"""
@@ -107,7 +33,7 @@ class WalletAdmin(admin.ModelAdmin):
         self.message_user(
             request, 
             f"Added {amount} Birr to {queryset.count()} wallet(s)",
-            messages.SUCCESS
+            admin.messages.SUCCESS
         )
     add_main_balance.short_description = "Add 100 Birr to Main Balance"
     
@@ -132,9 +58,46 @@ class WalletAdmin(admin.ModelAdmin):
         self.message_user(
             request, 
             f"Added {amount} Birr bonus to {queryset.count()} wallet(s)",
-            messages.SUCCESS
+            admin.messages.SUCCESS
         )
     add_bonus_balance.short_description = "Add 50 Birr to Bonus Balance"
+    
+    def reset_winning_balance_no_deposits(self, request, queryset):
+        """Reset winning balance to 0 for users WITHOUT completed deposits"""
+        
+        # Get users with completed deposits
+        users_with_completed_deposits = set(
+            Transaction.objects.filter(
+                transaction_type='deposit',
+                status='completed'
+            ).values_list('user_id', flat=True)
+        )
+        
+        # Get all wallets to reset (exclude those with completed deposits)
+        wallets_to_reset = Wallet.objects.exclude(
+            user_id__in=users_with_completed_deposits
+        ).exclude(winnings_balance=0)
+        
+        total_reset = sum(w.winnings_balance for w in wallets_to_reset)
+        count = wallets_to_reset.count()
+        
+        if count == 0:
+            self.message_user(
+                request,
+                "No wallets with winning balance to reset.",
+                admin.messages.WARNING
+            )
+            return
+        
+        # Reset winning balance to 0
+        wallets_to_reset.update(winnings_balance=0)
+        
+        self.message_user(
+            request,
+            f"✅ Reset winning balance to 0 for {count} user(s). Total amount reset: {total_reset} Birr",
+            admin.messages.SUCCESS
+        )
+    reset_winning_balance_no_deposits.short_description = "🔄 Reset Winning Balance to 0 (Users WITHOUT Completed Deposits)"
 
 
 @admin.register(Transaction)
